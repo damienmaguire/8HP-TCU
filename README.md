@@ -10,6 +10,8 @@ Design files in Kicad 8 format.
 
 Enclosure, header, plug and pins : https://www.aliexpress.com/item/32839361268.html
 
+Prewired plug (recommended) : https://www.aliexpress.com/item/1005004818455812.html
+
 Work is in progress as of 01/25.
 
 ![TCU_Adapter_Board](https://github.com/user-attachments/assets/58b4c9c0-83e0-4c65-beef-87e31b3bbbc8)
