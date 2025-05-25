@@ -1,1 +1,29 @@
+/******************************************************************
+ * Input Output Pin definitions, COLLABORATIVE
+ */
+const int SA = 16;      // Solenoid "S-A"
+const int SB = 18;      // Solenoid "S-B"
+const int SC = 46;       // Solenoid "S-C"
+const int SD = 17;       // Solenoid "S-D"
+const int SE = 19;       // Solenoid "S-E"
+const int SLINE = 43;       // Solenoid "S-LINE"
+const int STCC = 45;       // Solenoid "S-TCC"
+const int SPARKR = 42;       // Solenoid "S-PARKREL"
+const int PARKH = 25;       // Solenoid "S-PARKHL"
 
+const int STemp01 = 13;     //Temp Sensor 01
+const int STemp01 = 14;     //Temp Sensor 02
+
+const int GPIN1 = 3;     //TPS 1? or Freq Sensor ZF8 1?
+const int GPIN2 = 4;     //TPS 2? or Freq Sensor ZF8 2?
+
+
+
+
+// Run variables
+
+int tpsPosition = 0;
+int vehicleSpeed = 0;
+int transBrakeLimit = 50;
+bool transBrake = false;
+bool launchControl = false;
