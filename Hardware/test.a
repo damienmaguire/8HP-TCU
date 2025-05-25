@@ -1,1 +1,192 @@
+//https://wokwi.com/projects/431949808730849281   PROJECT TEST DEBUG
 
+
+#include "SPI.h"
+#include "Wire.h"
+#include "Adafruit_GFX.h"
+#include "Adafruit_ILI9341.h"
+
+const int TFT_DC = 3;
+const int TFT_CS = 7;
+Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);
+
+
+const int SA = PA6;           // Solenoid "S-A" - 16
+const int SB = PB0;           // Solenoid "S-B" - 18
+const int SC = PB9;           // Solenoid "S-C" - 46
+const int SD = PA7;           // Solenoid "S-D" - 17
+const int SE = PB1;           // Solenoid "S-E" - 19
+const int SLINE = PB7;        // Solenoid "S-LINE" - 43
+const int STCC = PB8;         // Solenoid "S-TCC" - 45
+const int SPARKR = PB6;       // Solenoid "S-PARKREL" - 42
+const int PARKH = PB12;       // Solenoid "S-PARKHL" - 25
+
+const int STemp01 = PA13;     //Temp Sensor 01 - 13
+const int STemp02 = PA14;     //Temp Sensor 02 - 14
+
+const int GPIN1 = PC14;       //TPS 1? or Freq Sensor ZF8 1? - 3
+const int GPIN2 = PC15;       //TPS 2? or Freq Sensor ZF8 2? - 4
+
+typedef enum eSState {INV = 0,P,R,N,D,S,UP,DN,LC} eSState; 
+typedef enum eSGear {None = 0,Park,Reverse,Neutral,Gear1,Gear2,Gear3,Gear4,Gear5,Gear6,Gear7,Gear8} eSGear;
+
+// Run variables
+
+int tpsPosition = 0;
+int vehicleSpeed = 0;
+int transBrakeLimit = 50;
+bool transBrake = false;
+bool launchControl = false;
+
+void setup() {
+  Serial.begin(115200);
+  //Serial.println("Hello, WOKWI");
+  //tft.begin();
+
+  //tft.setCursor(20, 120);
+  //tft.setTextColor(ILI9341_RED);
+  //tft.setTextSize(3);
+  //tft.println("VAI CAVALO");
+
+  //tft.setCursor(24, 160);
+  //tft.setTextColor(ILI9341_GREEN);
+  //tft.setTextSize(2);
+  //tft.println("ZF8HP lol :-)");
+
+  tft.begin();
+
+  tft.setCursor(20, 120);
+  tft.setTextColor(ILI9341_RED);
+  tft.setTextSize(3);
+  tft.println("VAI CAVALO");
+
+  tft.setCursor(24, 160);
+  tft.setTextColor(ILI9341_GREEN);
+  tft.setTextSize(2);
+  tft.println("ZF8HP lol :-)");
+
+
+  pinMode(SA, OUTPUT);
+ 
+  pinMode(SB, OUTPUT);
+
+  pinMode(SC, OUTPUT);
+
+  pinMode(SD, OUTPUT);  
+  pinMode(SE, OUTPUT);
+  pinMode(SLINE, OUTPUT);
+  pinMode(STCC, OUTPUT);
+  pinMode(SPARKR, OUTPUT);
+  pinMode(PARKH, OUTPUT);
+
+  digitalWrite(SA,HIGH);
+  delay(110);
+  digitalWrite(SB,HIGH);
+  delay(110);
+  digitalWrite(SC,HIGH);
+  delay(110);
+  digitalWrite(SD,HIGH);
+  delay(110);
+  digitalWrite(SE,HIGH);
+  delay(110);
+  digitalWrite(SLINE,HIGH);
+  delay(110);
+  digitalWrite(STCC,HIGH);
+  delay(110);
+  digitalWrite(SPARKR,HIGH);
+  delay(110);
+  digitalWrite(PARKH,HIGH);
+
+  pinMode(STemp01, INPUT_PULLUP);
+  pinMode(STemp02, INPUT_PULLUP);
+
+  //pinMode(GPIN1, INPUT);
+  //pinMode(GPIN2, INPUT);
+
+
+
+ 
+
+}
+
+void shifterLogic() {
+  eSState pos = shifterPosition();
+  switch(pos) {
+    case P: 
+      //shiftToPark(); 
+      break;
+    case R: 
+      //shiftToReverse(); 
+      break;
+    case N: 
+      //shiftToNeutral(); 
+      break;
+    case D: 
+      //shiftToDrive(); 
+      break;
+    case S: 
+      //shiftToSport(); 
+      break;
+    case DN: 
+      //shiftToDown(); 
+      break;
+    case UP: 
+      //shiftToUp(); 
+      break;
+    case LC: 
+      //shiftLaunchControl(); 
+      break;
+  }
+}
+
+eSState shifterPosition() {
+ 
+    return P;
+  
+    return R;
+  
+    return N; 
+   
+    return D;
+  
+    return S;
+  
+    return DN;
+  
+    return UP;
+
+    return LC;    
+    
+}
+
+
+//#if INFO_DISPLAY
+String shiftNames[9] = {
+  "Invalid", 
+  "Park", 
+  "Reverse", 
+  "Neutral", 
+  "Drive", 
+  "Sport", 
+  "Upshift", 
+  "Downshift", 
+  "Launch Control"
+  };
+String gearNames[13] = {
+  "None", 
+  "Park", 
+  "Reverse", 
+  "Neutral", 
+  "1st", 
+  "2nd", 
+  "3rd", 
+  "4th", 
+  "5th", 
+  "6th", 
+  "7th", 
+  "8th"
+  };
+
+void loop() { 
+//  delay(10);
+}
