@@ -1,23 +1,15 @@
-# F11 8HP45 / EGS CAN findings
+# F11 8HP / DDE CAN notes (Fred → Damien)
 
-Source car: BMW F11 520d (VIN from notes; DDE PN 8513250). Captures: FlexRay MITM + PT-CAN + PT-CAN2, 2026-10-30.
+Drop into https://github.com/damienmaguire/8HP-TCU/tree/main/CAN (or merge alongside what is already there).
 
-## Files
+**Car:** BMW F11 520d, DDE EDC17C50 + ZF 8HP. Captures are Damien's own. Times Europe/Dublin.
 
 | File | Contents |
 |---|---|
-| `egs_8hp_map.md` | What the EGS sends and can listen to, immobiliser handshake overview, confidence levels |
-| `egs_8hp_ids.csv` | ID / bus / period / signals table |
-| `f11_ptcan2_egs_dde.dbc` | PT-CAN2 DBC: DDE TX + EGS `0x1AF` / `0x3FD` |
-| `egs_dde_immo_handshake.md` | Full immobiliser handshake structure (added when analysis finishes) |
-| `immo_handshake_frames.csv` | Extracted challenge/response frames |
+| `egs_8hp_map.md` | EGS topology, TX IDs, gear/turbine/output signals, EWS burst pointer, what is not EGS. |
+| `egs_8hp_ids.csv` | One row per ID: buses, period, E2E K, validated signals, confidence. |
+| `egs_dde_immo_handshake.md` | Full immobiliser (ISN/EWS) handshake write-up: ISO-TP structure, pairs, entropy, public research, data-collection plan, EV-conversion options. Evidence vs hypothesis marked. |
+| `immo_handshake_frames.csv` | Every multi-frame handshake CAN frame from the three ptcan1 logs (timestamps, raw hex, reassembled message, opcodes). |
+| `f11_ptcan2_egs_dde.dbc` | Minimal PT-CAN2 DBC: confirmed DDE messages + EGS 0x1AF / 0x3FD. Loads in cantools 45.x with `strict=True`. |
 
-## Conventions
-
-- Bus 2 = PT-CAN2, bus 3 = PT-CAN (SavvyCAN numbering from our captures).
-- E2E: CRC8 poly `0x1D`, init 0, xorout 0, XOR a per-message key K; counter in the low nibble of byte 1 (0..14).
-- Confidence is marked in each file. Speculative items are labelled candidate or left out.
-
-## Immobiliser note
-
-At every ignition-on the EGS does a random challenge/response with the DDE on PT-CAN2 (`0x598` / `0x592`). Replay is unlikely to work. The handshake write-up covers structure and what further data would be needed to reverse the algorithm.
+Confidence words in the docs: **confirmed / high / medium / low / candidate / undecoded / hint**. Pure speculation is left out.
