@@ -1,0 +1,36 @@
+log,timestamp_s,bus,can_id,isotp_addr_ext,pci_byte,isotp_role,isotp_len_bytes,leg,sender,receiver,direction,raw_payload_hex,reassembled_msg_hex,opcode,varying_bytes_hex
+ignonoff,4.3350,3,0x592,0x80,0x10,FF,17,PT-CAN,DDE,CAS/FEM,challenge,80 10 11 10 60 53 62 4e,,,
+ignonoff,4.3540,3,0x592,0x80,0x21,CF,,PT-CAN,DDE,CAS/FEM,challenge,80 21 a7 03 7d 6c 25 7e,,,
+ignonoff,4.3560,3,0x592,0x80,0x22,CF,,PT-CAN,DDE,CAS/FEM,challenge,80 22 56 62 87 17 34 9e,10 60 53 62 4e a7 03 7d 6c 25 7e 56 62 87 17 34 9e,10,60 53 62 4e a7 03 7d 6c 25 7e 56 62 87 17 34 9e
+ignonoff,4.3570,3,0x5C0,0x82,0x10,FF,7,PT-CAN,CAS/FEM,DDE,response,82 10 07 21 76 df 83 0b,,,
+ignonoff,4.3570,3,0x5C0,0x82,0x21,CF,,PT-CAN,CAS/FEM,DDE,response,82 21 77 28 00 00 00 00,21 76 df 83 0b 77 28,21,76 df 83 0b 77 28
+ignonoff,4.4960,2,0x598,0x82,0x10,FF,17,PT-CAN2,EGS,DDE,challenge,82 10 11 10 94 e4 11 3b,,,
+ignonoff,4.5150,2,0x598,0x82,0x21,CF,,PT-CAN2,EGS,DDE,challenge,82 21 4e 7f ec 60 1d 4f,,,
+ignonoff,4.5160,2,0x598,0x82,0x22,CF,,PT-CAN2,EGS,DDE,challenge,82 22 68 07 83 99 41 3c,10 94 e4 11 3b 4e 7f ec 60 1d 4f 68 07 83 99 41 3c,10,94 e4 11 3b 4e 7f ec 60 1d 4f 68 07 83 99 41 3c
+ignonoff,4.5340,2,0x592,0x85,0x10,FF,7,PT-CAN2,DDE,EGS,response,85 10 07 21 6e 9d 1d 92,,,
+ignonoff,4.5350,2,0x592,0x85,0x21,CF,,PT-CAN2,DDE,EGS,response,85 21 50 7d 00 00 00 00,21 6e 9d 1d 92 50 7d,21,6e 9d 1d 92 50 7d
+ignonoff,34.4410,3,0x592,0x80,0x10,FF,17,PT-CAN,DDE,CAS/FEM,challenge,80 10 11 11 1f 8c 91 2a,,,
+ignonoff,34.4430,3,0x592,0x80,0x21,CF,,PT-CAN,DDE,CAS/FEM,challenge,80 21 ab ea 4b a8 c1 1b,,,
+ignonoff,34.4610,3,0x592,0x80,0x22,CF,,PT-CAN,DDE,CAS/FEM,challenge,80 22 83 1c ed a8 b2 51,11 1f 8c 91 2a ab ea 4b a8 c1 1b 83 1c ed a8 b2 51,11,1f 8c 91 2a ab ea 4b a8 c1 1b 83 1c ed a8 b2 51
+ignonoff,34.4620,3,0x5C0,0x82,0x10,FF,7,PT-CAN,CAS/FEM,DDE,response,82 10 07 21 d6 75 d9 9d,,,
+ignonoff,34.4630,3,0x5C0,0x82,0x21,CF,,PT-CAN,CAS/FEM,DDE,response,82 21 2f ba 00 00 00 00,21 d6 75 d9 9d 2f ba,21,d6 75 d9 9d 2f ba
+3krev,4.6120,3,0x592,0x80,0x10,FF,17,PT-CAN,DDE,CAS/FEM,challenge,80 10 11 10 3a 4b 88 8d,,,
+3krev,4.6140,3,0x592,0x80,0x21,CF,,PT-CAN,DDE,CAS/FEM,challenge,80 21 02 61 d0 d2 67 87,,,
+3krev,4.6310,3,0x592,0x80,0x22,CF,,PT-CAN,DDE,CAS/FEM,challenge,80 22 cb 6a 48 6c cb 87,10 3a 4b 88 8d 02 61 d0 d2 67 87 cb 6a 48 6c cb 87,10,3a 4b 88 8d 02 61 d0 d2 67 87 cb 6a 48 6c cb 87
+3krev,4.6330,3,0x5C0,0x82,0x10,FF,7,PT-CAN,CAS/FEM,DDE,response,82 10 07 21 e0 f7 8f 28,,,
+3krev,4.6510,3,0x5C0,0x82,0x21,CF,,PT-CAN,CAS/FEM,DDE,response,82 21 1f 4e 00 00 00 00,21 e0 f7 8f 28 1f 4e,21,e0 f7 8f 28 1f 4e
+3krev,4.7540,2,0x598,0x82,0x10,FF,17,PT-CAN2,EGS,DDE,challenge,82 10 11 10 c9 87 9a cc,,,
+3krev,4.7710,2,0x598,0x82,0x21,CF,,PT-CAN2,EGS,DDE,challenge,82 21 91 36 ae fb 26 8b,,,
+3krev,4.7730,2,0x598,0x82,0x22,CF,,PT-CAN2,EGS,DDE,challenge,82 22 02 f0 29 ce 61 01,10 c9 87 9a cc 91 36 ae fb 26 8b 02 f0 29 ce 61 01,10,c9 87 9a cc 91 36 ae fb 26 8b 02 f0 29 ce 61 01
+3krev,4.7740,2,0x592,0x85,0x10,FF,7,PT-CAN2,DDE,EGS,response,85 10 07 21 9c 32 1d ef,,,
+3krev,4.7930,2,0x592,0x85,0x21,CF,,PT-CAN2,DDE,EGS,response,85 21 59 bb 00 00 00 00,21 9c 32 1d ef 59 bb,21,9c 32 1d ef 59 bb
+r10md10m,7.3810,3,0x592,0x80,0x10,FF,17,PT-CAN,DDE,CAS/FEM,challenge,80 10 11 10 75 11 41 aa,,,
+r10md10m,7.3830,3,0x592,0x80,0x21,CF,,PT-CAN,DDE,CAS/FEM,challenge,80 21 61 fb ef e3 9d 21,,,
+r10md10m,7.4010,3,0x592,0x80,0x22,CF,,PT-CAN,DDE,CAS/FEM,challenge,80 22 64 c1 a9 c1 58 c4,10 75 11 41 aa 61 fb ef e3 9d 21 64 c1 a9 c1 58 c4,10,75 11 41 aa 61 fb ef e3 9d 21 64 c1 a9 c1 58 c4
+r10md10m,7.4030,3,0x5C0,0x82,0x10,FF,7,PT-CAN,CAS/FEM,DDE,response,82 10 07 21 c7 d5 80 fc,,,
+r10md10m,7.4210,3,0x5C0,0x82,0x21,CF,,PT-CAN,CAS/FEM,DDE,response,82 21 ba c3 00 00 00 00,21 c7 d5 80 fc ba c3,21,c7 d5 80 fc ba c3
+r10md10m,7.5210,2,0x598,0x82,0x10,FF,17,PT-CAN2,EGS,DDE,challenge,82 10 11 10 31 a3 83 4d,,,
+r10md10m,7.5230,2,0x598,0x82,0x21,CF,,PT-CAN2,EGS,DDE,challenge,82 21 f0 fd 73 fa f3 4b,,,
+r10md10m,7.5410,2,0x598,0x82,0x22,CF,,PT-CAN2,EGS,DDE,challenge,82 22 09 f8 40 80 10 c0,10 31 a3 83 4d f0 fd 73 fa f3 4b 09 f8 40 80 10 c0,10,31 a3 83 4d f0 fd 73 fa f3 4b 09 f8 40 80 10 c0
+r10md10m,7.5410,2,0x592,0x85,0x10,FF,7,PT-CAN2,DDE,EGS,response,85 10 07 21 e4 04 1e ee,,,
+r10md10m,7.5440,2,0x592,0x85,0x21,CF,,PT-CAN2,DDE,EGS,response,85 21 f8 2b 00 00 00 00,21 e4 04 1e ee f8 2b,21,e4 04 1e ee f8 2b

@@ -1,0 +1,176 @@
+VERSION ""
+
+NS_ :
+	CM_
+	BA_DEF_
+	BA_
+	VAL_
+	BA_DEF_DEF_
+
+BS_:
+
+BU_: DDE EGS Vector__XXX
+
+BO_ 165 DDE_0A5_TorqueRpm: 8 DDE
+ SG_ DDE_0A5_CRC : 0|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ DDE_0A5_Counter : 8|4@1+ (1,0) [0|15] "" Vector__XXX
+ SG_ DDE_0A5_CounterHiNibble : 12|4@1+ (1,0) [0|15] "" Vector__XXX
+ SG_ DDE_0A5_EngineTorque1 : 16|12@1+ (0.5,-1023.5) [-1023.5|1024] "Nm" Vector__XXX
+ SG_ DDE_0A5_EngineTorque2 : 28|12@1+ (0.5,-1023.5) [-1023.5|1024] "Nm" Vector__XXX
+ SG_ DDE_0A5_EngineSpeed : 40|16@1+ (0.25,0) [0|16383.75] "rpm" Vector__XXX
+ SG_ DDE_0A5_Byte7 : 56|8@1+ (1,0) [0|255] "" Vector__XXX
+
+BO_ 217 DDE_0D9_Pedal: 8 DDE
+ SG_ DDE_0D9_CRC : 0|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ DDE_0D9_Counter : 8|4@1+ (1,0) [0|15] "" Vector__XXX
+ SG_ DDE_0D9_CounterHiNibble : 12|4@1+ (1,0) [0|15] "" Vector__XXX
+ SG_ DDE_0D9_AccelPedal : 16|12@1+ (0.025,0) [0|102.375] "%" Vector__XXX
+ SG_ DDE_0D9_AccelPedal2 : 32|12@1+ (0.025,0) [0|102.375] "%" Vector__XXX
+ SG_ DDE_0D9_Raw_d5_d7 : 48|16@1+ (1,0) [0|65535] "" Vector__XXX
+
+BO_ 143 DDE_08F_Unknown: 8 DDE
+ SG_ DDE_08F_CRC : 0|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ DDE_08F_Counter : 8|4@1+ (1,0) [0|15] "" Vector__XXX
+ SG_ DDE_08F_CounterHiNibble : 12|4@1+ (1,0) [0|15] "" Vector__XXX
+ SG_ DDE_08F_Raw_d2_d6 : 16|40@1+ (1,0) [0|1099511627775] "" Vector__XXX
+ SG_ DDE_08F_StateByte_d7 : 56|8@1+ (1,0) [0|255] "" Vector__XXX
+
+BO_ 325 DDE_145_Unknown: 8 DDE
+ SG_ DDE_145_CRC : 0|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ DDE_145_Counter : 8|4@1+ (1,0) [0|15] "" Vector__XXX
+ SG_ DDE_145_CounterHiNibble : 12|4@1+ (1,0) [0|15] "" Vector__XXX
+ SG_ DDE_145_Raw_d2_d7 : 16|48@1+ (1,0) [0|281474976710655] "" Vector__XXX
+
+BO_ 1017 DDE_3F9_TempGear: 8 DDE
+ SG_ DDE_3F9_CRC : 0|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ DDE_3F9_Counter : 8|4@1+ (1,0) [0|15] "" Vector__XXX
+ SG_ DDE_3F9_CounterHiNibble : 12|4@1+ (1,0) [0|15] "" Vector__XXX
+ SG_ DDE_3F9_Raw_d2 : 16|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ DDE_3F9_Raw_d3 : 24|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ DDE_3F9_CoolantTemp : 32|8@1+ (1,-48) [-48|207] "degC" Vector__XXX
+ SG_ DDE_3F9_Temp2_Candidate : 40|8@1+ (1,-48) [-48|207] "degC" Vector__XXX
+ SG_ DDE_3F9_GearCode : 48|4@1+ (1,0) [0|15] "" Vector__XXX
+ SG_ DDE_3F9_EngineStateNibble : 52|4@1+ (1,0) [0|15] "" Vector__XXX
+ SG_ DDE_3F9_Byte7 : 56|8@1+ (1,0) [0|255] "" Vector__XXX
+
+BO_ 442 DDE_1BA_Unknown: 8 DDE
+ SG_ DDE_1BA_Raw_d0_d2 : 0|24@1+ (1,0) [0|16777215] "" Vector__XXX
+ SG_ DDE_1BA_Raw_d3_d4 : 24|16@1+ (1,0) [0|65535] "" Vector__XXX
+ SG_ DDE_1BA_Raw_d5_d7 : 40|24@1+ (1,0) [0|16777215] "" Vector__XXX
+
+BO_ 829 DDE_33D_Const: 4 DDE
+ SG_ DDE_33D_Raw : 0|32@1+ (1,0) [0|4294967295] "" Vector__XXX
+
+BO_ 1298 DDE_512_NM: 8 DDE
+ SG_ DDE_512_Raw_d0_d6 : 0|56@1+ (1,0) [0|72057594037927935] "" Vector__XXX
+ SG_ DDE_512_NodeAddress : 56|8@1+ (1,0) [0|255] "" Vector__XXX
+
+BO_ 311 DDE_137_Unknown: 2 DDE
+ SG_ DDE_137_Raw_d0 : 0|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ DDE_137_Raw_d1 : 8|8@1+ (1,0) [0|255] "" Vector__XXX
+
+BO_ 1426 DDE_592_ServiceChannel: 8 DDE
+ SG_ DDE_592_Byte0 : 0|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ DDE_592_Payload : 8|56@1+ (1,0) [0|72057594037927935] "" Vector__XXX
+
+BO_ 431 EGS_1AF_Speeds: 8 EGS
+ SG_ EGS_1AF_CRC : 0|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ EGS_1AF_Counter : 8|4@1+ (1,0) [0|15] "" Vector__XXX
+ SG_ EGS_1AF_Raw_d1_hi : 12|4@1+ (1,0) [0|15] "" Vector__XXX
+ SG_ EGS_1AF_Raw_d2 : 16|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ EGS_1AF_TurbineSpeed : 24|16@1+ (1,-2000) [-2000|63535] "rpm" Vector__XXX
+ SG_ EGS_1AF_OutputSpeed : 40|16@1+ (1,-2000) [-2000|63535] "raw" Vector__XXX
+ SG_ EGS_1AF_GearByte_d7 : 56|8@1+ (1,0) [0|255] "" Vector__XXX
+
+BO_ 1021 EGS_3FD_GearDisplay: 5 EGS
+ SG_ EGS_3FD_CRC : 0|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ EGS_3FD_Counter : 8|4@1+ (1,0) [0|15] "" Vector__XXX
+ SG_ EGS_3FD_CounterHiNibble : 12|4@1+ (1,0) [0|15] "" Vector__XXX
+ SG_ EGS_3FD_GearDisplay : 16|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ EGS_3FD_Raw_d3_d4 : 24|16@1+ (1,0) [0|65535] "" Vector__XXX
+
+CM_ "BMW F11 520d PT-CAN2 (logged as bus 2), minimal: confirmed DDE messages plus EGS 0x1AF and 0x3FD. Built by Fred 2026-10-30 from captures ptcan1. 0x397, 0x3B3 and 0x3FB are also mirrored on PT-CAN2 with payloads identical to PT-CAN (see f11_ptcan_dde.dbc). PT-CAN2-only IDs 0x0A0/0x0A6/0x0A7/0x0B0/0x0F8/0x2B1 are omitted: owner (DDE vs EGS) not proven. Byte d0 = first CAN data byte.";
+CM_ SG_ 165 DDE_0A5_CRC "E2E CRC8 poly 0x1D init 0x00 xorout 0x00 over d1..d7, then XOR K=0x6A. Confirmed (see f11_dde_e2e.md).";
+CM_ SG_ 165 DDE_0A5_Counter "Alive counter, low nibble of d1, 0..14 (15 never used), +1 per frame, starts at 1 each wake. Confirmed.";
+CM_ SG_ 165 DDE_0A5_CounterHiNibble "High nibble of d1. Fixed 0xF in the F11 car; 0xD on the F10 bench DDE. It is inside the CRC span, so reproduce it exactly.";
+CM_ SG_ 165 DDE_0A5_EngineTorque1 "bits16..27. Equal to FlexRay 0x28 c1 torque field (r 0.999, slope 1.0). Scale/offset from a public hint; behaviour plausible (~232 at crank, 25..50 at idle, -35 engine off) but there is no independent torque label. Confidence: high (field), hint (unit).";
+CM_ SG_ 165 DDE_0A5_EngineTorque2 "bits28..39, same format as torque 1. Role unknown. Confidence: medium.";
+CM_ SG_ 165 DDE_0A5_EngineSpeed "d5..d6 LE /4. Confirmed: equal to FlexRay 0x28 c1 rpm (r 1.000), which matches OBD PID 0x0C (r 0.9998, runs 1 and 2).";
+CM_ SG_ 165 DDE_0A5_Byte7 "Constant 0xF1 in all logs; inside the CRC span.";
+CM_ BO_ 165 "DDE-generated (confirmed: F10 DDE-alone bench + F11 car). Same layout and K as DDE FlexRay 0x28 c1 group 1 (payload bytes 0..7), but its counters run independently of FlexRay. On F11 PT-CAN2 (bus 2) at 10 ms; on PT-CAN at 20 ms. E2E K=0x6A, span d1..d7.";
+CM_ SG_ 217 DDE_0D9_CRC "E2E CRC8 poly 0x1D init 0x00 xorout 0x00 over d1..d7, then XOR K=0xD7. Confirmed (see f11_dde_e2e.md).";
+CM_ SG_ 217 DDE_0D9_Counter "Alive counter, low nibble of d1, 0..14 (15 never used), +1 per frame, starts at 1 each wake. Confirmed.";
+CM_ SG_ 217 DDE_0D9_CounterHiNibble "High nibble of d1. Fixed 0x1 (0x3 for ~60..80 ms at crank). It is inside the CRC span, so reproduce it exactly.";
+CM_ SG_ 217 DDE_0D9_AccelPedal "bits16..27 /40. Equal to FlexRay 0x28 c1 pedal field (r 0.9998, slope 1.001). Scale from a public hint; 0 at rest, rises on throttle blips. No OBD pedal PID was logged. Confidence: high (field), hint (scale).";
+CM_ SG_ 217 DDE_0D9_AccelPedal2 "bits32..43, second pedal/throttle-like value (r 0.989). Confidence: medium.";
+CM_ SG_ 217 DDE_0D9_Raw_d5_d7 "Not decoded (ign-on constant e0 7f / c0 in d7).";
+CM_ BO_ 217 "DDE-generated (confirmed: bench + car). Same layout and K as FlexRay 0x28 c1 group 2 (payload bytes 8..15). On F11 PT-CAN2 (bus 2) at 10 ms; on PT-CAN at 20 ms. E2E K=0xD7, span d1..d7.";
+CM_ SG_ 143 DDE_08F_CRC "E2E CRC8 poly 0x1D init 0x00 xorout 0x00 over d1..d7, then XOR K=0x3C. Confirmed (see f11_dde_e2e.md).";
+CM_ SG_ 143 DDE_08F_Counter "Alive counter, low nibble of d1, 0..14 (15 never used), +1 per frame, starts at 1 each wake. Confirmed.";
+CM_ SG_ 143 DDE_08F_CounterHiNibble "High nibble of d1. Fixed 0x1 (0x3 briefly at crank). It is inside the CRC span, so reproduce it exactly.";
+CM_ SG_ 143 DDE_08F_Raw_d2_d6 "Not decoded. LE pairs sit near 0x7D00 / 0x7CF9 in P and move in R/D.";
+CM_ SG_ 143 DDE_08F_StateByte_d7 "Quasi-static enum (0x80, 0x10, 0xC0 seen). Meaning unknown.";
+CM_ BO_ 143 "DDE-generated (confirmed: bench + car). Same layout and K as FlexRay 0x29 c3 group 1. On F11 PT-CAN2 at 10 ms; PT-CAN ~30 ms. E2E K=0x3C, span d1..d7. Payload not decoded: it changes only with R/D engaged (meaning unknown).";
+CM_ SG_ 325 DDE_145_CRC "E2E CRC8 poly 0x1D init 0x00 xorout 0x00 over d1..d7, then XOR K=0x0C. Confirmed (see f11_dde_e2e.md).";
+CM_ SG_ 325 DDE_145_Counter "Alive counter, low nibble of d1, 0..14 (15 never used), +1 per frame, starts at 1 each wake. Confirmed.";
+CM_ SG_ 325 DDE_145_CounterHiNibble "High nibble of d1. Fixed 0x1 (0x3 briefly at crank). It is inside the CRC span, so reproduce it exactly.";
+CM_ SG_ 325 DDE_145_Raw_d2_d7 "Not decoded. FF FF then LE pairs 00 7D / F9 7C (changes engine off vs running).";
+CM_ BO_ 325 "DDE-generated by layout: same layout and K as DDE FlexRay 0x3D c3 group 1, counters independent of FlexRay. PT-CAN2 only, 10 ms. NOT seen in the F10 bench log. E2E K=0x0C, span d1..d7. Payload not decoded.";
+CM_ SG_ 1017 DDE_3F9_CRC "E2E CRC8 poly 0x1D init 0x00 xorout 0x00 over d1..d7, then XOR K=0x04. Confirmed (see f11_dde_e2e.md).";
+CM_ SG_ 1017 DDE_3F9_Counter "Alive counter, low nibble of d1, 0..14 (15 never used), +1 per frame, starts at 1 each wake. Confirmed.";
+CM_ SG_ 1017 DDE_3F9_CounterHiNibble "High nibble of d1. Fixed 0x1 (0x3 briefly at crank). Counter steps per transmission, not per time. It is inside the CRC span, so reproduce it exactly.";
+CM_ SG_ 1017 DDE_3F9_Raw_d2 "Not decoded (0x80 / 0x82 seen).";
+CM_ SG_ 1017 DDE_3F9_Raw_d3 "Not decoded.";
+CM_ SG_ 1017 DDE_3F9_CoolantTemp "d4 - 48. Confirmed: equals FlexRay 0xE6 payload byte 4, which matches OBD PID 0x05 (r 0.997, 89.5 % exact, run 1).";
+CM_ SG_ 1017 DDE_3F9_Temp2_Candidate "CANDIDATE. d5 - 48. A public hint calls it oil temperature. OBD shows it is NOT coolant (slower, lags). No independent label.";
+CM_ SG_ 1017 DDE_3F9_GearCode "Low nibble of d6: 3 = P, 2 = R, 5 = D, 1 = park requested while in D. Confirmed against EGS 0x3FD gear display (drive log). N was not captured.";
+CM_ SG_ 1017 DDE_3F9_EngineStateNibble "High nibble of d6: 2 = ign-on before crank, 1 = crank / after stop, 0 = running. Confidence: medium (ts run 4 and ptcan1 agree; inference from timing).";
+CM_ SG_ 1017 DDE_3F9_Byte7 "Constant 0x47 in the F11 car.";
+CM_ BO_ 1017 "DDE-generated (confirmed: bench + car). Same PDU as FlexRay 0xE6 L9 (same K). ~1 s plus extra frames on change. On both PT-CAN and PT-CAN2 with identical payloads. E2E K=0x04, span d1..d7.";
+CM_ SG_ 442 DDE_1BA_Raw_d0_d2 "Not decoded (00 00 00 at ign-on, vary when running).";
+CM_ SG_ 442 DDE_1BA_Raw_d3_d4 "Not decoded LE16.";
+CM_ SG_ 442 DDE_1BA_Raw_d5_d7 "Mostly constant F3 5A F0.";
+CM_ BO_ 442 "DDE: sent by the F10 DDE alone on the bench, and in the F11 car its payload is identical to DDE FlexRay 0xE8 L9. F11 car: PT-CAN2 only, irregular (~60..200 ms, faster while running). No CRC/counter. Not decoded: d3..d4 LE16 varies continuously after ~5 s (ign-on value 0x2710).";
+CM_ SG_ 829 DDE_33D_Raw "Constant after the first frame.";
+CM_ BO_ 829 "DDE by content: identical to DDE FlexRay 0xE8 L5 (86 78 FE FE; first frame 78 78 00 F8). PT-CAN2 only, ~5 s. NOT seen in the F10 bench log.";
+CM_ SG_ 1298 DDE_512_Raw_d0_d6 "Constant 00 00 00 00 FF FF 00.";
+CM_ SG_ 1298 DDE_512_NodeAddress "0x12 = DDE.";
+CM_ BO_ 1298 "BMW network-management frame, node 0x12 = DDE. Confirmed (bench + car, both PT-CAN and PT-CAN2). Payload 00 00 00 00 FF FF 00 12 constant in all logs. Same content as the DDE share of FlexRay 0x5C.";
+CM_ SG_ 311 DDE_137_Raw_d0 "Not decoded.";
+CM_ SG_ 311 DDE_137_Raw_d1 "Not decoded; 00 engine off, non-zero while running.";
+CM_ BO_ 311 "Sent by the F10 DDE alone on the bench (10 ms). F11 car: PT-CAN2 only, 10 ms. Not decoded: d0 FD (FD/FC seen), d1 00 with engine off, other values (high nibble 0xC) while running.";
+CM_ SG_ 1426 DDE_592_Byte0 "Address-like prefix (0x85 on PT-CAN2). Meaning not confirmed.";
+CM_ SG_ 1426 DDE_592_Payload "Raw. Not decoded.";
+CM_ BO_ 1426 "DDE service channel. On PT-CAN2 it appears only once per ignition-on: 2 frames 85 10 07 | 21 + 6 random bytes, sent 0..18 ms after the EGS 0x598 3-frame message 82 10 11 | 10 + 16 random bytes. Random every wake: EGS IMMOBILISER (ISN/EWS) HANDSHAKE CANDIDATE; meaning, key and algorithm unknown. Public sources say the F-series EGS shares an ISN with DME/DDE and CAS/FEM (hint only).";
+CM_ SG_ 431 EGS_1AF_CRC "E2E CRC8 poly 0x1D init 0x00 xorout 0x00 over d1..d7, then XOR K=0x43. Confirmed (see f11_dde_e2e.md).";
+CM_ SG_ 431 EGS_1AF_Counter "Alive counter, low nibble of d1, 0..14.";
+CM_ SG_ 431 EGS_1AF_Raw_d1_hi "High nibble of d1 varies (0, 8, C, F seen) - data, not fixed. Not decoded.";
+CM_ SG_ 431 EGS_1AF_Raw_d2 "FF in P, 08 in R, 0A in D (modal). Not decoded beyond that.";
+CM_ SG_ 431 EGS_1AF_TurbineSpeed "d3..d4 LE - 2000. Equal to DDE FlexRay 0x26 field (r 1.000). Turbine meaning is inferred from behaviour (~engine rpm in P, ~150 in R / ~350 in D at creep with brake, lags rpm ~60 ms). Confidence: medium-high.";
+CM_ SG_ 431 EGS_1AF_OutputSpeed "d5..d6 LE - 2000. Output-shaft-like: r 0.998 vs vehicle speed 0x1A1, ~24 raw per km/h. Unit not established. Confidence: medium.";
+CM_ SG_ 431 EGS_1AF_GearByte_d7 "Modal 01 in P, 06 in R, 0B in D; other values (00, 02, 09) seen in transitions. Not fully decoded.";
+CM_ BO_ 431 "EGS (8HP). PT-CAN2 only, 20 ms. Not in the DDE bench log; the DDE re-packs its turbine field onto FlexRay 0x26 ~8 ms later. E2E K=0x43, span d1..d7.";
+CM_ SG_ 1021 EGS_3FD_CRC "E2E CRC8 poly 0x1D init 0x00 xorout 0x00 over d1..d4, then XOR K=0x70. Confirmed (see f11_dde_e2e.md).";
+CM_ SG_ 1021 EGS_3FD_Counter "Alive counter, low nibble of d1, 0..14.";
+CM_ SG_ 1021 EGS_3FD_CounterHiNibble "Fixed 0x0 in the car.";
+CM_ SG_ 1021 EGS_3FD_GearDisplay "d2: 0x20 P, 0x40 R, 0x60 N, 0x80 D; 0x00 before/after EGS activity. Confirmed (drive log, lever and DDE gear codes agree).";
+CM_ SG_ 1021 EGS_3FD_Raw_d3_d4 "Constant FC FF.";
+CM_ BO_ 1021 "EGS (8HP). On both PT-CAN and PT-CAN2 with identical payloads, 100 ms. Public GWS fault texts name the EGS as sender on PT-CAN and PT-CAN2 (hint, consistent). E2E K=0x70, span d1..d4.";
+
+BA_DEF_ BO_ "GenMsgCycleTime" INT 0 65535;
+BA_DEF_DEF_ "GenMsgCycleTime" 0;
+BA_ "GenMsgCycleTime" BO_ 165 10;
+BA_ "GenMsgCycleTime" BO_ 217 10;
+BA_ "GenMsgCycleTime" BO_ 143 10;
+BA_ "GenMsgCycleTime" BO_ 325 10;
+BA_ "GenMsgCycleTime" BO_ 1017 1000;
+BA_ "GenMsgCycleTime" BO_ 442 100;
+BA_ "GenMsgCycleTime" BO_ 829 5000;
+BA_ "GenMsgCycleTime" BO_ 1298 640;
+BA_ "GenMsgCycleTime" BO_ 311 10;
+BA_ "GenMsgCycleTime" BO_ 1426 0;
+BA_ "GenMsgCycleTime" BO_ 431 20;
+BA_ "GenMsgCycleTime" BO_ 1021 100;
+
+VAL_ 1017 DDE_3F9_GearCode 1 "Park requested (in D)" 2 "R" 3 "P" 5 "D" ;
+VAL_ 1021 EGS_3FD_GearDisplay 0 "Inactive" 32 "P" 64 "R" 96 "N" 128 "D" ;
