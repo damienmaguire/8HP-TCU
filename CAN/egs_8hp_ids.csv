@@ -1,0 +1,35 @@
+id,direction,on_bus2_ptcan2,on_bus3_ptcan,period_ms,len,e2e,signals_validated,source_ecu,evidence,confidence
+0x1AF,EGS TX,yes,no,20,8,"K=0x43 span b1..b7 ctr d1 lo 0..14","d3..4-2000 = turbine rpm (r 1.000 vs DDE FR 0x26); d5..6-2000 = output-shaft speed (~24 raw per km/h, r 0.998 vs 0x1A1); d7 01/06/0B in P/R/D; d2 FF/08/0A P/R/D",EGS,"gear/turbine content; re-packed by DDE into FR 0x26; PT-CAN2 only",high
+0x3FD,EGS TX,yes (identical),yes (identical),100,5,"K=0x70 span b1..b4 ctr 0..14","d2 gear display 0x20 P / 0x40 R / 0x60 N / 0x80 D; 00 after EGS NM stop",EGS,"display tracks gear; public GWS DTC E09400/E09410 names EGS as sender on PT-CAN and PT-CAN2 (hint)",high
+0x39A,EGS TX,yes (identical),yes (identical),1000,6,none,"d3 gear code 3 P / 2 R / 5 D (same code as DDE 0x3F9 d6 and FR 0xE6 b7, 0x28 c3 b11); d4 e2/e0/e0",EGS (likely),"gear-dependent; absent from F10 DDE bench",medium
+0x518,EGS TX (NM),yes (identical),yes (identical),642,8,none,"NM frame, node byte d7=0x18; d4..5 44 2f -> b0 30",EGS,"BMW NM 0x500+addr; EGS diag addr 0x18 answers on 0x618",high
+0x598,EGS TX (service channel 0x580+0x18),yes,yes,1000 (KL15 only) + one burst,8,none,"'13 ff 01 18 ff..' 1 s while KL15 on; at KL15-on a PT-CAN2-only 3-frame burst '82 10 11 10 <16 random bytes>' answered by DDE 0x592 on PT-CAN2",EGS,"0x580+0x18 pattern; burst payload random every wake (see EWS section)",high (sender) / medium (meaning)
+0x618,EGS TX (diag response),no,yes,on request,8,none,UDS responses from addr 0x18,EGS,"only on bus 3; tester flow control 0x6F0 for 0x18 only on bus 3",high
+0x0A0,unknown (EGS TX candidate),yes,no,10,8,"K=0xCC span b1..b7 ctr","d2 10/13/FD P/R/D","EGS or other PT-CAN2 node","gear-dependent; bus-2-only; bench log was PT-CAN-side so its absence there is not proof",low
+0x0A6,unknown (EGS TX candidate),yes,no,10,8,"K=0xC5 span b1..b7 ctr",gear-dependent bytes,"EGS or other PT-CAN2 node","as 0x0A0",low
+0x0A7,unknown (EGS TX candidate),yes,no,10,7,"K=0x23 span b1..b6 ctr","d5 7D/7F/80 P/R/D","EGS or other PT-CAN2 node","as 0x0A0",low
+0x0B0,unknown (EGS TX candidate),yes,no,10,8,"K=0x65 span b1..b7 ctr","d4 3F/DF/FF, d5 80/82/82 P/R/D; b3..4 vs turbine r -0.91","EGS or other PT-CAN2 node","as 0x0A0",low
+0x0F8,unknown,yes,no,20,3,none,"value = rpm x1.6","DDE or EGS","bus-2-only",low
+0x2B1,unknown,yes,no,100,3,none,not decoded,unknown PT-CAN2 node,"bus-2-only; not checked for gear dependence",low
+0x335,not EGS,yes,no,1000 (ign only),8,none,"fuel pump status (public DTC text: 'fuel pump status 0x335, transmitter EKP')",EKPS,"bus-2-only; EKPS NM 0x517 also bus-2-only",medium
+0x1B3,not EGS (FR->CAN gateway copy),no,yes,100,8,none,"torque-like (r 0.94); gear-dependent","FlexRay node (vehicle FR 0x61 L9, +9 ms)","100% content match to FR bus0 0x61",high
+0x0A5,EGS RX (available),yes (100 Hz),yes (50 Hz),10 / 20,8,"K=0x6A",rpm d5..6/4; torque bits16..27/2-1023.5,DDE,"DDE bench TX; public DTC 'torque crankshaft 1 0x0A5 from DME/DDE' (receiver DCT/EGS list)",high (source) / hint (consumed)
+0x0D9,EGS RX (available),yes (100 Hz),yes (50 Hz),10 / 20,8,"K=0xD7",pedal bits16..27/40,DDE,"DDE bench TX; DTC hint lists 0xD9 for other receivers",high (source) / hint (consumed)
+0x08F,EGS RX (available),yes (100 Hz),yes (~33 Hz),10 / 30,8,"K=0x3C",not decoded,DDE,DDE bench TX,medium
+0x145,EGS RX? ,yes,no,10,8,"K=0x0C",not decoded,"unknown (bus-2-only)","not in bench (bench was PT-CAN side)",low
+0x0DC,EGS RX? ,no,yes,20,6,"K=0x0F",not decoded,DDE,DDE bench TX,medium (source)
+0x3F9,EGS RX (available),yes,yes,1000,8,none,"d6 gear code (3/2/5) echoed by DDE; 'drive train 2 data' (DTC hint)",DDE,"DDE bench TX",high (source)
+0x397,EGS RX (hint),yes,yes,60,3,none,"'diagnosis OBD engine' (DTC hint CF1511 receiver EGS)",DDE,"DDE bench TX; public EGS DTC CF1511",high (source) / hint (consumed)
+0x12F,EGS RX (hint),yes (identical),yes (identical),100,8,"K=0xB1",terminal; d2 0x86 -> 0x8A at KL15 on,BDC/CAS/FEM,"KL15 edge 0.16 s before EGS 0x598 burst; GWS DTC lists 0x12F",high (source) / hint (consumed)
+0x1A1,EGS RX (available),yes (identical),yes (identical),20,5,"K=0x0F",speed d2..3/64,DSC/ICM (FR->CAN),"public DTC: vehicle speed 0x1A1 transmitter ICM",high (source)
+0x254,EGS RX (available),no,yes,20,8,,wheel speeds,DSC (FR->CAN),"only on PT-CAN",medium
+0x0EF,EGS RX (available),no,yes,20,8,"K=0xCA",brake torque sum/pressure,DSC (FR->CAN),"public DTC: actual braking torque sum 0xEF transmitter DSC",medium
+0x173,EGS RX (available),no,yes,100,8,"K=0x5E",brake status d7,DSC (FR->CAN),"only on PT-CAN",medium
+0x199/0x19A/0x19F/0x302,EGS RX (available),no,yes,20,6/6/6/7,,"long/lat accel, yaw, steering angle (public DTC names)",ICM (FR->CAN),"public DTC names; EGS DTCs name ICM group messages (CF18D1/CF18E1)",hint
+0x197,EGS RX (hint),yes (identical),yes (identical),30,4,"K=0x53 span b1..b3",lever position,GWS,"lever 100 ms before gear change; public EGS DTC CF17B1 'status gear selector switch 0x197 receiver EGS'",high
+0x297,EGS RX (hint),no,yes,200,7,,seat belt / seat occupancy,ACSM,"public EGS DTC CF2301",hint
+0x328,EGS RX (available),yes,yes,1000,6,,relative time,KOMBI,"",hint
+0x3A0,EGS RX (available),yes,yes,5000,8,,vehicle condition,BDC/FEM,"",hint
+0x2CA,EGS RX (available),yes,yes,1000,2,,ambient temp,KOMBI,"",hint
+0x592,DDE TX (service channel 0x580+0x12),one burst,yes,event,8,none,"PT-CAN: '80 10 11 10 <16 random>' at KL15 on, answered by CAS/FEM 0x5C0; PT-CAN2: '85 10 07 21 <6 random>' answers EGS 0x598 burst",DDE,"F10 DDE bench also sent 0x592; random every wake",high (sender) / medium (meaning)
+0x5C0,CAS/FEM TX (service channel 0x580+0x40),no,yes,event,8,none,"'82 10 07 21 <6 random>' reply to DDE 0x592 17-byte message",CAS/FEM (addr 0x40 assumed),"random every wake",medium
