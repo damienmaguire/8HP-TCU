@@ -397,7 +397,7 @@ agreed (Q5). Values little endian.
   open (Q5).
 * TX `CanStatId + 1` (same condition): bytes 0-1 minimum motor speed the
   TCU asks for (rpm, 0 = none: 700 rpm to leave P and for 2 s after, or
-  `PumpFaultRpm` with `PumpFaultAct = MotorSpeed`; the VCU should turn the
+  600 rpm (fixed) with `PumpFaultAct = MotorSpeed`; the VCU should turn the
   motor with the clutches open), byte 2 bit 0 waiting to leave P, bit 1
   gear-in waiting for a pressure source, bit 2 Auto tip override, byte 3
   LIN pump fault classes, bytes 4-5 channel 7 pressure (mbar).
@@ -678,7 +678,7 @@ Implemented:
   `CmdSource = Param`, or `GearInPumpMs = GearInMotRpm = 0` / `ParkRelRpm =
   0` to switch the waits off.
 * Pump fault reaction `PumpFaultAct` (Ian 11 Q9a): 0 = report (default),
-  1 = ask the VCU for `PumpFaultRpm` (600) in P/N with the clutches open,
+  1 = ask the VCU for 600 rpm (fixed) in P/N with the clutches open,
   2 = no new gear-in while the fault is there.
 
 Stubbed / not done yet:
@@ -736,7 +736,7 @@ parameters to set once the value is known:
 | Analog shifter | `ShAnaR`, `ShAnaN`, `ShAnaMin`, `ShAnaMax` | 1500 / 3000 / 200 / 6000 mV | shifter not chosen |
 | Manual mode limits | `ManMaxRpm`, `ManMinRpm` | 6000 / 1000 rpm | bench |
 | Spare outputs | `GpOut1Func`, `GpOut2Func`, `GpPwmFreq`, `GpPwmDuty`, `GpOutCurrent` | off, 200 Hz (not used), 0 %, 400 mA | use not decided; current [I] |
-| Aux pump LIN | `LinPumpEnable`, `LinPumpReq`, `LinPumpRpm`, `LinPumpHyst`, `LinTempMin/Max`, `LinColdMin`, `LinColdMs`, `LinPMax`, `LinPumpP`, `LinOffDelay`, `LinChecksum`, `LinSlotMs`, `LinBusFault`, `LinArmMs`, `LinSymMax`, `LinDelivRpm`, `LinRxCheck`, `ChgPlugSrc`, `ChgPlugSet` | off; Auto: on < 500 / off > 550 rpm, 0..125 degC (-15 degC for 5 s), < 20 bar, 800 ms; enhanced; 10 ms slot; 1.8 s; not-delivering check 1000 / 1500 ms below 100 rpm; replies checked; no charge plug | Ian `330E_LIN_OIL_PUMP.md` |
+| Aux pump LIN | `LinPumpEnable`, `LinPumpReq`, `LinPumpRpm`, `LinPumpP` | off; Auto; on below 500 rpm; 4 bar. Fixed in the code (`ConfigureLin`), no longer parameters: off above 550 rpm (50 rpm hysteresis), 0..125 degC (-15 degC for 5 s), < 20 bar, 800 ms off delay; enhanced checksum; 10 ms slot; 1.8 s bus fault; not-delivering check 1000 / 1500 ms below 100 rpm; replies checked; no charge plug input | Ian `330E_LIN_OIL_PUMP.md` |
 | Inverter torque CAN | `CanCmdId`, `CanStatId`, `CanTxEnable`, `TqInterv`, `TqRamp` | placeholder frames, TX off | Q5, Q11 |
 | Applied clutch pressure | `ClutchApplyP` | 16500 mbar (valve fully open) | bench |
 | Engage fast close | `EngageCloseGrad` (20-50 bar/s), `EngageSyncMs` (50-100 ms), `EngageTqZero` | 30 bar/s, 80 ms, 10 Nm | Ian QA2, bench |
@@ -748,7 +748,7 @@ parameters to set once the value is known:
 | Park engage limit | `ParkEngKmh`, `NabPerKmh`, `ParkEngNab` | 5 km/h, 25 rpm per km/h [I], 5 rpm | TIS, `N_ABBRTVPSEIN` [C] |
 | Park release footbrake | `ParkBrake`, `BrakeIn` | VcuCan (required), off | TIS; 2 = bench bypass, 3 = 12 V brake input (J1.46) |
 | Gear-in pressure source | `GearInMinP`, `GearInPumpMs`, `GearInMotRpm` | 8000 mbar, 1000 ms, 100 rpm | Ian 11 Q9d [I] |
-| Pump fault reaction | `PumpFaultAct`, `PumpFaultRpm` | report, 600 rpm | Ian 11 Q9a [I] |
+| Pump fault reaction | `PumpFaultAct` | report; the MotorSpeed request is fixed at 600 rpm | Ian 11 Q9a [I] |
 | Manual gear / tips | `ManualGear`, `TipOverride`, `Tip12Deb` | Selector, 0 (tips ignored in Auto), 30 ms | Damien |
 | CAN1 partner | `EcuType` | 0 = None/VCU | OEM ECUs later |
 | 0x0B0 torque frame (every row) | `F11TqTx` | off | Ian F11 diff, live log, F11_SAM_ADDSCOPE 3 |
@@ -944,7 +944,7 @@ Ian's [C]/[I]/[H].
 What is implemented:
 
 * 19200 baud, TCU master, 8-byte frames. Schedule 0x30, 0x32, 0x30, 0x33,
-  0x30, 0x34 on `LinSlotMs` slots (10 ms [I]), so 0x30 every 20 ms. PIDs
+  0x30, 0x34 on 10 ms slots [I], so 0x30 every 20 ms. PIDs
   F0 / 32 / 73 / B4 [C].
 * 0x30 [C]: b0 0xAA off / 0x55 run (0xCC / 0x33 unused); b1 flags (0x02
   clear errors for exactly one frame, at bus start and on `FaultClear`,
@@ -958,31 +958,30 @@ What is implemented:
   check) are decoded raw.
 * Receive checks as the OEM [C]: LIN checksum; 0x32 CRC-8 (2 bad in a row
   = fault); alive counter repeated twice or jumping by more than 2 = fault,
-  frame dropped; no valid 0x32 for `LinBusFault` (1.8 s) = bus fault. Fault
+  frame dropped; no valid 0x32 for 1.8 s = bus fault. Fault
   classes use the OEM `ctl_IEP_Status` masks (EB0 0x40/0x80 = permanent
   level-2 safety fault, 0x10/0x20 = pump comms fault).
 * Run rule (330e) [C values, I for how they combine]: input speed below
-  `LinPumpRpm` 500 rpm (hysteresis `LinPumpHyst` 50), sump `LinTempMin` ..
-  `LinTempMax` (0..125 degC), commanded line pressure below `LinPMax`
-  (20 bar); keeps running `LinOffDelay` (800 ms, `D_t_IEP_ShutdownDelay`
-  [I: use]) after the rule drops. `LinPumpP` (4 bar, `KF_PIEP_SYS`) is the
+  `LinPumpRpm` 500 rpm (hysteresis 50 rpm), sump 0..125 degC, commanded
+  line pressure below 20 bar; keeps running 800 ms
+  (`D_t_IEP_ShutdownDelay` [I: use]) after the rule drops. These fixed
+  values are named constants in `ConfigureLin` (stm32_tcu.cpp). `LinPumpP` (4 bar, `KF_PIEP_SYS`) is the
   pressure the OEM assumes from the pump; it is shown (`lpPress`) but not
   used by the line-pressure model yet.
 * `GearboxType = F11`: the bus stays off (the F11 8HP45 has no LIN pump
   [C]). `LinPumpEnable` stays 0 by default.
 * From Ian's section 11 (23 Nov 2026): 0xAA -> 0x55 directly, no settle
   phase [C]; status ignored for 1 s after the bus starts [I] and 400 ms
-  after a clear [C]; "not delivering" armed `LinArmMs` (1000 ms,
-  `KL_TVERZSYMIEP`) after the run command and set when the pump has
-  reported less than `LinDelivRpm` until `LinSymMax` (1500 ms,
-  `KL_TMAXSYMIEP`); on < 500 / off > 550 rpm, not above 20 bar, 0..125
+  after a clear [C]; "not delivering" armed 1000 ms
+  (`KL_TVERZSYMIEP`) after the run command and set when the pump has
+  reported less than 100 rpm until 1500 ms (`KL_TMAXSYMIEP`); on < 500 / off > 550 rpm, not above 20 bar, 0..125
   degC or down to -15 degC for 5 s at most; P does not switch it off;
-  charging plug in -> LIN asleep (`ChgPlugSrc` = Param + `ChgPlugSet`
-  for now; the input is TBD); no ECU limit on the pump voltage (it flags
+  charging plug in -> LIN asleep in the OEM (no plug input here, so the
+  plug always counts as out); no ECU limit on the pump voltage (it flags
   its own, EB1 bit 2), diagnosis blanked below `UvLimit` (7.4 V); alive
   counter low nibble only, starts at 0 at power-on, not reset when the
-  bus restarts [C/I]; the 0x30 never depends on the replies, and
-  `LinRxCheck = 0` stops the replies raising faults.
+  bus restarts [C/I]; the 0x30 never depends on the replies (the replies
+  are always checked for faults).
 * The document itself is not copied into the repository.
 
 Answered by Ian (closed), section 11: start-up (no settle), pump fault
@@ -999,7 +998,7 @@ Still open:
 
 1. **LIN channel / checksum.** Which SH725x LIN/SCI channel the OEM uses
    was not found, nor whether its hardware does the checksum; checksum
-   type is [H: enhanced] (`LinChecksum`, classic selectable).
+   type is [H: enhanced], now fixed in the code (`LIN_ENHANCED_CSUM`).
 2. **b4 / b5 scaling** (current 0.2 A/bit, voltage 0.1 V/bit) is from the
    A2L; check on the bench against a meter.
 3. **0x33 pump temperature scaling**: the OEM curve looks odd
@@ -1009,7 +1008,7 @@ Still open:
    and the meaning of EB0 bits 6/7 inside the pump.
 6. **Fault reaction** - answered (Q9a): the OEM raises the motor speed so
    the mechanical pump carries the oil supply. `PumpFaultAct` (default 0 =
-   report only; 1 = ask the VCU for `PumpFaultRpm`; 2 = no new gear-in).
+   report only; 1 = ask the VCU for 600 rpm; 2 = no new gear-in).
    The schedule always keeps running and `FaultClear` sends one clear
    frame. The motor speed request only goes out with `CanTxEnable`.
 7. **Gear-in waiting for the pump** - answered (Q9d): minimum pressure, no
@@ -1018,8 +1017,7 @@ Still open:
 8. Warm-up (b1 0x08: below 16 degC, ends at 60 degC, < 8 km/h, <= 8 bar,
    pump SW >= 0x0705) and limp (0x04) requests are not generated yet.
 9. LIN hardware: TJA1021 on UART4 (SLP_N PD11); untested.
-10. Charging plug input: pin TBD (`ChgPlugSrc = Input` reads "not
-    plugged" until it exists).
+10. Charging plug input: none (the plug always counts as out).
 11. Air-ingestion guard (30 s on a gradient / 500 s at speed) and the
     car-wash cut-off are not done.
 

@@ -28,7 +28,7 @@
  *
  * Bus [C]: 19200 baud, TCU is master, all frames 8 bytes. Schedule
  * 0x30, 0x32, 0x30, 0x33, 0x30, 0x34, repeating, one slot each (slot
- * time 10 ms [I], parameter LinSlotMs), so 0x30 goes every 20 ms.
+ * time 10 ms [I], fixed in ConfigureLin), so 0x30 goes every 20 ms.
  * PIDs F0 / 32 / 73 / B4. Checksum: not found in the firmware [H:
  * enhanced, LIN 2.x default]; classic selectable.
  *
@@ -55,7 +55,7 @@
  * Receive checks as in the OEM [C]: PID must match; a 0x32 with a bad
  * CRC-8 is dropped and two in a row set the CRC fault; an alive counter
  * repeated twice in a row, or jumping by more than 2, sets the alive
- * fault and the frame is dropped; no valid 0x32 for 1.8 s (LinBusFault)
+ * fault and the frame is dropped; no valid 0x32 for 1.8 s (busFaultMs)
  * is a bus fault. After a clear-errors frame the diagnosis is ignored for
  * 400 ms.
  *
@@ -104,7 +104,7 @@ int FindData(const uint8_t *buf, int n, uint8_t pid);
 #define LINPUMP_ST_LINCHK (1u << 3)   // LIN checksum error
 #define LINPUMP_ST_ALIVE (1u << 4)    // alive counter stuck or jumped
 #define LINPUMP_ST_NODELIV (1u << 5)  // run commanded, pump not turning [I: bit]
-#define LINPUMP_ST_NORX (1u << 7)     // no valid 0x32 for LinBusFault
+#define LINPUMP_ST_NORX (1u << 7)     // no valid 0x32 for busFaultMs (1.8 s)
 #define LINPUMP_ST_CRC8 (1u << 9)     // two bad CRC-8 in a row
 #define LINPUMP_ST_SWVER (1u << 13)   // SW version is not IEP85 [I: bit]
 // OEM class masks [C]
@@ -125,7 +125,7 @@ enum LinPumpClass
    LPC_TEMPORARY = 1,
    LPC_PERMANENT = 2,
    LPC_COMM = 4,
-   LPC_BUS = 8,       // KFC_IEPBUS: no valid 0x32 for LinBusFault
+   LPC_BUS = 8,       // KFC_IEPBUS: no valid 0x32 for busFaultMs
    LPC_DELIVERY = 16, // "pump not delivering" symptom (KL_TVERZSYMIEP)
 };
 
@@ -232,14 +232,15 @@ private:
 };
 
 /* When to run the pump (330e strategy, Ian section 11 Q9b [C values, I
- * for how they combine]): on below LinPumpRpm (NS_HYBRID_IEP 500 rpm), off
- * above LinPumpRpm + LinPumpHyst (550), sump LinTempMin..LinTempMax
- * (0..125 degC), system pressure below LinPMax (P_SYS_SCHWELLE_IEP 20 bar).
- * Below LinTempMin it may still run down to LinColdMin (-15 degC) for at
- * most LinColdMs (5 s, TEMP_TIEF_NOTLAUF_IEP / T_MAXCGETRTIEF_NOTLAUF_IEP);
- * the cold allowance comes back once the sump is above LinTempMin. P does
- * not switch it off. After the rule drops, the pump keeps running for
- * LinOffDelay (D_t_IEP_ShutdownDelay 800 ms [I: use]).
+ * for how they combine]): on below onRpm (LinPumpRpm, NS_HYBRID_IEP
+ * 500 rpm), off above onRpm + hystRpm (550), sump tempMin..tempMax
+ * (0..125 degC), system pressure below pMaxMbar (P_SYS_SCHWELLE_IEP
+ * 20 bar). Below tempMin it may still run down to coldMin (-15 degC) for
+ * at most coldMaxMs (5 s, TEMP_TIEF_NOTLAUF_IEP /
+ * T_MAXCGETRTIEF_NOTLAUF_IEP); the cold allowance comes back once the sump
+ * is above tempMin. P does not switch it off. After the rule drops, the
+ * pump keeps running for offDelayMs (D_t_IEP_ShutdownDelay 800 ms [I:
+ * use]). Apart from LinPumpRpm these are fixed values (ConfigureLin).
  */
 enum LinPumpReq
 {

@@ -200,6 +200,27 @@ static void ConfigureEds() {
   eds.Configure(c);
 }
 
+// LIN oil pump settings. Only on / off, the request mode, the switch-on
+// speed and the pressure are parameters (LinPumpEnable, LinPumpReq,
+// LinPumpRpm, LinPumpP, plus PumpFaultAct). The rest are fixed here at
+// the values the parameters used to default to.
+static const bool LIN_ENHANCED_CSUM = true; // enhanced checksum (LIN 2.x) [H]
+static const int LIN_SLOT_MS = 10;          // one frame slot every 10 ms [I]
+static const int LIN_BUS_FAULT_MS = 1800;   // no valid 0x32 this long = bus fault
+static const int LIN_ARM_MS = 1000;   // "not delivering" check armed after 1 s
+static const int LIN_SYM_MAX_MS = 1500; // and set after 1.5 s below LIN_DELIV_RPM
+static const int LIN_DELIV_RPM = 100;   // pump speed that counts as delivering
+static const bool LIN_RX_CHECK = true;  // pump replies may raise faults
+static const int LIN_HYST_RPM = 50;     // on above LinPumpRpm + 50 rpm
+static const int LIN_TEMP_MIN_C = 0;    // runs with the sump at 0 ..
+static const int LIN_TEMP_MAX_C = 125;  // .. 125 degC
+static const int LIN_P_MAX_MBAR = 20000; // and line pressure below 20 bar
+static const int LIN_OFF_DELAY_MS = 800; // keeps running 800 ms after the rule drops
+static const int LIN_COLD_MIN_C = -15;  // below 0 degC: may still run down to -15 degC
+static const int LIN_COLD_MS = 5000;    // for at most 5 s
+// Motor speed asked of the VCU when PumpFaultAct = MotorSpeed.
+static const int LIN_FAULT_RPM = 600;
+
 // Copy the parameters into the TCU, shift and adaptation settings.
 static void ConfigureTcu() {
   TcuConfig c = {};
@@ -255,7 +276,7 @@ static void ConfigureTcu() {
   c.gearInPumpMs = Param::GetInt(Param::GearInPumpMs);
   c.gearInMotRpm = Param::GetInt(Param::GearInMotRpm);
   c.pumpFaultAct = Param::GetInt(Param::PumpFaultAct);
-  c.pumpFaultRpm = Param::GetInt(Param::PumpFaultRpm);
+  c.pumpFaultRpm = LIN_FAULT_RPM;
   c.tipOverrideMs = Param::GetInt(Param::TipOverride);
   int variant = Param::GetInt(Param::GearboxType);
   Cal::Select(variant, Param::GetInt(Param::SolCurveSet));
@@ -350,28 +371,28 @@ static void ConfigureShifter() {
   lever.Configure(l);
 }
 
-// LIN oil pump settings.
+// LIN oil pump settings (fixed values above ConfigureTcu).
 static void ConfigureLin() {
   LinPumpConfig c;
-  c.enhanced = Param::GetInt(Param::LinChecksum) == 1;
-  c.slotMs = Param::GetInt(Param::LinSlotMs);
-  c.busFaultMs = Param::GetInt(Param::LinBusFault);
+  c.enhanced = LIN_ENHANCED_CSUM;
+  c.slotMs = LIN_SLOT_MS;
+  c.busFaultMs = LIN_BUS_FAULT_MS;
   c.diagDelayMs = 400; // D_t_DiagDelayAfterClearErr_LINIEP [C]
   c.startBlankMs = 1000; // Ian Q5: ignore status for about 1 s [I]
-  c.armMs = Param::GetInt(Param::LinArmMs);
-  c.symMaxMs = Param::GetInt(Param::LinSymMax);
-  c.delivRpm = Param::GetInt(Param::LinDelivRpm);
-  c.processRx = Param::GetBool(Param::LinRxCheck);
+  c.armMs = LIN_ARM_MS;
+  c.symMaxMs = LIN_SYM_MAX_MS;
+  c.delivRpm = LIN_DELIV_RPM;
+  c.processRx = LIN_RX_CHECK;
   linPump.Configure(c);
   LinRuleConfig r;
   r.onRpm = Param::GetInt(Param::LinPumpRpm);
-  r.hystRpm = Param::GetInt(Param::LinPumpHyst);
-  r.tempMin = Param::GetInt(Param::LinTempMin);
-  r.tempMax = Param::GetInt(Param::LinTempMax);
-  r.pMaxMbar = Param::GetInt(Param::LinPMax);
-  r.offDelayMs = Param::GetInt(Param::LinOffDelay);
-  r.coldMin = Param::GetInt(Param::LinColdMin);
-  r.coldMaxMs = Param::GetInt(Param::LinColdMs);
+  r.hystRpm = LIN_HYST_RPM;
+  r.tempMin = LIN_TEMP_MIN_C;
+  r.tempMax = LIN_TEMP_MAX_C;
+  r.pMaxMbar = LIN_P_MAX_MBAR;
+  r.offDelayMs = LIN_OFF_DELAY_MS;
+  r.coldMin = LIN_COLD_MIN_C;
+  r.coldMaxMs = LIN_COLD_MS;
   linRule.Configure(r);
 }
 
@@ -510,7 +531,7 @@ static void LinStart(const LinSlot &s) {
   if (s.publish) {
     for (int i = 0; i < 8; i++)
       linTx[n++] = s.data[i];
-    linTx[n++] = Lin::Checksum(Param::GetInt(Param::LinChecksum) == 1, pid,
+    linTx[n++] = Lin::Checksum(LIN_ENHANCED_CSUM, pid,
                                s.data, 8);
   }
   linId = s.id;
@@ -1045,10 +1066,10 @@ static void Ms10Task() {
 
   // Aux oil pump (330e run rule, Ian's 330E_LIN_OIL_PUMP.md section 7).
   // The F11 8HP45 has no LIN pump [C], so the bus stays off for it.
-  // Charging plug in: LIN to sleep (CDD_LINBusStartStop.st_chargingPlug
-  // [C]). Source: a parameter for now; the input is TBD (no pin yet).
-  bool plug = Param::GetInt(Param::ChgPlugSrc) == 1 && Param::GetBool(Param::ChgPlugSet);
-  linActive = Param::GetBool(Param::LinPumpEnable) && !plug &&
+  // The OEM puts LIN to sleep with the charging plug in
+  // (CDD_LINBusStartStop.st_chargingPlug [C]). There is no plug input or
+  // parameter here, so the plug always counts as out.
+  linActive = Param::GetBool(Param::LinPumpEnable) &&
               Cal::Variant(Param::GetInt(Param::GearboxType)).linPump;
   linOilC = atfTemp;
   linWanted = linActive && linRule.Update(Param::GetInt(Param::LinPumpReq),

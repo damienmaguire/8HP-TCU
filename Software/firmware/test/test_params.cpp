@@ -97,13 +97,8 @@ static const Frozen frozen[] = {
     {"LeverDeb", 220}, {"LeverMSub", 221}, {"LeverB34", 222},
     {"GpOut1Func", 147}, {"GpOut2Func", 148}, {"GpPwmFreq", 150},
     {"GpPwmDuty", 151}, {"LinPumpEnable", 152}, {"LinPumpReq", 153},
-    {"LinPumpRpm", 154}, {"LinPumpHyst", 155}, {"LinChecksum", 156},
-    {"LinTempMin", 164}, {"LinTempMax", 165}, {"LinPMax", 166},
-    {"LinPumpP", 167}, {"LinOffDelay", 168}, {"LinSlotMs", 169},
-    {"LinBusFault", 170}, {"LinColdMin", 196}, {"LinColdMs", 197},
-    {"LinArmMs", 198}, {"LinSymMax", 199}, {"LinDelivRpm", 200},
-    {"LinRxCheck", 201}, {"ChgPlugSrc", 202}, {"ChgPlugSet", 203},
-    {"PumpFaultAct", 194}, {"PumpFaultRpm", 195}, {"SelectorSet", 120},
+    {"LinPumpRpm", 154}, {"LinPumpP", 167},
+    {"PumpFaultAct", 194}, {"SelectorSet", 120},
     {"GearSet", 121}, {"TorqueSet", 122}, {"MotorRpmSet", 123},
     {"ValveTest", 124}, {"ValveTestSel", 125}, {"ValveTestmA", 126},
     {"ParkHoldTest", 149}, {"version", 2000}, {"opmode", 2001},
@@ -233,6 +228,18 @@ static void TestFlashGuard() {
   CHECK_EQ(UnknownKeys(page, 255, OurParamId), 0);
   CHECK(Retired(28) && Retired(33) && Retired(137) && Retired(142));
   CHECK(!Retired(20) && !Retired(143)); // AtfSource, AtfInput stay
+  // The LIN settings that became fixed values, the same way.
+  const int oldLin[] = {155, 156, 164, 165, 166, 168, 169, 170, 195,
+                        196, 197, 198, 199, 200, 201, 202, 203};
+  for (int id : oldLin) {
+    CHECK(Retired((uint16_t)id));
+    if (k < 255)
+      page[k++] = {(uint16_t)id, 0, 0, 0};
+  }
+  CHECK_EQ(UnknownKeys(page, 255, OurParamId), 0);
+  const int keptLin[] = {152, 153, 154, 167, 194};
+  for (int id : keptLin)
+    CHECK(!Retired((uint16_t)id) && OurParamId((uint16_t)id));
   CHECK(!Retired(5) && !Retired(6));
 
   // Every parameter id of the ZombieVerter (Stm32-vcu param_prj.h): even

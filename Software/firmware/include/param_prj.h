@@ -33,11 +33,13 @@
 // parameter page may still hold them, so the start-up flash check
 // (flashguard.h) treats them as ours and parm_load() skips them.
 // 28-33 AtfT1..6 and 137-142 AtfR1..6: the ATF curve is now a fixed table
-// (anaconv.h). 2037 is a retired spot value id.
+// (anaconv.h). 155, 156, 164-166, 168-170, 195-203: LIN pump settings now
+// fixed in stm32_tcu.cpp (ConfigureLin). 2037 is a retired spot value id.
 #define PARAM_RETIRED_IDS                                                      \
   1, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 40, 42, 53, 54,   \
-      69, 70, 102, 106, 107, 137, 138, 139, 140, 141, 142, 157, 158, 159, 160, \
-      161, 162, 2037
+      69, 70, 102, 106, 107, 137, 138, 139, 140, 141, 142, 155, 156, 157, 158, \
+      159, 160, 161, 162, 164, 165, 166, 168, 169, 170, 195, 196, 197, 198,    \
+      199, 200, 201, 202, 203, 2037
 // (ids 9, 101, 103-105 and 108 were free slots and are used below; 102,
 // 106 and 107 were used by an unreleased draft and are left free. The V4
 // update dropped 1, 22-27, 34, 35, 40, 42, 53, 54, 69 and 70; they are
@@ -210,25 +212,8 @@
   PARAM_ENTRY(CAT_LIN, LinPumpEnable, ONOFF, 0, 1, 0, 152)                     \
   PARAM_ENTRY(CAT_LIN, LinPumpReq, LINREQS, 0, 2, 1, 153)                      \
   PARAM_ENTRY(CAT_LIN, LinPumpRpm, "rpm", 0, 3000, 500, 154)                   \
-  PARAM_ENTRY(CAT_LIN, LinPumpHyst, "rpm", 0, 1000, 50, 155)                   \
-  PARAM_ENTRY(CAT_LIN, LinChecksum, LINCSUMS, 0, 1, 1, 156)                    \
-  PARAM_ENTRY(CAT_LIN, LinTempMin, "C", -40, 150, 0, 164)                      \
-  PARAM_ENTRY(CAT_LIN, LinTempMax, "C", -40, 150, 125, 165)                    \
-  PARAM_ENTRY(CAT_LIN, LinPMax, "mbar", 0, 30000, 20000, 166)                  \
   PARAM_ENTRY(CAT_LIN, LinPumpP, "mbar", 0, 10000, 4000, 167)                  \
-  PARAM_ENTRY(CAT_LIN, LinOffDelay, "ms", 0, 5000, 800, 168)                   \
-  PARAM_ENTRY(CAT_LIN, LinSlotMs, "ms", 10, 50, 10, 169)                       \
-  PARAM_ENTRY(CAT_LIN, LinBusFault, "ms", 100, 10000, 1800, 170)               \
-  PARAM_ENTRY(CAT_LIN, LinColdMin, "C", -40, 0, -15, 196)                      \
-  PARAM_ENTRY(CAT_LIN, LinColdMs, "ms", 0, 60000, 5000, 197)                   \
-  PARAM_ENTRY(CAT_LIN, LinArmMs, "ms", 0, 10000, 1000, 198)                    \
-  PARAM_ENTRY(CAT_LIN, LinSymMax, "ms", 0, 10000, 1500, 199)                   \
-  PARAM_ENTRY(CAT_LIN, LinDelivRpm, "rpm", 0, 5000, 100, 200)                  \
-  PARAM_ENTRY(CAT_LIN, LinRxCheck, ONOFF, 0, 1, 1, 201)                        \
-  PARAM_ENTRY(CAT_LIN, ChgPlugSrc, CHGSRC, 0, 2, 0, 202)                       \
-  PARAM_ENTRY(CAT_LIN, ChgPlugSet, ONOFF, 0, 1, 0, 203)                        \
   PARAM_ENTRY(CAT_LIN, PumpFaultAct, PUMPFAULTS, 0, 2, 0, 194)                 \
-  PARAM_ENTRY(CAT_LIN, PumpFaultRpm, "rpm", 0, 3000, 600, 195)                 \
   PARAM_ENTRY(CAT_ADAPT, AdaptEnable, ONOFF, 0, 1, 0, 229)                     \
   PARAM_ENTRY(CAT_ADAPT, AdaTqMin, "Nm", 0, 1000, 55, 230)                     \
   PARAM_ENTRY(CAT_ADAPT, AdaTqMax, "Nm", 0, 1000, 180, 231)                    \
@@ -448,7 +433,6 @@
   "10=7th, 11=8th"
 #define CH7MODES "0=Variant, 1=TCC, 2=K0, 3=ForceOpen"
 #define PUMPFAULTS "0=Report, 1=MotorSpeed, 2=Stop"
-#define CHGSRC "0=None, 1=Param, 2=Input"
 #define SHIFTMODES "0=Auto, 1=Manual, 2=VCU"
 #define DRIVEMODES "0=Normal, 1=Sport, 2=Track"
 #define PARKSTATES "0=Engaged, 1=Releasing, 2=Released, 3=Engaging, 4=Unheld"
@@ -472,7 +456,6 @@
 #define ATFINPUTS "0=TempIn1, 1=TempIn2"
 #define GPOUTFUNCS "0=Off, 1=On, 2=StarterLock"
 #define LINREQS "0=Off, 1=Auto, 2=Force"
-#define LINCSUMS "0=Classic, 1=Enhanced"
 #define LPSTATES "0=Off, 1=Idle, 2=Run"
 #define CANLOSSMODES "0=Neutral, 1=HoldGear"
 #define CMDSRC "0=CAN, 1=Param"
