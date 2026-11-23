@@ -54,12 +54,12 @@ static bool VcuRx(uint32_t cmdId, uint32_t id, const uint8_t *b, uint8_t dlc,
 // Build the two TCU status frames for the VCU (layout below).
 static int VcuTx(const CanTxIn &in, CanFrame out[CANIF_MAX_TX]) {
   const TcuOutputs &o = *in.o;
-  /* Status frame CanStatId (little endian):
+  /* Status frame COMM_STAT_ID (little endian):
    *  byte 0  engaged gear (0 = N, 1..8, 9 = R)
    *  byte 1  mode (opmode)
    *  byte 2  target gear
    *  byte 3  fault
-   *  byte 4-5 torque intervention request, Nm, signed; TqNoRedVal
+   *  byte 4-5 torque intervention request, Nm, signed; COMM_TQ_NO_RED
    *          (default 0) when there is none
    *  byte 6  ATF temperature + 40 degC
    *  byte 7  bit 0 shifting, bit 1 park request, bit 2 safe state,
@@ -81,7 +81,7 @@ static int VcuTx(const CanTxIn &in, CanFrame out[CANIF_MAX_TX]) {
   f.data[7] = (o.mode == TCU_SHIFT ? 1 : 0) | (o.parkRequest ? 2 : 0) |
               (o.safeOutputs ? 4 : 0) | (o.tqHold ? 8 : 0) |
               (o.canLossHold ? 16 : 0) | (o.coast ? 32 : 0);
-  /* Second status frame CanStatId + 1:
+  /* Second status frame COMM_STAT_ID + 1:
    *  byte 0-1 minimum motor speed the TCU asks for, rpm (0 = none): park
    *          release (700 rpm, held 2 s) and PumpFaultAct = Motor. The
    *          VCU should spin the motor with the clutches open.
@@ -157,7 +157,7 @@ uint8_t E2eCrc(const uint8_t d[8], uint16_t dataId) {
   return Lin::Crc8(buf, 9); // same CRC-8 as the LIN pump: 0x1D, init 0
 }
 
-// Nm to the 0x0B0 12-bit torque field (0.5 Nm steps, offset -1023.5 Nm).
+// Nm to the 12-bit torque field (0.5 Nm steps, offset -1023.5 Nm).
 uint16_t TqRaw(int32_t nm) {
   // raw = (Nm + 1023.5) / 0.5 = 2 Nm + 2047
   int32_t raw = 2 * nm + 2047;
@@ -166,24 +166,6 @@ uint16_t TqRaw(int32_t nm) {
   if (raw > 0xFFE)
     raw = 0xFFE;
   return (uint16_t)raw;
-}
-
-// Build the 0x0B0 engine torque intervention frame.
-void PackF11Torque(uint8_t qual, int32_t targetNm, uint8_t counter, uint8_t d[8]) {
-  if (qual != TQ_QUAL_RAISE && qual != TQ_QUAL_REDUCE)
-    qual = TQ_QUAL_NONE;
-  uint16_t tgt = qual == TQ_QUAL_NONE ? CANIF_F11_TQ_NONE : TqRaw(targetNm);
-  const uint16_t pred = CANIF_F11_TQ_NONE; // slow path: no value
-  const uint16_t gbx = CANIF_F11_TQ_NONE;  // absorbing torque: no value
-  const uint16_t sync = CANIF_F11_TQ_NONE; // sync speed: none (F11)
-  d[1] = (uint8_t)((counter % 15) | ((pred & 0x0F) << 4));
-  d[2] = (uint8_t)(pred >> 4);
-  d[3] = (uint8_t)(tgt & 0xFF);
-  d[4] = (uint8_t)((tgt >> 8) | ((gbx & 0x0F) << 4));
-  d[5] = (uint8_t)(gbx >> 4);
-  d[6] = (uint8_t)(qual | ((sync & 0x0F) << 4));
-  d[7] = (uint8_t)(sync >> 4);
-  d[0] = E2eCrc(d, CANIF_F11_TQ_DATAID);
 }
 
 // Build the optional 0x0A0 maximum-torque frame.
@@ -197,16 +179,6 @@ void PackTqCeiling(int32_t maxNm, uint8_t counter, uint8_t d[8]) {
   d[6] = 0xFF;
   d[7] = 0xFF;
   d[0] = E2eCrc(d, CANIF_TQ_CEIL_DATAID);
-}
-
-// Turn our torque change request into the 0x0B0 qualifier and target.
-uint8_t F11TqTarget(int32_t inputNm, int32_t deltaNm, int32_t *targetNm) {
-  if (deltaNm == 0) {
-    *targetNm = 0;
-    return TQ_QUAL_NONE;
-  }
-  *targetNm = inputNm + deltaNm;
-  return deltaNm < 0 ? TQ_QUAL_REDUCE : TQ_QUAL_RAISE;
 }
 
 } // namespace CanIf

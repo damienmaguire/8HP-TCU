@@ -7,13 +7,13 @@ SDO on top of libopencm3.
 
 > **Status: first cut, not run on hardware.** It builds and the host unit
 > tests pass, but nothing has been tried on Bob's board or a gearbox yet.
-> The pins follow Bob's **Stm32_TCU_V4** rev C map (provisional, see "Pin map"), and several values
+> The pins follow Bob's **Stm32_TCU_V4** rev C map (final, see "Pin map"), and several values
 > that need a bench measurement are parameters with placeholder defaults
 > (see "Parameters for unmeasured items" below). Do not connect this to a
 > car until those are resolved.
 >
-> The firmware sends **no CAN frames** by default (`CanTxEnable = 0`,
-> `LogEnable = 0`). SDO replies on CAN1 only go out when a tool asks.
+> The firmware sends **no CAN frames** by default (`CanTxEnable = 0`;
+> the CAN2 log is off in the code). SDO replies on CAN1 only go out when a tool asks.
 > Immobiliser handling is out of scope.
 
 The control strategy follows Ian's reverse-engineering notes of the F30
@@ -190,12 +190,15 @@ negative as in the ROM (-30 = 30 ms before sync).
   voltage. Interrupts: speed sensors (DMA half / full buffer at
   2.4 kHz), UART4 for LIN.
 
-### Pin map (Stm32_TCU_V4, rev C, provisional)
+### Pin map (Stm32_TCU_V4, rev C)
 
-There is one board: Bob's **Stm32_TCU_V4, rev C**. Rev C is still being
-routed and Bob's full firmware answers are to follow, so this map is
-**provisional**. It is the earlier rev B layout plus the 12 V brake
-input on PD1 (PD1 was unused on rev B).
+There is one board: Bob's **Stm32_TCU_V4, rev C**, which Bob reports is
+final. It is the rev B layout plus the 12 V brake input on PD1 (PD1 was
+unused on rev B). No other MCU or J1 pin moved. Other rev C changes with
+no firmware effect: J1.10 / 11 / 12 are now named OUT1_DRV / OUT2_DRV /
+OUT3_DRV (IC4 OUT1..3), D1 / D2 / PARK / NOT_PARK use the ZV1.3 input
+circuit (same scaling), the analogue inputs gained TVS diodes, and the
+crystal is still 8 MHz.
 Source: Bob's `Stm32_TCU_V4/pinmap/firmware_answers.md` and the pin map
 CSVs; Damien approved the header mapping.
 
@@ -217,7 +220,7 @@ CSVs; Damien approved the header mapping.
 | atf_temp1 / atf_temp2 | PC1 (IN11) / PC2 (IN12) | 2.7k / 2.7k pull-up to 5 V, then /2; `AtfInput` picks one |
 | ana_in | PC3 (IN13) | /2, 0-6.6 V (analog shifter placeholder) |
 | Board NTC TH1 | PB0 (ADC12_IN8) | 10k at 25 C, B 3950, 10k pull-up to 3V3, NTC to GND; table in `anaconv.h`; `tBoard` from it when valid |
-| 12 V inputs | T15 PD0 (J1.15), BRAKE_IN PD1 (J1.46), SHIFT_UP PD2 (J1.50), SHIFT_DN PD3 (J1.49), D1 / D2 / PARK / NOT_PARK PD4..PD7 (J1.54..51) | ZV1.3 circuit (SMF16A TVS, 4.7k / 1.5k, 1 uF; 12 V -> 2.9 V), active high, `INPUT_FLT` |
+| 12 V inputs | T15 PD0 (J1.15), BRAKE_IN PD1 (J1.46, LQFP pin 82, EXTI1), SHIFT_UP PD2 (J1.50), SHIFT_DN PD3 (J1.49), D1 / D2 / PARK / NOT_PARK PD4..PD7 (J1.54..51) | ZV1.3 circuit (SMF16A TVS, 4.7k series, 1.5k to GND, 1 uF; 12 V -> 2.9 V, RC about 1.14 ms), active high, `INPUT_FLT`; BRAKE_IN is debounced over 3 samples (30 ms) |
 | LED | PE2 | active low |
 | Terminal | USART3 PB10 / PB11 | 115200 |
 | CAN1 | PA11 RX / PA12 TX | vehicle PT-CAN, 500k |
@@ -287,7 +290,7 @@ min / max levels can be taken on every 4th scan.
 | `cal_330e.*`, `cal_f11.*`, `caltypes.*` | Generated calibration tables (330e, F11 8HP45) and the lookup code | JSON exports |
 | `calset.*` | Per-gearbox table set picked by `GearboxType`, channel 7 mode | `F11_VS_330E_DIFF.md` |
 | `drivemode.*` | DriveMode Sport / Track modifiers on the Normal config | |
-| `canif.*` | CAN1 frames per `EcuType` (handler table), F11 0x0B0 packer | |
+| `canif.*` | CAN1 frames per `EcuType` (handler table), 0x0A0 ceiling packer | |
 | `gwslever.*`, `canlever.*` | CAN gear levers (`ShifterType`) behind one lever-state interface | ZombieVerter |
 | `torquein.*` | Input torque source: CAN, "not available" codes, optional rpm x MAP model, frozen-signal check | |
 | `adapt.*` | Clutch fill adaptation per clutch and oil-temperature class, own flash page | 330e A2L class windows [C] |
@@ -374,7 +377,12 @@ default with `Can2Enable` = 1) both at 500 kbit/s by default. All
 frame layouts below are **placeholders** until the VCU/inverter side is
 agreed (Q5). Values little endian.
 
-* RX `CanCmdId` (default 0x300): byte 0 selector (0=P 1=R 2=N 3=D, used
+Communication parameters: only `Can1Baud`, `Can2Enable`, `Can2Baud`,
+`CanTxEnable`, `CanTimeout`, `CanLossTq`, `LeverBus` and `StreamEnable`.
+Everything else below is a fixed value in the code (`COMM_*` in
+stm32_tcu.cpp) at what the old parameter defaulted to.
+
+* RX 0x300 (fixed, `COMM_CMD_ID`): byte 0 selector (0=P 1=R 2=N 3=D, used
   when `ShifterType = CAN`), byte 1 gear request (0 = hold, 1..8, used
   when `ShiftMode = VCU`), bytes 2-3 actual motor torque Nm (signed),
   bytes 4-5 motor rpm (signed), byte 6 (optional) bit 0 tip up, bit 1
@@ -383,52 +391,39 @@ agreed (Q5). Values little endian.
   as not pressed).
   If it stops for `CanTimeout` ms the TCU posts `CANTIMEOUT`, uses
   `CanLossTq` for line pressure (default 600 Nm, the OEM substitute
-  `D_m_IstVM_Default`) and follows `CanLossMode`: 1 (default, Damien's
-  decision 2026-11-23) holds the gear at `LineMax`, refuses upshifts and
-  only steps down as the car slows; 0 goes to neutral. Neutral/limp is
+  `D_m_IstVM_Default`) and holds the gear (fixed, Damien's decision
+  2026-11-23): `LineMax`, no upshifts, only steps down as the car
+  slows. Neutral/limp is
   kept for hydraulic and electrical faults (the safe state). No gear-in is
   started while the frame is missing.
-* TX `CanStatId` (default 0x301, only if `CanTxEnable = 1`): gear, mode,
+* TX 0x301 (fixed, `COMM_STAT_ID`; only if `CanTxEnable = 1`): gear, mode,
   target gear, fault, torque intervention request Nm (signed;
-  `TqNoRedVal`, default 0, when there is none), ATF + 40,
+  0 when there is none), ATF + 40,
   flags (bit 0 shifting, 1 park request, 2 safe state, 3 hold motor
   torque near 0 for gear-in, 4 CAN-loss gear hold, 5 coast shift). The torque intervention
   request is the hook for the inverter: how it reaches the inverter is
   open (Q5).
-* TX `CanStatId + 1` (same condition): bytes 0-1 minimum motor speed the
+* TX 0x302 (same condition): bytes 0-1 minimum motor speed the
   TCU asks for (rpm, 0 = none: 700 rpm to leave P and for 2 s after, or
-  `PumpFaultRpm` with `PumpFaultAct = MotorSpeed`; the VCU should turn the
+  600 rpm (fixed) with `PumpFaultAct = MotorSpeed`; the VCU should turn the
   motor with the clutches open), byte 2 bit 0 waiting to leave P, bit 1
   gear-in waiting for a pressure source, bit 2 Auto tip override, byte 3
   LIN pump fault classes, bytes 4-5 channel 7 pressure (mbar).
-* TX 0x0B0, engine torque intervention (`RQ_TORQ_CRSH_GRB`), on **every
-  row** (330e and F11 packers have the same shape [C],
-  `F11_SAM_ADDSCOPE.md` 3). Only with `F11TqTx = 1` and `CanTxEnable = 1`
-  (both off by default; the name `F11TqTx` is historical). 10 ms, DLC 8,
-  Intel bits, torque scale Nm = raw x 0.5 - 1023.5 [C], 0xFFF = no value:
-  byte 0 CRC-8 (poly 0x1D, init 0, no XOR) over Data ID 0x0001 (lo, hi) +
-  bytes 1-7; byte 1 low nibble alive counter 0..14; bits 12-23 slow-path
-  ("by air") request `sv_m_EngTqCtrlReqPred`, **0xFFF** (not modelled);
-  **bits 24-35 absolute target** (`sv_m_EngTqCtrlReq`), 0xFFF = no
-  request; bits 36-47 gearbox absorbing torque `sv_m_Gearbox`, **0xFFF**
-  (not modelled); **bits 48-51 qualifier 0 none, 1 increasing,
-  2 decreasing**; bits 52-63 target engine sync speed (x2.5 rpm), 0xFFF
-  as the F11 sends. Idle bytes 2-7 = `FF FF FF FF F0 FF` (the logged F11
-  idle had 0x7FF in bits 36-47; we have no value, so 0xFFF). The target is
-  absolute: input torque `m_t` + the TCU's `tqDelta`; the sign of
-  `tqDelta` picks the qualifier (`tq0B0`, `tqQual` spot values).
-* TX 0x0A0 (`RQ_TORQ_CRSH_GRB_2`), optional, **off by default**
-  (`TqCeilTx = 1` and `CanTxEnable = 1`): same E2E with Data ID 0x00A0,
-  bits 32-43 = max allowed engine torque `sv_m_EngTqMax` (ceiling), same
-  scale [C]; every other bit 1. `TqCeilNm` (0 = the row's torque class
-  [I]; the F11 logs show 444 Nm in 3rd-8th).
+* TX 0x0A0 (`RQ_TORQ_CRSH_GRB_2`), torque ceiling: **off** in the code
+  (`COMM_TQ_CEIL_TX`). BMW E2E CRC-8 (poly 0x1D, init 0) over Data ID
+  0x00A0 + bytes 1-7, counter 0..14 in byte 1, bits 32-43 = max allowed
+  engine torque `sv_m_EngTqMax`, Nm = raw x 0.5 - 1023.5 [C], every other
+  bit 1; the ceiling is the row's torque class [I].
+* The 0x0B0 engine torque intervention frame (`F11TqTx`) was removed: the
+  TCU is generic and does not talk to an F11 engine ECU.
 * CAN gear levers: see "CAN gear levers" below.
-* CAN2 log (only if `LogEnable = 1`), every 10 ms from `LogBaseId`
-  (default 0x5F0): +0 pA pB pC pD, +1 pE pSys n_t n_ab, +2 iA iB iC iD (mA),
+* CAN2 log, **off** in the code (`COMM_LOG_ENABLE`); when on, every
+  10 ms from 0x5F0: +0 pA pB pC pD, +1 pE pSys n_t n_ab, +2 iA iB iC iD (mA),
   +3 iE iSYS iK0 iPOS, +4 mode gear target zKZU zKAB engPhase interlock
   fault, +5 m_t tqDelta tSyn gls. The state numbers match the OEM ones so
   logs can be compared.
-* libopeninv CAN map and SDO (node `SdoNodeId`, default 22) on CAN1, so
+* libopeninv CAN map and SDO (node 22, fixed: `COMM_SDO_NODE_ID`, SDO
+  request id 0x616) on CAN1, so
   any value can also be mapped from the web interface.
 
 ### CAN gear levers
@@ -440,13 +435,14 @@ CAN-loss rules are the same for all of them. The lever only *asks*: a
 change into R, D or P is taken only at or below `EngageMaxRpm` output
 speed and with no TCU fault; a refused request flashes the display. N is
 always allowed. When the lever's frames stop for longer than its timeout,
-`CanLossMode` applies (hold the last position, or N). `LeverBus` picks
-CAN1 or CAN2. All lever TX needs `LeverTxEnable = 1` **and**
-`CanTxEnable = 1` (both off by default).
+the CAN-loss rule applies (hold the last position). `LeverBus` picks
+CAN1 or CAN2. Lever TX (display / LEDs) is **off** in the code
+(`COMM_LEVER_TX`); turning it on also needs `CanTxEnable = 1`. Every
+`ShifterType` below is still selectable.
 
 | Id | Lever | RX | TX | Timeout | Source |
 |---|---|---|---|---|---|
-| 0 | BMW GWS F30 / F11 | 0x197 DLC 4: CRC8(B1..B3) ^ 0x53 (E2E Data ID 0x003F), counter B1 low nibble 0..14 (one repeat tolerated, a second or a jump > 2 rejects, as the LIN pump), B2 high nibble = move (masked with 0xF0: the F11 low nibble is 0xF, the F30's 0xE), B3 P button (all three copies must agree) | 0x3FD DLC 5 every 100 ms: CRC8(B1..B4) ^ 0x70, counter 0..14, B2 0x20 P / 0x40 R / 0x60 N / 0x80 D, 0x08 flash [I], M sub-field `LeverMSub` [H]; B3 / B4 `LeverB34` (OEM FC FF, or ZV 00 + gear); 0x00 before KL15 and from KL15 off + 30 s | 90 ms [C] | egs_gws_lever_can.md, ZV F30_Lever.cpp |
+| 0 | BMW GWS F30 / F11 | 0x197 DLC 4: CRC8(B1..B3) ^ 0x53 (E2E Data ID 0x003F), counter B1 low nibble 0..14 (one repeat tolerated, a second or a jump > 2 rejects, as the LIN pump), B2 high nibble = move (masked with 0xF0: the F11 low nibble is 0xF, the F30's 0xE), B3 P button (all three copies must agree) | 0x3FD DLC 5 every 100 ms: CRC8(B1..B4) ^ 0x70, counter 0..14, B2 0x20 P / 0x40 R / 0x60 N / 0x80 D, 0x08 flash [I], M sub-field 1 (`COMM_LEVER_MSUB`) [H]; B3 / B4 OEM FC FF (`COMM_LEVER_B34`; the ZV 00 + gear layout is still in the code); 0x00 before KL15 and from KL15 off + 30 s | 90 ms [C] | egs_gws_lever_can.md, ZV F30_Lever.cpp |
 | 2 | BMW E65 | 0x192, the ZV 24-bit patterns (P button, R+, D+) | none (ZV sends none) | 500 ms [I] | ZV E65_Lever.cpp |
 | 3 | JLR rotary knob gen 1 | 0x312, B3 high nibble = knob position | 0x3F3 every 20 ms, ZV bytes and counter (skips 2-3 in P); stops 2 s after KL15 off | 500 ms [I] | ZV JLR_G1.cpp |
 | 4 | JLR rotary knob gen 2 | 0x0E0, B4 high nibble | 0x02C every 10 ms with the ZV byte-5 tables, knob raise / lower and unlock | 500 ms [I] | ZV JLR_G2.cpp |
@@ -454,7 +450,7 @@ CAN1 or CAN2. All lever TX needs `LeverTxEnable = 1` **and**
 
 The GWS state machine (the lever reports moves, the TCU keeps the
 position, as the OEM `D_Tab_RelToAbsConversion` does): a move counts once
-it is seen in `LeverDeb` (2) frames in a row, once per move. Up1: P / D /
+it is seen in 2 frames in a row (`COMM_LEVER_DEB`), once per move. Up1: P / D /
 M -> N; Up2: -> R; Down1: P / R -> N; Down2: P / N / R -> D; side gate
 (code 7, or 5 / 6): D -> M, back to the centre -> D; M+ / M- = one tip
 up / down; P button -> P. Checked against the F11 capture `r10md10m`
@@ -470,7 +466,7 @@ Not ported: the PKP2300 regen / heater toggles and state-of-charge bar
 does what it means (park display when not running).
 
 **Only one node may own a lever's TX id** (0x3FD, 0x3F3, 0x02C, 0x215).
-Do not enable `LeverTxEnable` on a bus with a live EGS, a ZombieVerter
+Do not turn lever TX on (`COMM_LEVER_TX`) on a bus with a live EGS, a ZombieVerter
 running its shifter class (e.g. `F30_Lever`), or the DDE / EGS emulator:
 two senders mean counter and CRC clashes on the lever display. 0x202
 (BMW backlight / dimming) is never sent: it belongs to the body side.
@@ -488,25 +484,24 @@ parameters the TCU behaves as before.
 
 1. The torque the VCU / engine ECU sends in the command frame (default).
 2. If that value is a "not available" code (0x8000 or 0x7FFF, how ECUs
-   mark a missing signal) or frozen (below), and `TqModel` is on: the
-   model. Placeholder table of Nm against engine speed and manifold
-   pressure for a 300 Nm engine, scaled by `TqModelScale` (%); above
-   100 kPa the 100 kPa value is multiplied by MAP / 100 and by
-   `TqBoostPct` (%). MAP comes from `MapKpa` for now (no MAP input).
+   mark a missing signal) or frozen (below), and the model is on (it is
+   **off** in the code, `COMM_TQ_MODEL`): placeholder table of Nm against
+   engine speed and manifold pressure for a 300 Nm engine, scaled by
+   100 %; above 100 kPa the 100 kPa value is multiplied by MAP / 100 and
+   by 100 %. MAP is fixed at 100 kPa (no MAP input).
 3. Otherwise the safe substitute `CanLossTq` (600 Nm: high torque = high
    clamping pressure). On a full CAN loss it is always `CanLossTq`.
 
 `tqSrc` shows which (0 CAN, 1 model, 2 substitute, 3 bench parameter),
-`tqUsed` the Nm used. `TqNoRedVal` is sent in status bytes 4-5 instead
-of 0 when the TCU asks for no torque change (for ECUs that want a code).
-`PedalPct` is the pedal used by the TCC schedule and the adaptation gate;
--1 (default) estimates it from torque / gearbox torque class, because
-the VCU frame has no pedal.
+`tqUsed` the Nm used. Status bytes 4-5 carry 0 when the TCU asks for no
+torque change (`COMM_TQ_NO_RED`). The pedal used by the TCC schedule
+and the adaptation gate is estimated from torque / gearbox torque class
+(`COMM_PEDAL_PCT` = -1), because the VCU frame has no pedal.
 
-Frozen signal: the torque has not changed by a single Nm for `FrzTime`
-(3 s) while the engine speed moved more than `FrzRpm` (300 rpm). A real
-torque signal always moves when the engine speed does. `FrzTime = 0`
-switches the check off. Reaction: the substitute (or model), error
+Frozen signal: the torque has not changed by a single Nm for 3 s
+(`COMM_FRZ_MS`) while the engine speed moved more than 300 rpm
+(`COMM_FRZ_RPM`). A real torque signal always moves when the engine
+speed does. Reaction: the substitute (or model), error
 `TQFROZEN`. There is no live pedal signal yet, so the same check is not
 fed with a pedal.
 
@@ -521,21 +516,20 @@ is the on-coming clutch, up- and downshifts.
   (cold below 40 degC).
 * Learning shifts: 3->4 learns D, 4->5 C, 5->6 E, 6->7 A, and the
   downshift 6->5 learns B (B is never the on-coming clutch of an upshift).
-* Every entry condition is a parameter and must hold at the start and
-  the end of the shift: torque `AdaTqMin`..`AdaTqMax` (55-180 Nm),
-  engine speed `AdaRpmMin`..`AdaRpmMax` (1600-3200), oil
-  `AdaOilMin`..`AdaOilMax` (55-80 degC) and inside a class, gears
-  `AdaGearMin`..`AdaGearMax` (3-7), pedal above `AdaPedalMin` (2 %),
-  driven at least `AdaDriveMin` (180 s) since power-up, `DriveMode`
-  Normal without `ShiftMode` Manual, no TCU fault, torque from CAN.
+* Every entry condition must hold at the start and the end of the
+  shift: torque 55-180 Nm, engine speed 1600-3200 rpm, oil 55-80 degC
+  and inside a class, gears 3-7, pedal above 2 %, driven at least 180 s
+  since power-up, `DriveMode` Normal without `ShiftMode` Manual, no TCU
+  fault, torque from CAN. These limits are fixed values in the code
+  (`ADA_*` in stm32_tcu.cpp), not parameters.
   `adaStat` shows which conditions block (bit 0 disabled, 1 torque,
   2 rpm, 3 oil, 4 gear, 5 pedal, 6 drive time, 7 mode, 8 fault,
   9 outside a class).
-* Rule (slow on purpose): input-speed flare above `AdaFlareRpm` or a
-  shift longer than `AdaShiftMs + AdaBandMs` = filled late, +`AdaStep`
-  (5 mbar); shorter than `AdaShiftMs - AdaBandMs` = harsh, -`AdaStep`.
-  Limited to +-`AdaMax` (300 mbar). Target time and band are
-  placeholders.
+* Rule (slow on purpose): input-speed flare above 100 rpm or a shift
+  longer than 500 + 100 ms = filled late, +`AdaStep` (5 mbar); shorter
+  than 500 - 100 ms = harsh, -`AdaStep`. Limited to +-`AdaMax`
+  (300 mbar). Target time, band and flare are fixed placeholders. The
+  only adaptation parameters are `AdaptEnable`, `AdaStep` and `AdaMax`.
 * Storage: its own flash page (`ADAPT_BLKNUM`, 0x0803E800), with magic,
   version and CRC-32. `save`, `load`, `defaults` and a parameter upload
   never touch it. Saved automatically when something changed and the
@@ -559,7 +553,7 @@ Classification only; the reactions are the existing limp / hold logic:
 | Speed sensor no signal | no edges while the other shaft turns faster than `DiagSpdNoSig` in a steady gear | as above |
 | Lock-up slip | TCC closed but engine - turbine speed > `TccSlipMax` for `TccSlipMs` | TCC kept open, `ERR_TCCSLIP`, cleared with `FaultClear` |
 | Frozen torque | see Torque input | substitute torque |
-| CAN timeout per bus | VCU frame on CAN1 (`CanTimeout`), lever on its bus (`LeverTimeout`) | `CanLossMode`; `canBus` bit 0 / bit 1 |
+| CAN timeout per bus | VCU frame on CAN1 (`CanTimeout`), lever on its bus (the lever type's timeout) | hold the gear; `canBus` bit 0 / bit 1 |
 | Firmware / calibration | `CalSigExp` (0 = off) against `CAL_SIG16`, a CRC-16 of the generated tables (`calSig` shows it) | configuration error at boot: nothing driven, `ERR_CALSIG` |
 
 `dgA`..`dgPzyl`: 0 OK, 1 open, 2 short to battery, 3 short to ground,
@@ -587,9 +581,8 @@ check.
 
 ### Status stream (`statstream.*`, `StreamEnable`, default off)
 
-Our own layout, little-endian, from `StreamBaseId` (1728 = 0x6C0) on
-`StreamBus` (CAN1 needs `CanTxEnable` as well; CAN2 sends whenever it is
-up):
+Our own layout, little-endian, from 0x6C0 (1728, fixed:
+`COMM_STREAM_BASE_ID`) on CAN1, which needs `CanTxEnable` as well:
 
 | Id | Rate | Bytes |
 |---|---|---|
@@ -632,7 +625,6 @@ Implemented:
   "Calibration tables"), gear-in last clutch per variant (F11 / v095: C
   for 1st, D for R; 330e: B with the A+C / A+D pre-fill), channel 7 mode
   (`Ch7Mode`; K0 on a row without K0 = open), LIN pump only on the 330e,
-  0x0B0 torque frame on every row (TX off).
 * Park lock sequence (Ian 11 Q9d / 12.1): leaving P waits for the motor
   at `ParkRelRpm` (700) or a measured 17 bar, asks the VCU for that speed
   and holds it `ParkRelHold` (2 s) after; P -> N `ParkPNDelay` (150 ms);
@@ -678,7 +670,7 @@ Implemented:
   `CmdSource = Param`, or `GearInPumpMs = GearInMotRpm = 0` / `ParkRelRpm =
   0` to switch the waits off.
 * Pump fault reaction `PumpFaultAct` (Ian 11 Q9a): 0 = report (default),
-  1 = ask the VCU for `PumpFaultRpm` (600) in P/N with the clutches open,
+  1 = ask the VCU for 600 rpm (fixed) in P/N with the clutches open,
   2 = no new gear-in while the fault is there.
 
 Stubbed / not done yet:
@@ -731,13 +723,13 @@ parameters to set once the value is known:
 | Speed sensor teeth | `TeethIn`, `TeethOut`, `TeethAux` (no pin) | 60 (OEM firmware value) | Q3 |
 | Speed timeout / minimum | `SpdTimeout`, `SpdMinRpm` | 100 ms, 30 rpm | Q3 |
 | Speed sensor ADC thresholds | `SpdAdcLo`, `SpdAdcHi` (read `spdInLo/Hi`, `spdOutLo/Hi` to set them) | 900 / 1200 mV (for 0.7 / 1.4 V) | bench, REV RC filter |
-| ATF sensor | `AtfSource`, `AtfFixed`, `AtfInput`, `AtfR1..6`, `AtfT1..6`, `AtfRMin/Max` | fixed 40 degC; generic NTC table (70R at 140 degC .. 26k at -30 degC) | Q4, Damien (which input) |
+| ATF sensor | `AtfSource`, `AtfFixed`, `AtfInput`, `AtfRMin/Max` | fixed 40 degC; the curve is hard-coded, not a parameter (`AnaConv::AtfTempC`: 70R = 140, 190R = 100, 450R = 70, 1180R = 40, 3800R = 10, 26k = -30 degC), a provisional generic NTC until the 8HP sensor is measured | Q4, Damien (which input) |
 | Battery voltage scaling | `VbatScale` | 18330 mV full scale (0.18 divider) | Bob |
 | Analog shifter | `ShAnaR`, `ShAnaN`, `ShAnaMin`, `ShAnaMax` | 1500 / 3000 / 200 / 6000 mV | shifter not chosen |
 | Manual mode limits | `ManMaxRpm`, `ManMinRpm` | 6000 / 1000 rpm | bench |
 | Spare outputs | `GpOut1Func`, `GpOut2Func`, `GpPwmFreq`, `GpPwmDuty`, `GpOutCurrent` | off, 200 Hz (not used), 0 %, 400 mA | use not decided; current [I] |
-| Aux pump LIN | `LinPumpEnable`, `LinPumpReq`, `LinPumpRpm`, `LinPumpHyst`, `LinTempMin/Max`, `LinColdMin`, `LinColdMs`, `LinPMax`, `LinPumpP`, `LinOffDelay`, `LinChecksum`, `LinSlotMs`, `LinBusFault`, `LinArmMs`, `LinSymMax`, `LinDelivRpm`, `LinRxCheck`, `ChgPlugSrc`, `ChgPlugSet` | off; Auto: on < 500 / off > 550 rpm, 0..125 degC (-15 degC for 5 s), < 20 bar, 800 ms; enhanced; 10 ms slot; 1.8 s; not-delivering check 1000 / 1500 ms below 100 rpm; replies checked; no charge plug | Ian `330E_LIN_OIL_PUMP.md` |
-| Inverter torque CAN | `CanCmdId`, `CanStatId`, `CanTxEnable`, `TqInterv`, `TqRamp` | placeholder frames, TX off | Q5, Q11 |
+| Aux pump LIN | `LinPumpEnable`, `LinPumpReq`, `LinPumpRpm`, `LinPumpP` | off; Auto; on below 500 rpm; 4 bar. Fixed in the code (`ConfigureLin`), no longer parameters: off above 550 rpm (50 rpm hysteresis), 0..125 degC (-15 degC for 5 s), < 20 bar, 800 ms off delay; enhanced checksum; 10 ms slot; 1.8 s bus fault; not-delivering check 1000 / 1500 ms below 100 rpm; replies checked; no charge plug input | Ian `330E_LIN_OIL_PUMP.md` |
+| Inverter torque CAN | `CanTxEnable`, `TqInterv`, `TqRamp` (ids fixed at 0x300 / 0x301) | placeholder frames, TX off | Q5, Q11 |
 | Applied clutch pressure | `ClutchApplyP` | 16500 mbar (valve fully open) | bench |
 | Engage fast close | `EngageCloseGrad` (20-50 bar/s), `EngageSyncMs` (50-100 ms), `EngageTqZero` | 30 bar/s, 80 ms, 10 Nm | Ian QA2, bench |
 | Engage fill/ramp | `EngageFillEq`, `EngageRamp` | 50 ms, 300 ms | bench |
@@ -748,13 +740,12 @@ parameters to set once the value is known:
 | Park engage limit | `ParkEngKmh`, `NabPerKmh`, `ParkEngNab` | 5 km/h, 25 rpm per km/h [I], 5 rpm | TIS, `N_ABBRTVPSEIN` [C] |
 | Park release footbrake | `ParkBrake`, `BrakeIn` | VcuCan (required), off | TIS; 2 = bench bypass, 3 = 12 V brake input (J1.46) |
 | Gear-in pressure source | `GearInMinP`, `GearInPumpMs`, `GearInMotRpm` | 8000 mbar, 1000 ms, 100 rpm | Ian 11 Q9d [I] |
-| Pump fault reaction | `PumpFaultAct`, `PumpFaultRpm` | report, 600 rpm | Ian 11 Q9a [I] |
+| Pump fault reaction | `PumpFaultAct` | report; the MotorSpeed request is fixed at 600 rpm | Ian 11 Q9a [I] |
 | Manual gear / tips | `ManualGear`, `TipOverride`, `Tip12Deb` | Selector, 0 (tips ignored in Auto), 30 ms | Damien |
 | CAN1 partner | `EcuType` | 0 = None/VCU | OEM ECUs later |
-| 0x0B0 torque frame (every row) | `F11TqTx` | off | Ian F11 diff, live log, F11_SAM_ADDSCOPE 3 |
-| 0x0A0 torque ceiling frame | `TqCeilTx`, `TqCeilNm` | off, 0 (= torque class [I]) | Ian F11_SAM_ADDSCOPE 3 |
+| 0x0A0 torque ceiling frame | none (fixed off, ceiling = torque class [I]) | off | Ian F11_SAM_ADDSCOPE 3 |
 | Interlock open thresholds | `IlOpenLow`, `IlOpenHigh` | 60 mA, 790 mA | Ian QA2 |
-| CAN loss behaviour | `CanLossMode`, `CanLossTq` | 1 = hold gear, 600 Nm | Damien (decided 2026-11-23) |
+| CAN loss behaviour | `CanLossTq` (hold gear is fixed) | hold gear, 600 Nm | Damien (decided 2026-11-23) |
 
 ### Setup parameters (web interface dropdowns)
 
@@ -766,7 +757,7 @@ parameters to set once the value is known:
 | `ManualGear` | 0 = Selector, 1 = P, 2 = R, 3 = N, 4..11 = 1st..8th | 0 | Manual mode only: picks P / R / N or a gear in D instead of the selector. Gear-in is still to 1st (or R) through the engage logic, then the TCU steps one gear at a time, each step inside `ManMinRpm` / `ManMaxRpm` (it waits rather than force a step), with the engage output-speed limit, `TopGear`, the CAN-loss rules and the interlock unchanged. Tips are ignored while a gear is picked. |
 | `DriveMode` | 0 = Normal, 1 = Sport, 2 = Track | 0 | See "Drive modes" below. |
 | `EcuType` | 0 = None/VCU | 0 | Placeholder: which CAN1 protocol (`canif.cpp`). OEM engine ECUs will be added later. |
-| `ShifterType` | 0 = BMW_GWS, 1 = Analog, 2 = BMW_E65, 3 = JLR_G1, 4 = JLR_G2, 5 = PKP2300, 6 = VCU_Frame | 0 | CAN gear levers: see "CAN gear levers". Until a lever's own frames are seen (and always with 6 = VCU_Frame) the placeholder VCU frame is used: selector in byte 0 and tips in byte 6 of the `CanCmdId` frame. Analog **placeholder mapping**: `park_in` high = P; `notpark_in` high = R/N/D from `ana_in` (below `ShAnaR` = R, below `ShAnaN` = N, else D); both or neither high, or `ana_in` outside `ShAnaMin..Max` = N plus a `SHIFTER` fault; `din1` = tip up, `din2` = tip down. Inputs must be stable for 20 ms. |
+| `ShifterType` | 0 = BMW_GWS, 1 = Analog, 2 = BMW_E65, 3 = JLR_G1, 4 = JLR_G2, 5 = PKP2300, 6 = VCU_Frame | 0 | CAN gear levers: see "CAN gear levers". Until a lever's own frames are seen (and always with 6 = VCU_Frame) the placeholder VCU frame is used: selector in byte 0 and tips in byte 6 of the 0x300 frame. Analog **placeholder mapping**: `park_in` high = P; `notpark_in` high = R/N/D from `ana_in` (below `ShAnaR` = R, below `ShAnaN` = N, else D); both or neither high, or `ana_in` outside `ShAnaMin..Max` = N plus a `SHIFTER` fault; `din1` = tip up, `din2` = tip down. Inputs must be stable for 20 ms. |
 | `ShiftMode` (replaces `GearSelMode`) | 0 = Auto, 1 = Manual, 2 = VCU | 0 | Auto: TCU shifts on `AutoUpRpm` / `AutoDownRpm`. Manual: one gear per tip; a tip down is refused if the lower gear would put the input above `ManMaxRpm`, a tip up if the higher gear would put it below `ManMinRpm`; the lugging downshift (`AutoDownRpm`) still happens on its own; interlock, `TopGear` and CAN-loss rules are unchanged. VCU: the gear request in byte 1 of the CAN frame (the old default). Tips (shifter or the 12 V up / down inputs, debounced over `Tip12Deb`, one gear per press) act in Manual, and in Auto only with `TipOverride` > 0: a tip shifts one gear and Auto stays off for that many ms. Never in VCU mode. |
 
 ### Drive modes
@@ -817,7 +808,7 @@ retired ids stay free and no id changes its name).
 | Line pressure | `pSys` requested, `pSysMeas` measured (-1: no sensor on the board) |
 | LIN pump | `lpState`, `lpRpm`, `lpCurr`, `lpVolt`, `lpEb0`, `lpEb1`, `lpClass`, `lpBusFlt` |
 | Park | `parkSt` (0 Engaged, 1 Releasing, 2 Released, 3 Engaging, 4 Unheld = INIT / safe), `parkMag` (as driven), `parkWait` (pressure), `parkBrkW` (footbrake), `brake` (as used), `brakePin` (12 V brake input J1.46), `parkInh` (P held off: still moving) |
-| CAN / supply | `canLoss`, `canAct`, `tq0B0` (Nm, absolute 0x0B0 target, 0 = none), `tqQual`, `t15` |
+| CAN / supply | `canLoss`, `canAct`, `t15` |
 | Drivers / load | `drvFlags0` / `drvFlags1` (IC2 / IC4 status), `gpFault` (GP outputs), `cpuload` (scheduler), `spdLoad` (speed ISR, 0.1 %) |
 | Lever | `lvMove` (raw move / code), `lvPBtn`, `lvState` (P R N D M), `lvCrcErr`, `lvCntErr`, `lvTmo` |
 | Variant | `solSetAct` (SolCurveSet in use), `tqClass`, `revLimNm`, `safeOfsNm` (size data [I]), `k0Present` |
@@ -828,7 +819,11 @@ ZombieVerter. A board that last ran the ZombieVerter still holds its
 parameters and CAN map, with valid CRCs, but those ids mean other things
 here. So at start-up the TCU only loads the parameter page when every key
 in it is one of its own parameter ids, and only then loads the CAN map.
-Otherwise it starts on defaults (`paramSrc` = 2) and the page is left
+Ids this firmware used before and has removed (`PARAM_RETIRED_IDS`,
+for example the old ATF curve parameters 28-33 and 137-142, and the
+LIN, adaptation and communication settings that became fixed values) also count as its
+own, so a page saved by an older build still loads; those entries are
+skipped. Otherwise it starts on defaults (`paramSrc` = 2) and the page is left
 untouched until `save`. Every loaded value is also checked against its
 min / max; one outside goes back to its default.
 
@@ -922,7 +917,7 @@ inferred, [H] hypothesis.
   (sequence table @0x58998). `TAB_IKABENTLEER` is all zeros (not used).
   Needs checking against an OEM coast-shift log.
 * **CAN loss (Q8)** - resolved, **Damien's decision 2026-11-23**:
-  `CanLossMode` default 1 = hold gear at `LineMax`, no upshifts, step down
+  hold gear (fixed in the code) at `LineMax`, no upshifts, step down
   as the car slows; neutral only for hydraulic/electrical faults.
   `CanLossTq` default 600 Nm = `D_m_IstVM_Default` [C]. **Open (Ian Q8):**
   the OEM fault-to-reaction table (KFC -> KMN) was not found, so the
@@ -941,7 +936,7 @@ Ian's [C]/[I]/[H].
 What is implemented:
 
 * 19200 baud, TCU master, 8-byte frames. Schedule 0x30, 0x32, 0x30, 0x33,
-  0x30, 0x34 on `LinSlotMs` slots (10 ms [I]), so 0x30 every 20 ms. PIDs
+  0x30, 0x34 on 10 ms slots [I], so 0x30 every 20 ms. PIDs
   F0 / 32 / 73 / B4 [C].
 * 0x30 [C]: b0 0xAA off / 0x55 run (0xCC / 0x33 unused); b1 flags (0x02
   clear errors for exactly one frame, at bus start and on `FaultClear`,
@@ -955,31 +950,30 @@ What is implemented:
   check) are decoded raw.
 * Receive checks as the OEM [C]: LIN checksum; 0x32 CRC-8 (2 bad in a row
   = fault); alive counter repeated twice or jumping by more than 2 = fault,
-  frame dropped; no valid 0x32 for `LinBusFault` (1.8 s) = bus fault. Fault
+  frame dropped; no valid 0x32 for 1.8 s = bus fault. Fault
   classes use the OEM `ctl_IEP_Status` masks (EB0 0x40/0x80 = permanent
   level-2 safety fault, 0x10/0x20 = pump comms fault).
 * Run rule (330e) [C values, I for how they combine]: input speed below
-  `LinPumpRpm` 500 rpm (hysteresis `LinPumpHyst` 50), sump `LinTempMin` ..
-  `LinTempMax` (0..125 degC), commanded line pressure below `LinPMax`
-  (20 bar); keeps running `LinOffDelay` (800 ms, `D_t_IEP_ShutdownDelay`
-  [I: use]) after the rule drops. `LinPumpP` (4 bar, `KF_PIEP_SYS`) is the
+  `LinPumpRpm` 500 rpm (hysteresis 50 rpm), sump 0..125 degC, commanded
+  line pressure below 20 bar; keeps running 800 ms
+  (`D_t_IEP_ShutdownDelay` [I: use]) after the rule drops. These fixed
+  values are named constants in `ConfigureLin` (stm32_tcu.cpp). `LinPumpP` (4 bar, `KF_PIEP_SYS`) is the
   pressure the OEM assumes from the pump; it is shown (`lpPress`) but not
   used by the line-pressure model yet.
 * `GearboxType = F11`: the bus stays off (the F11 8HP45 has no LIN pump
   [C]). `LinPumpEnable` stays 0 by default.
 * From Ian's section 11 (23 Nov 2026): 0xAA -> 0x55 directly, no settle
   phase [C]; status ignored for 1 s after the bus starts [I] and 400 ms
-  after a clear [C]; "not delivering" armed `LinArmMs` (1000 ms,
-  `KL_TVERZSYMIEP`) after the run command and set when the pump has
-  reported less than `LinDelivRpm` until `LinSymMax` (1500 ms,
-  `KL_TMAXSYMIEP`); on < 500 / off > 550 rpm, not above 20 bar, 0..125
+  after a clear [C]; "not delivering" armed 1000 ms
+  (`KL_TVERZSYMIEP`) after the run command and set when the pump has
+  reported less than 100 rpm until 1500 ms (`KL_TMAXSYMIEP`); on < 500 / off > 550 rpm, not above 20 bar, 0..125
   degC or down to -15 degC for 5 s at most; P does not switch it off;
-  charging plug in -> LIN asleep (`ChgPlugSrc` = Param + `ChgPlugSet`
-  for now; the input is TBD); no ECU limit on the pump voltage (it flags
+  charging plug in -> LIN asleep in the OEM (no plug input here, so the
+  plug always counts as out); no ECU limit on the pump voltage (it flags
   its own, EB1 bit 2), diagnosis blanked below `UvLimit` (7.4 V); alive
   counter low nibble only, starts at 0 at power-on, not reset when the
-  bus restarts [C/I]; the 0x30 never depends on the replies, and
-  `LinRxCheck = 0` stops the replies raising faults.
+  bus restarts [C/I]; the 0x30 never depends on the replies (the replies
+  are always checked for faults).
 * The document itself is not copied into the repository.
 
 Answered by Ian (closed), section 11: start-up (no settle), pump fault
@@ -996,7 +990,7 @@ Still open:
 
 1. **LIN channel / checksum.** Which SH725x LIN/SCI channel the OEM uses
    was not found, nor whether its hardware does the checksum; checksum
-   type is [H: enhanced] (`LinChecksum`, classic selectable).
+   type is [H: enhanced], now fixed in the code (`LIN_ENHANCED_CSUM`).
 2. **b4 / b5 scaling** (current 0.2 A/bit, voltage 0.1 V/bit) is from the
    A2L; check on the bench against a meter.
 3. **0x33 pump temperature scaling**: the OEM curve looks odd
@@ -1006,7 +1000,7 @@ Still open:
    and the meaning of EB0 bits 6/7 inside the pump.
 6. **Fault reaction** - answered (Q9a): the OEM raises the motor speed so
    the mechanical pump carries the oil supply. `PumpFaultAct` (default 0 =
-   report only; 1 = ask the VCU for `PumpFaultRpm`; 2 = no new gear-in).
+   report only; 1 = ask the VCU for 600 rpm; 2 = no new gear-in).
    The schedule always keeps running and `FaultClear` sends one clear
    frame. The motor speed request only goes out with `CanTxEnable`.
 7. **Gear-in waiting for the pump** - answered (Q9d): minimum pressure, no
@@ -1015,8 +1009,7 @@ Still open:
 8. Warm-up (b1 0x08: below 16 degC, ends at 60 degC, < 8 km/h, <= 8 bar,
    pump SW >= 0x0705) and limp (0x04) requests are not generated yet.
 9. LIN hardware: TJA1021 on UART4 (SLP_N PD11); untested.
-10. Charging plug input: pin TBD (`ChgPlugSrc = Input` reads "not
-    plugged" until it exists).
+10. Charging plug input: none (the plug always counts as out).
 11. Air-ingestion guard (30 s on a gradient / 500 s at speed) and the
     car-wash cut-off are not done.
 
@@ -1054,10 +1047,10 @@ Resolved by the pin map (RREF, chips and CS, pins, channel map, park
 magnet off the MAX22200, no Sol1 / high-side switch, dividers, crystal,
 terminal, speed sensor interface). Still open:
 
-* **Rev C** is provisional: still being routed, full firmware answers to
-  follow. Only the brake input (J1.46 -> PD1, ZV1.3 circuit, active
-  high) is in the firmware; please confirm it and anything else that
-  moves.
+* **Rev C** is final (Bob). BRAKE_IN confirmed: J1.46 -> SMF16A TVS,
+  4.7k series, 1.5k to GND, 1 uF -> PD1 (pin 82, EXTI1), active high.
+  The firmware pin table matches Bob's rev C digio / anain CSVs.
+* **S1** (total +12 V current) is closed: F1 5 A accepted.
 
 * **OUT6 (was "PREL")**: which hydraulic valve is on OUT6 / J1.3? The
   firmware maps POS there (`ChanPOS = 6`) pending the bench check; Ian
@@ -1066,12 +1059,14 @@ terminal, speed sensor interface). Still open:
 * **TCC on OUT7**: on the 330e this is K0 (held open), on the F11 the
   converter lock-up. Same channel for both variants? IFS is 1 A on both
   chips; whether TCC / K0 need more is not verified.
-* **Open items** from Bob's list (S1, S5, S6, S7, S8): S8, OSS
+* **Open items** from Bob's list (S5, S6, S7, S8): S8, OSS
   signals above 10 kHz, would need the RC re-sized; the scan rate
   itself has margin. The speed thresholds (`SpdAdcLo` / `SpdAdcHi`)
   need a re-check with the RC fitted (Bob: about 1.05 V = 1300 counts).
 * The speed pins are only ever converted by ADC1, so one channel is never
   converted by both ADCs at once.
+* `GpOutCurrent` default 400 mA [I] for the GP outputs (IC4 OUT1..3):
+  is that the right hold current for what will be connected?
 * Starter lock on GpOut1 / GpOut2: which polarity does the vehicle want? The
   firmware drives the output *on* in P/N.
 * Which temperature input (TempIn1 or TempIn2, both 2.7k now) the 8HP ATF

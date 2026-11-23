@@ -46,7 +46,7 @@ static const Entry entries[] = {PARAM_LIST};
 static const int kNextParamId = 273; // keep equal to param_prj.h
 static const int kNextValueId = 2164;
 
-static const int retired[] = {1, 22, 23, 24, 25, 26, 27, 34, 35, 40, 42, 53, 54, 69, 70, 102, 106, 107, 157, 158, 159, 160, 161, 162, 2037};
+static const int retired[] = {PARAM_RETIRED_IDS};
 
 struct Frozen {
   const char *name;
@@ -61,11 +61,7 @@ static const Frozen frozen[] = {
     {"TeethIn", 10}, {"TeethOut", 11}, {"TeethAux", 12},
     {"SpdTimeout", 13}, {"SpdMinRpm", 14}, {"SpdAdcLo", 135},
     {"SpdAdcHi", 136}, {"AtfSource", 20}, {"AtfFixed", 21},
-    {"AtfInput", 143}, {"AtfR1", 137}, {"AtfR2", 138},
-    {"AtfR3", 139}, {"AtfR4", 140}, {"AtfR5", 141},
-    {"AtfR6", 142}, {"AtfRMin", 144}, {"AtfRMax", 145},
-    {"AtfT1", 28}, {"AtfT2", 29}, {"AtfT3", 30},
-    {"AtfT4", 31}, {"AtfT5", 32}, {"AtfT6", 33},
+    {"AtfInput", 143}, {"AtfRMin", 144}, {"AtfRMax", 145},
     {"MaxIfs", 41}, {"MaxHfsMask", 146}, {"MaxFreq", 43},
     {"MaxFreqDiv", 44}, {"MaxOpenLoad", 45}, {"IMaxCoil", 46},
     {"IMinCoil", 47}, {"SlewRate", 48}, {"DitherAmp", 49},
@@ -91,23 +87,12 @@ static const Frozen frozen[] = {
     {"IlOpenHigh", 105}, {"ParkRelRpm", 183}, {"ParkRelP", 184},
     {"ParkRelHold", 185}, {"ParkPNDelay", 186}, {"ParkCtrl", 187},
     {"ParkMagMin", 189}, {"ParkMagMax", 190}, {"GearInMinP", 191},
-    {"GearInPumpMs", 192}, {"GearInMotRpm", 193}, {"CanCmdId", 110},
-    {"CanStatId", 111}, {"CanTimeout", 112}, {"CanTxEnable", 113},
-    {"CanLossTq", 114}, {"CanLossMode", 108}, {"SdoNodeId", 115},
-    {"Can1Baud", 116}, {"LogEnable", 117}, {"LogBaseId", 118},
-    {"Can2Baud", 119}, {"Can2Enable", 163}, {"F11TqTx", 181},
-    {"TqCeilTx", 215}, {"TqCeilNm", 216}, {"SolCurveSet", 214},
-    {"LeverBus", 217}, {"LeverTxEnable", 218}, {"LeverTimeout", 219},
-    {"LeverDeb", 220}, {"LeverMSub", 221}, {"LeverB34", 222},
-    {"GpOut1Func", 147}, {"GpOut2Func", 148}, {"GpPwmFreq", 150},
+    {"GearInPumpMs", 192}, {"GearInMotRpm", 193}, {"CanTimeout", 112}, {"CanTxEnable", 113},
+    {"CanLossTq", 114}, {"Can1Baud", 116}, {"Can2Baud", 119}, {"Can2Enable", 163}, {"SolCurveSet", 214},
+    {"LeverBus", 217}, {"GpOut1Func", 147}, {"GpOut2Func", 148}, {"GpPwmFreq", 150},
     {"GpPwmDuty", 151}, {"LinPumpEnable", 152}, {"LinPumpReq", 153},
-    {"LinPumpRpm", 154}, {"LinPumpHyst", 155}, {"LinChecksum", 156},
-    {"LinTempMin", 164}, {"LinTempMax", 165}, {"LinPMax", 166},
-    {"LinPumpP", 167}, {"LinOffDelay", 168}, {"LinSlotMs", 169},
-    {"LinBusFault", 170}, {"LinColdMin", 196}, {"LinColdMs", 197},
-    {"LinArmMs", 198}, {"LinSymMax", 199}, {"LinDelivRpm", 200},
-    {"LinRxCheck", 201}, {"ChgPlugSrc", 202}, {"ChgPlugSet", 203},
-    {"PumpFaultAct", 194}, {"PumpFaultRpm", 195}, {"SelectorSet", 120},
+    {"LinPumpRpm", 154}, {"LinPumpP", 167},
+    {"PumpFaultAct", 194}, {"SelectorSet", 120},
     {"GearSet", 121}, {"TorqueSet", 122}, {"MotorRpmSet", 123},
     {"ValveTest", 124}, {"ValveTestSel", 125}, {"ValveTestmA", 126},
     {"ParkHoldTest", 149}, {"version", 2000}, {"opmode", 2001},
@@ -146,25 +131,17 @@ static const Frozen frozen[] = {
     {"tBoard", 2099}, {"ratio", 2100}, {"slip", 2101},
     {"selGear", 2102}, {"inertia", 2103}, {"drvMode", 2104},
     {"shiftMd", 2105}, {"pSysMeas", 2106}, {"lpBusFlt", 2107},
-    {"parkSt", 2108}, {"canLoss", 2109}, {"tq0B0", 2110},
-    {"tqQual", 2111}, {"solSetAct", 2112}, {"tqClass", 2113},
+    {"parkSt", 2108}, {"canLoss", 2109}, {"solSetAct", 2112}, {"tqClass", 2113},
     {"revLimNm", 2114}, {"safeOfsNm", 2115}, {"k0Present", 2116},
     {"tBoardSrc", 2117}, {"lvMove", 2118}, {"lvPBtn", 2119},
     {"lvState", 2120}, {"lvCrcErr", 2121}, {"lvCntErr", 2122}, {"lvTmo", 2123},
-    {"TqModel", 223}, {"TqModelScale", 224}, {"TqBoostPct", 225},
-    {"MapKpa", 226}, {"TqNoRedVal", 227}, {"PedalPct", 228},
-    {"AdaptEnable", 229}, {"AdaTqMin", 230}, {"AdaTqMax", 231},
-    {"AdaRpmMin", 232}, {"AdaRpmMax", 233}, {"AdaOilMin", 234},
-    {"AdaOilMax", 235}, {"AdaGearMin", 236}, {"AdaGearMax", 237},
-    {"AdaPedalMin", 238}, {"AdaDriveMin", 239}, {"AdaShiftMs", 240},
-    {"AdaBandMs", 241}, {"AdaFlareRpm", 242}, {"AdaStep", 243},
+    {"AdaptEnable", 229}, {"AdaStep", 243},
     {"AdaMax", 244}, {"DiagRBand", 245}, {"DiagRWire", 246},
-    {"TccSlipMax", 247}, {"TccSlipMs", 248}, {"FrzTime", 249},
-    {"FrzRpm", 250}, {"CalSigExp", 251}, {"TccMode", 252},
+    {"TccSlipMax", 247}, {"TccSlipMs", 248}, {"CalSigExp", 251}, {"TccMode", 252},
     {"TccMinRpm", 253}, {"TccHyst", 254}, {"TccKp", 255},
     {"TccKi", 256}, {"TccStartP", 257}, {"TccSlipTgt", 258},
     {"TccSlipGear", 259}, {"TccSlipRpm", 260}, {"StreamEnable", 261},
-    {"StreamBaseId", 262}, {"StreamBus", 263}, {"DiagSpdOpen", 264},
+    {"DiagSpdOpen", 264},
     {"DiagSpdShort", 265}, {"DiagSpdNoSig", 266},
     {"ParkEngKmh", 267}, {"NabPerKmh", 268}, {"ParkEngNab", 269},
     {"ParkBrake", 270}, {"BrakeIn", 271}, {"GpOutCurrent", 272},
@@ -190,12 +167,12 @@ static const Entry *Find(const char *name) {
   return 0;
 }
 
-// Our parameter ids, as the firmware's NumFromId check sees them.
+// Our parameter ids or retired ones, as the firmware's check sees them.
 static bool OurParamId(uint16_t id) {
   for (const Entry &e : entries)
     if (!e.value && e.id == id)
       return true;
-  return false;
+  return FlashGuard::Retired(id);
 }
 
 /* A ZombieVerter parameter page must not be taken as ours (it shares the
@@ -227,6 +204,71 @@ static void TestFlashGuard() {
   CHECK_EQ(UnknownKeys(zv, 255, OurParamId), 3);
   CHECK(!OurParamId(5) && !OurParamId(6) && !OurParamId(39));
   CHECK(OurParamId(116)); // the shared id that would break Can1Baud
+
+  // A page saved before the ATF curve was hard-coded: our current ids plus
+  // AtfT1..6 (28-33) and AtfR1..6 (137-142). It must still load.
+  const int oldAtf[] = {28, 29, 30, 31, 32, 33, 137, 138, 139, 140, 141, 142};
+  for (int id : oldAtf)
+    if (k < 255)
+      page[k++] = {(uint16_t)id, 0, 0, 0};
+  CHECK_EQ(UnknownKeys(page, 255, OurParamId), 0);
+  CHECK(Retired(28) && Retired(33) && Retired(137) && Retired(142));
+  CHECK(!Retired(20) && !Retired(143)); // AtfSource, AtfInput stay
+  // The LIN settings that became fixed values, the same way.
+  const int oldLin[] = {155, 156, 164, 165, 166, 168, 169, 170, 195,
+                        196, 197, 198, 199, 200, 201, 202, 203};
+  for (int id : oldLin) {
+    CHECK(Retired((uint16_t)id));
+    if (k < 255)
+      page[k++] = {(uint16_t)id, 0, 0, 0};
+  }
+  CHECK_EQ(UnknownKeys(page, 255, OurParamId), 0);
+  const int keptLin[] = {152, 153, 154, 167, 194};
+  for (int id : keptLin)
+    CHECK(!Retired((uint16_t)id) && OurParamId((uint16_t)id));
+  // The adaptation settings that became fixed values, the same way.
+  for (int id = 230; id <= 242; id++) {
+    CHECK(Retired((uint16_t)id));
+    if (k < 255)
+      page[k++] = {(uint16_t)id, 0, 0, 0};
+  }
+  CHECK_EQ(UnknownKeys(page, 255, OurParamId), 0);
+  const int keptAda[] = {229, 243, 244}; // AdaptEnable, AdaStep, AdaMax
+  for (int id : keptAda)
+    CHECK(!Retired((uint16_t)id) && OurParamId((uint16_t)id));
+  // The communication settings that became fixed values, and F11TqTx.
+  const int oldComm[] = {108, 110, 111, 115, 117, 118, 181, 215, 216, 218, 219,
+                         220, 221, 222, 223, 224, 225, 226, 227, 228, 249, 250,
+                         262, 263};
+  for (int id : oldComm) {
+    CHECK(Retired((uint16_t)id));
+    if (k < 255)
+      page[k++] = {(uint16_t)id, 0, 0, 0};
+  }
+  CHECK_EQ(UnknownKeys(page, 255, OurParamId), 0);
+  // Can1Baud, Can2Baud, CanTimeout, CanTxEnable, CanLossTq, Can2Enable,
+  // LeverBus, StreamEnable stay parameters.
+  const int keptComm[] = {116, 119, 112, 113, 114, 163, 217, 261};
+  for (int id : keptComm)
+    CHECK(!Retired((uint16_t)id) && OurParamId((uint16_t)id));
+  CHECK(!Retired(5) && !Retired(6));
+
+  // Every parameter id of the ZombieVerter (Stm32-vcu param_prj.h): even
+  // with the retired ids allowed, the page is still seen as foreign.
+  static const uint16_t zvIds[] = {
+      5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17, 18, 19, 20, 21, 22, 23, 24,
+      25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 37, 38, 39, 40, 41, 42, 43, 44,
+      45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 68,
+      70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87,
+      88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104,
+      105, 106, 107, 108, 110, 111, 114, 115, 116, 117, 118, 120, 121, 122,
+      123, 124, 126, 127, 128, 129, 131, 132, 133, 134, 135, 136, 137, 138,
+      139, 140, 141, 142, 143, 144, 145, 146, 147, 149, 150, 151, 152, 155,
+      156};
+  int nz = 0;
+  for (uint16_t id : zvIds)
+    zv[nz++] = {id, 0, 0, 0};
+  CHECK(UnknownKeys(zv, 255, OurParamId) >= 10);
 
   CHECK_EQ(InRange(2, 0, 4, 2), 2);
   CHECK_EQ(InRange(2500, 0, 4, 2), 2);
@@ -275,7 +317,7 @@ void TestParams() {
       "iPOS", "itA", "itB", "itC", "itD", "itE", "itSYS", "itCh7", "itPOS",
       "itPZYL", "fA", "fB", "fC", "fD", "fE", "fSYS", "fCh7", "fPOS", "fPZYL",
       "tBoard", "ratio", "slip", "selGear", "inertia", "drvMode", "shiftMd",
-      "pSysMeas", "lpBusFlt", "parkSt", "canLoss", "tq0B0", "tqQual",
+      "pSysMeas", "lpBusFlt", "parkSt", "canLoss",
       "solSetAct", "tqClass", "revLimNm", "safeOfsNm", "k0Present", "tBoardSrc"};
   int missing = 0;
   for (const char *s : spot) {

@@ -17,6 +17,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "flashguard.h"
+#include "param_prj.h"
 
 namespace FlashGuard {
 
@@ -28,6 +29,14 @@ int UnknownKeys(const StoredParam *page, int entries, bool (*known)(uint16_t id)
       n++;
   }
   return n;
+}
+
+bool Retired(uint16_t id) {
+  static const uint16_t ids[] = {PARAM_RETIRED_IDS};
+  for (uint16_t r : ids)
+    if (r == id)
+      return true;
+  return false;
 }
 
 int32_t InRange(int32_t value, int32_t min, int32_t max, int32_t def) {

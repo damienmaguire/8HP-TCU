@@ -91,6 +91,14 @@ int32_t TempInputOhms(int32_t counts, int32_t rPullUp);
  * Clamped at the ends. */
 int32_t TempFromOhms(int32_t ohms, const int32_t *rPts, const int32_t *tPts, int n);
 
+/** ATF sump temperature (degC) from the sensor resistance, on the fixed
+ * curve below (TempFromOhms: straight lines between the points, clamped
+ * at the ends). PROVISIONAL: this is a generic NTC curve, not measured on
+ * the 8HP sensor. Replace the points once the real sensor is measured.
+ *   70 ohm = 140 C, 190 = 100 C, 450 = 70 C, 1180 = 40 C, 3800 = 10 C,
+ *   26000 ohm = -30 C. */
+int32_t AtfTempC(int32_t ohms);
+
 /** STM32F107 internal temperature sensor (ADC1_IN16), degC. Data sheet
  * typical values: V25 = 1.43 V, slope 4.3 mV/degC, T = (V25 - V) / slope
  * + 25. Not calibrated per part: V25 spreads 1.34..1.52 V, so the reading

@@ -20,7 +20,7 @@
 #define STATSTREAM_H
 
 /* Optional status stream for dashboards / loggers (StreamEnable, off by
- * default). Our own layout, little-endian, 4 frames from StreamBaseId:
+ * default). Our own layout, little-endian, 4 frames from COMM_STREAM_BASE_ID:
  *
  *  base+0  every 10 ms (100 Hz)  torque
  *    0-1  torque target, Nm, signed (input torque + intervention)

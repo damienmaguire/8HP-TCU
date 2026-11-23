@@ -18,7 +18,7 @@
  */
 /* Main file of the 8HP TCU firmware.
  *
- * Board: Bob's Stm32_TCU_V4 rev C, provisional (pin map in hwdefs.h,
+ * Board: Bob's Stm32_TCU_V4 rev C (pin map in hwdefs.h,
  * digio_prj.h and README "Pin map").
  *
  * Tasks (Stm32Scheduler on TIM4):
@@ -30,7 +30,7 @@
  *
  * CAN1 talks to the vehicle/VCU. CAN2 is the ZombieVerter link (PB5 /
  * PB6), on by default (Can2Enable = 1). Nothing is transmitted by
- * default (CanTxEnable = 0, LogEnable = 0). SDO replies on CAN1 are only
+ * default (CanTxEnable = 0, COMM_LOG_ENABLE = false). SDO replies on CAN1 are only
  * sent when a tool asks for them. The LIN pump master (TJA1021) is off by
  * default (LinPumpEnable = 0).
  */
@@ -165,10 +165,7 @@ static bool configError = false;
 
 // Latest decoded CAN1 input (canif.h; EcuType picks the protocol).
 static volatile CanRx canRx = {SEL_N, 0, 0, 0, 0, false};
-static uint8_t f11TqCounter = 0;
 static uint8_t tqCeilCounter = 0;
-static uint8_t f11TqQual = 0; // 0x0B0 qualifier and absolute target, Nm
-static int32_t f11TqNm = 0;
 static volatile uint32_t msSinceRx = 0xFFFF;
 // Reference-derived features (README "Torque input", "Clutch adaptation",
 // "Fault detection", "Status stream").
@@ -199,6 +196,79 @@ static void ConfigureEds() {
   c.tempCorrection = Param::GetBool(Param::TempCorr);
   eds.Configure(c);
 }
+
+// LIN oil pump settings. Only on / off, the request mode, the switch-on
+// speed and the pressure are parameters (LinPumpEnable, LinPumpReq,
+// LinPumpRpm, LinPumpP, plus PumpFaultAct). The rest are fixed here at
+// the values the parameters used to default to.
+static const bool LIN_ENHANCED_CSUM = true; // enhanced checksum (LIN 2.x) [H]
+static const int LIN_SLOT_MS = 10;          // one frame slot every 10 ms [I]
+static const int LIN_BUS_FAULT_MS = 1800;   // no valid 0x32 this long = bus fault
+static const int LIN_ARM_MS = 1000;   // "not delivering" check armed after 1 s
+static const int LIN_SYM_MAX_MS = 1500; // and set after 1.5 s below LIN_DELIV_RPM
+static const int LIN_DELIV_RPM = 100;   // pump speed that counts as delivering
+static const bool LIN_RX_CHECK = true;  // pump replies may raise faults
+static const int LIN_HYST_RPM = 50;     // on above LinPumpRpm + 50 rpm
+static const int LIN_TEMP_MIN_C = 0;    // runs with the sump at 0 ..
+static const int LIN_TEMP_MAX_C = 125;  // .. 125 degC
+static const int LIN_P_MAX_MBAR = 20000; // and line pressure below 20 bar
+static const int LIN_OFF_DELAY_MS = 800; // keeps running 800 ms after the rule drops
+static const int LIN_COLD_MIN_C = -15;  // below 0 degC: may still run down to -15 degC
+static const int LIN_COLD_MS = 5000;    // for at most 5 s
+// Motor speed asked of the VCU when PumpFaultAct = MotorSpeed.
+static const int LIN_FAULT_RPM = 600;
+
+// Communication. Only Can1Baud, Can2Enable, Can2Baud, CanTxEnable,
+// CanTimeout, CanLossTq, LeverBus and StreamEnable are parameters; the
+// rest are fixed here at the values the parameters used to default to.
+static const uint32_t COMM_CMD_ID = 0x300;  // VCU command frame id (768)
+static const uint32_t COMM_STAT_ID = 0x301; // TCU status frame id (769); +1 = motor speed request
+// On CAN loss keep the last selector and hold the gear (Damien,
+// 2026-11-23) rather than going to neutral.
+static const int COMM_CANLOSS_MODE = CANLOSS_HOLD;
+static const int COMM_SDO_NODE_ID = 22;       // CANopen SDO node (0x600 + 22)
+static const bool COMM_LOG_ENABLE = false;    // CAN2 logging frames off
+static const uint32_t COMM_LOG_BASE_ID = 1520; // their first id (0x5F0) if turned on
+static const bool COMM_TQ_CEIL_TX = false;    // 0x0A0 torque ceiling frame off
+static const int COMM_TQ_CEIL_NM = 0;         // 0 = use the gearbox torque class
+static const bool COMM_LEVER_TX = false;      // no display / LED frames to the lever
+static const int COMM_LEVER_TIMEOUT_MS = 0;   // 0 = the lever type's own timeout
+static const int COMM_LEVER_DEB = 2;          // lever position must repeat in 2 frames
+static const int COMM_LEVER_MSUB = 1;         // lever M position sub-code
+static const int COMM_LEVER_B34 = 0;          // bytes 3-4: OEM 0xFC 0xFF layout
+static const bool COMM_TQ_MODEL = false;      // no engine torque model
+static const int COMM_TQ_MODEL_SCALE = 100;   // model settings, used only when
+static const int COMM_TQ_BOOST_PCT = 100;     // the model is on
+static const int COMM_MAP_KPA = 100;
+// Torque value sent when there is no reduction request.
+static const int16_t COMM_TQ_NO_RED = 0;
+static const int COMM_PEDAL_PCT = -1; // -1 = estimate the pedal from the torque
+// CAN torque counts as frozen when it does not change for 3 s while the
+// engine speed moves by more than 300 rpm.
+static const int COMM_FRZ_MS = 3000;
+static const int COMM_FRZ_RPM = 300;
+static const uint32_t COMM_STREAM_BASE_ID = 1728; // status stream first id (0x6C0)
+static const bool COMM_STREAM_ON_CAN2 = false;    // status stream goes on CAN1
+
+// Clutch adaptation. Only AdaptEnable, AdaStep and AdaMax are parameters;
+// the rest are fixed here at the values the parameters used to default to.
+// A learning shift only counts when all of these hold at its start and end:
+static const int ADA_TQ_MIN_NM = 55;    // engine torque 55 ..
+static const int ADA_TQ_MAX_NM = 180;   // .. 180 Nm
+static const int ADA_RPM_MIN = 1600;    // engine speed 1600 ..
+static const int ADA_RPM_MAX = 3200;    // .. 3200 rpm
+static const int ADA_OIL_MIN_C = 55;    // oil 55 ..
+static const int ADA_OIL_MAX_C = 80;    // .. 80 degC (and inside a class)
+static const int ADA_GEAR_MIN = 3;      // shifts between 3rd ..
+static const int ADA_GEAR_MAX = 7;      // .. and 7th
+static const int ADA_PEDAL_MIN_PCT = 2; // pedal above 2 %
+static const int ADA_DRIVE_MIN_S = 180; // driven at least 180 s since power-up
+// Learning rule: a shift longer than 500 + 100 ms, or an input-speed flare
+// above 100 rpm, means the clutch filled late; shorter than 500 - 100 ms
+// means harsh. Target time and band are placeholders.
+static const int ADA_SHIFT_MS = 500;
+static const int ADA_BAND_MS = 100;
+static const int ADA_FLARE_RPM = 100;
 
 // Copy the parameters into the TCU, shift and adaptation settings.
 static void ConfigureTcu() {
@@ -232,7 +302,7 @@ static void ConfigureTcu() {
   c.dntTauMs = Param::GetInt(Param::DntTau);
   c.topGear = Param::GetInt(Param::TopGear);
   c.tqInterv = Param::GetInt(Param::TqInterv);
-  c.canLossMode = Param::GetInt(Param::CanLossMode);
+  c.canLossMode = COMM_CANLOSS_MODE;
   c.ilOpenLow = Param::GetInt(Param::IlOpenLow) * 10;
   c.ilOpenHigh = Param::GetInt(Param::IlOpenHigh) * 10;
   // Must match ConfigureEds() so the interlock sees the real targets.
@@ -255,7 +325,7 @@ static void ConfigureTcu() {
   c.gearInPumpMs = Param::GetInt(Param::GearInPumpMs);
   c.gearInMotRpm = Param::GetInt(Param::GearInMotRpm);
   c.pumpFaultAct = Param::GetInt(Param::PumpFaultAct);
-  c.pumpFaultRpm = Param::GetInt(Param::PumpFaultRpm);
+  c.pumpFaultRpm = LIN_FAULT_RPM;
   c.tipOverrideMs = Param::GetInt(Param::TipOverride);
   int variant = Param::GetInt(Param::GearboxType);
   Cal::Select(variant, Param::GetInt(Param::SolCurveSet));
@@ -279,19 +349,19 @@ static void ConfigureTcu() {
   c.sas.fillOfs = Param::GetBool(Param::AdaptEnable) ? fillOfsNow : nullptr;
   AdaConfig ac;
   ac.enable = Param::GetBool(Param::AdaptEnable);
-  ac.tqMin = Param::GetInt(Param::AdaTqMin);
-  ac.tqMax = Param::GetInt(Param::AdaTqMax);
-  ac.rpmMin = Param::GetInt(Param::AdaRpmMin);
-  ac.rpmMax = Param::GetInt(Param::AdaRpmMax);
-  ac.oilMin = Param::GetInt(Param::AdaOilMin);
-  ac.oilMax = Param::GetInt(Param::AdaOilMax);
-  ac.gearMin = Param::GetInt(Param::AdaGearMin);
-  ac.gearMax = Param::GetInt(Param::AdaGearMax);
-  ac.pedalMin = Param::GetInt(Param::AdaPedalMin);
-  ac.driveMinS = Param::GetInt(Param::AdaDriveMin);
-  ac.shiftMs = Param::GetInt(Param::AdaShiftMs);
-  ac.bandMs = Param::GetInt(Param::AdaBandMs);
-  ac.flareRpm = Param::GetInt(Param::AdaFlareRpm);
+  ac.tqMin = ADA_TQ_MIN_NM;
+  ac.tqMax = ADA_TQ_MAX_NM;
+  ac.rpmMin = ADA_RPM_MIN;
+  ac.rpmMax = ADA_RPM_MAX;
+  ac.oilMin = ADA_OIL_MIN_C;
+  ac.oilMax = ADA_OIL_MAX_C;
+  ac.gearMin = ADA_GEAR_MIN;
+  ac.gearMax = ADA_GEAR_MAX;
+  ac.pedalMin = ADA_PEDAL_MIN_PCT;
+  ac.driveMinS = ADA_DRIVE_MIN_S;
+  ac.shiftMs = ADA_SHIFT_MS;
+  ac.bandMs = ADA_BAND_MS;
+  ac.flareRpm = ADA_FLARE_RPM;
   ac.step = Param::GetInt(Param::AdaStep);
   ac.maxOfs = Param::GetInt(Param::AdaMax);
   adapt.Configure(ac);
@@ -343,35 +413,35 @@ static void ConfigureShifter() {
   shifter.Configure(c);
   LeverConfig l;
   l.type = Param::GetInt(Param::ShifterType);
-  l.timeoutMs = Param::GetInt(Param::LeverTimeout);
-  l.debounce = Param::GetInt(Param::LeverDeb);
-  l.mSub = Param::GetInt(Param::LeverMSub);
-  l.b34 = Param::GetInt(Param::LeverB34);
+  l.timeoutMs = COMM_LEVER_TIMEOUT_MS;
+  l.debounce = COMM_LEVER_DEB;
+  l.mSub = COMM_LEVER_MSUB;
+  l.b34 = COMM_LEVER_B34;
   lever.Configure(l);
 }
 
-// LIN oil pump settings.
+// LIN oil pump settings (fixed values above ConfigureTcu).
 static void ConfigureLin() {
   LinPumpConfig c;
-  c.enhanced = Param::GetInt(Param::LinChecksum) == 1;
-  c.slotMs = Param::GetInt(Param::LinSlotMs);
-  c.busFaultMs = Param::GetInt(Param::LinBusFault);
+  c.enhanced = LIN_ENHANCED_CSUM;
+  c.slotMs = LIN_SLOT_MS;
+  c.busFaultMs = LIN_BUS_FAULT_MS;
   c.diagDelayMs = 400; // D_t_DiagDelayAfterClearErr_LINIEP [C]
   c.startBlankMs = 1000; // Ian Q5: ignore status for about 1 s [I]
-  c.armMs = Param::GetInt(Param::LinArmMs);
-  c.symMaxMs = Param::GetInt(Param::LinSymMax);
-  c.delivRpm = Param::GetInt(Param::LinDelivRpm);
-  c.processRx = Param::GetBool(Param::LinRxCheck);
+  c.armMs = LIN_ARM_MS;
+  c.symMaxMs = LIN_SYM_MAX_MS;
+  c.delivRpm = LIN_DELIV_RPM;
+  c.processRx = LIN_RX_CHECK;
   linPump.Configure(c);
   LinRuleConfig r;
   r.onRpm = Param::GetInt(Param::LinPumpRpm);
-  r.hystRpm = Param::GetInt(Param::LinPumpHyst);
-  r.tempMin = Param::GetInt(Param::LinTempMin);
-  r.tempMax = Param::GetInt(Param::LinTempMax);
-  r.pMaxMbar = Param::GetInt(Param::LinPMax);
-  r.offDelayMs = Param::GetInt(Param::LinOffDelay);
-  r.coldMin = Param::GetInt(Param::LinColdMin);
-  r.coldMaxMs = Param::GetInt(Param::LinColdMs);
+  r.hystRpm = LIN_HYST_RPM;
+  r.tempMin = LIN_TEMP_MIN_C;
+  r.tempMax = LIN_TEMP_MAX_C;
+  r.pMaxMbar = LIN_P_MAX_MBAR;
+  r.offDelayMs = LIN_OFF_DELAY_MS;
+  r.coldMin = LIN_COLD_MIN_C;
+  r.coldMaxMs = LIN_COLD_MS;
   linRule.Configure(r);
 }
 
@@ -510,7 +580,7 @@ static void LinStart(const LinSlot &s) {
   if (s.publish) {
     for (int i = 0; i < 8; i++)
       linTx[n++] = s.data[i];
-    linTx[n++] = Lin::Checksum(Param::GetInt(Param::LinChecksum) == 1, pid,
+    linTx[n++] = Lin::Checksum(LIN_ENHANCED_CSUM, pid,
                                s.data, 8);
   }
   linId = s.id;
@@ -610,7 +680,7 @@ static bool CanCallback(uint32_t id, uint32_t data[2], uint8_t dlc) {
   if (LeverRx(0, id, data, dlc))
     return true;
   CanRx rx;
-  if (!CanIf::Rx(Param::GetInt(Param::EcuType), Param::GetInt(Param::CanCmdId),
+  if (!CanIf::Rx(Param::GetInt(Param::EcuType), COMM_CMD_ID,
                  id, (const uint8_t *)data, dlc, &rx))
     return false;
   canRx.selector = rx.selector;
@@ -626,7 +696,7 @@ static bool CanCallback(uint32_t id, uint32_t data[2], uint8_t dlc) {
 static void SetCanFilters() {
   uint32_t ids[CANIF_MAX_RX_IDS];
   int n = CanIf::RxIds(Param::GetInt(Param::EcuType),
-                       Param::GetInt(Param::CanCmdId), ids);
+                       COMM_CMD_ID, ids);
   for (int i = 0; i < n; i++)
     can1->RegisterUserMessage(ids[i]);
   uint32_t lids[2];
@@ -635,29 +705,21 @@ static void SetCanFilters() {
     can1->RegisterUserMessage(lids[i]);
 }
 
-/// Status frames for the selected EcuType (canif.cpp), the 0x0B0 torque
-/// frame (F11TqTx, every row) and the optional 0x0A0 ceiling (TqCeilTx).
-/// Only called with CanTxEnable on.
+/// Status frames for the selected EcuType (canif.cpp) and the optional
+/// 0x0A0 torque ceiling (COMM_TQ_CEIL_TX, off). Only called with
+/// CanTxEnable on.
 static void SendStatus(const TcuOutputs &o, int32_t temp) {
   CanTxIn in = {&o, temp, linPump.Classes(),
-                (uint32_t)Param::GetInt(Param::CanStatId),
-                (int16_t)Param::GetInt(Param::TqNoRedVal)};
+                COMM_STAT_ID, COMM_TQ_NO_RED};
   CanFrame f[CANIF_MAX_TX];
   int n = CanIf::Tx(Param::GetInt(Param::EcuType), in, f);
   for (int i = 0; i < n; i++)
     can1->Send(f[i].id, f[i].data, f[i].dlc);
-  const VariantCal &v = Cal::Active();
-  if (Param::GetBool(Param::F11TqTx) && v.torqueTxId != 0) {
+  if (COMM_TQ_CEIL_TX) {
     uint8_t d[8];
-    CanIf::PackF11Torque(f11TqQual, f11TqNm, f11TqCounter, d);
-    f11TqCounter = (uint8_t)((f11TqCounter + 1) % 15);
-    can1->Send(v.torqueTxId, d, 8);
-  }
-  if (Param::GetBool(Param::TqCeilTx)) {
-    uint8_t d[8];
-    int32_t ceil = Param::GetInt(Param::TqCeilNm);
+    int32_t ceil = COMM_TQ_CEIL_NM;
     if (ceil <= 0)
-      ceil = v.size->torqueClassNm; // [I] size data
+      ceil = Cal::Active().size->torqueClassNm; // [I] size data
     CanIf::PackTqCeiling(ceil, tqCeilCounter, d);
     tqCeilCounter = (uint8_t)((tqCeilCounter + 1) % 15);
     can1->Send(CANIF_TQ_CEIL_ID, d, 8);
@@ -672,7 +734,7 @@ static void Put16(uint8_t *b, int i, int32_t v) {
 
 /// CAN2 logging frames, every 10 ms. Layout in README.
 static void SendLog(const TcuOutputs &o, const TcuInputs &in) {
-  uint32_t base = Param::GetInt(Param::LogBaseId);
+  uint32_t base = COMM_LOG_BASE_ID;
   uint8_t b[8];
   Put16(b, 0, o.p[CL_A]); Put16(b, 1, o.p[CL_B]);
   Put16(b, 2, o.p[CL_C]); Put16(b, 3, o.p[CL_D]);
@@ -758,9 +820,14 @@ static int ShowLastBootStage(uint32_t prevStage) {
   return last;
 }
 
+// One of our parameter ids, or one this firmware used before (retired):
+// a page we saved with an older build still counts as ours, and
+// parm_load() simply skips the retired entries.
 static bool OurParamId(uint16_t id) {
   Param::PARAM_NUM i = Param::NumFromId(id);
-  return i != Param::PARAM_INVALID && Param::GetType(i) == Param::TYPE_PARAM;
+  if (i != Param::PARAM_INVALID && Param::GetType(i) == Param::TYPE_PARAM)
+    return true;
+  return FlashGuard::Retired(id);
 }
 
 /* Load the saved parameters, unless the page was written by other firmware
@@ -871,7 +938,7 @@ static void Ms10Task() {
   // CAN gear lever (ShifterType 0, 2..5): it owns the selector once its
   // frames have been seen. A new R / D / P is only taken at or below the
   // gear-in output speed and with no TCU fault. If the lever goes quiet
-  // the CanLossMode rule applies: hold the last position or go to N.
+  // the CAN loss rule (COMM_CANLOSS_MODE) applies: hold the last position or go to N.
   if (lever.IsCan()) {
     while (leverTail != leverHead) {
       const LeverRxBuf &b = leverBuf[leverTail];
@@ -887,7 +954,7 @@ static void Ms10Task() {
         in.tipUp = in.tipUp || lever.TipUp();
         in.tipDown = in.tipDown || lever.TipDown();
       } else {
-        in.selector = Param::GetInt(Param::CanLossMode) == CANLOSS_HOLD
+        in.selector = COMM_CANLOSS_MODE == CANLOSS_HOLD
                           ? lever.Selector() : (uint8_t)SEL_N;
         in.tipUp = in.tipDown = false;
       }
@@ -902,16 +969,14 @@ static void Ms10Task() {
   {
     int16_t canTq = canRx.torque;
     int32_t rpm = in.n_mot < 0 ? -in.n_mot : in.n_mot;
-    bool frozen = canOk && tqFrozen.Tick(canTq, rpm, Param::GetInt(Param::FrzTime),
-                                         Param::GetInt(Param::FrzRpm));
-    TorqueModelIn tm = {rpm, Param::GetInt(Param::MapKpa),
-                        Param::GetInt(Param::TqModelScale), Param::GetInt(Param::TqBoostPct)};
+    bool frozen = canOk && tqFrozen.Tick(canTq, rpm, COMM_FRZ_MS, COMM_FRZ_RPM);
+    TorqueModelIn tm = {rpm, COMM_MAP_KPA, COMM_TQ_MODEL_SCALE, COMM_TQ_BOOST_PCT};
     if (fromParam) {
       in.m_t = Param::GetInt(Param::TorqueSet);
       tqSrc = TQSRC_PARAM;
     } else {
       tqSrc = TorqueIn::Select(canTq, TorqueIn::RawValid(canTq) && !frozen,
-                               Param::GetBool(Param::TqModel), tm,
+                               COMM_TQ_MODEL, tm,
                                Param::GetInt(Param::CanLossTq), &in.m_t);
     }
     Param::SetInt(Param::tqFrozen, frozen);
@@ -931,15 +996,15 @@ static void Ms10Task() {
   if (!fromParam && !canOk) {
     // In plain words: assume high torque so line pressure stays high and
     // the clutches cannot slip whatever the engine does.
-    // No VCU. CanLossMode 1 (default, Damien 2026-11-23): keep the last
+    // No VCU. COMM_CANLOSS_MODE = hold (Damien 2026-11-23): keep the last
     // selector so the TCU holds the gear (no upshifts, LineMax, step down
-    // as the car slows). CanLossMode 0: go to neutral. Either way assume
+    // as the car slows). The other mode would go to neutral. Either way assume
     // high torque for line pressure: CanLossTq defaults to the OEM
     // substitute D_m_IstVM_Default = 600 Nm (@0x218144) [C]. The OEM
     // fault-to-reaction table (KFC -> KMN) was not found, so what exactly
     // the OEM does on KFCx_ENGSIGTRQ is [H]; hold-gear is Ian's reading
     // of the limp states [I] (QA2 answer 8).
-    if (Param::GetInt(Param::CanLossMode) != CANLOSS_HOLD)
+    if (COMM_CANLOSS_MODE != CANLOSS_HOLD)
       in.selector = SEL_N;
     in.gearReq = 0;
     in.tipUp = in.tipDown = false;
@@ -958,10 +1023,10 @@ static void Ms10Task() {
   in.configError = configError;
   in.faultClear = false;
   in.pMeas = -1; // no line pressure sensor on the board
-  // Pedal: PedalPct, or -1 = estimated from the input torque as a share
+  // Pedal: COMM_PEDAL_PCT, or -1 = estimated from the input torque as a share
   // of the gearbox torque class (the VCU frame carries no pedal).
   {
-    int32_t pp = Param::GetInt(Param::PedalPct);
+    int32_t pp = COMM_PEDAL_PCT;
     if (pp < 0) {
       int32_t cls = Cal::Active().size->torqueClassNm;
       pp = cls > 0 ? in.m_t * 100 / cls : 0;
@@ -1040,10 +1105,10 @@ static void Ms10Task() {
 
   // Aux oil pump (330e run rule, Ian's 330E_LIN_OIL_PUMP.md section 7).
   // The F11 8HP45 has no LIN pump [C], so the bus stays off for it.
-  // Charging plug in: LIN to sleep (CDD_LINBusStartStop.st_chargingPlug
-  // [C]). Source: a parameter for now; the input is TBD (no pin yet).
-  bool plug = Param::GetInt(Param::ChgPlugSrc) == 1 && Param::GetBool(Param::ChgPlugSet);
-  linActive = Param::GetBool(Param::LinPumpEnable) && !plug &&
+  // The OEM puts LIN to sleep with the charging plug in
+  // (CDD_LINBusStartStop.st_chargingPlug [C]). There is no plug input or
+  // parameter here, so the plug always counts as out.
+  linActive = Param::GetBool(Param::LinPumpEnable) &&
               Cal::Variant(Param::GetInt(Param::GearboxType)).linPump;
   linOilC = atfTemp;
   linWanted = linActive && linRule.Update(Param::GetInt(Param::LinPumpReq),
@@ -1116,10 +1181,10 @@ static void Ms10Task() {
 
   if (Param::GetBool(Param::CanTxEnable))
     SendStatus(o, atfTemp);
-  // Optional status stream (statstream.h): on CAN2 whenever it is up, on
-  // CAN1 only with CanTxEnable as well.
+  // Optional status stream (statstream.h): on CAN1 (COMM_STREAM_ON_CAN2 is
+  // false), and only with CanTxEnable as well.
   if (Param::GetBool(Param::StreamEnable)) {
-    bool onCan2 = Param::GetInt(Param::StreamBus) == 1;
+    bool onCan2 = COMM_STREAM_ON_CAN2;
     CanHardware *bus = onCan2 ? can2 : (Param::GetBool(Param::CanTxEnable) ? can1 : 0);
     if (bus) {
       StreamIn si;
@@ -1153,15 +1218,15 @@ static void Ms10Task() {
       si.leverTimeout = lever.Seen() && !lever.Valid();
       si.tqNotCan = tqSrc != TQSRC_CAN && tqSrc != TQSRC_PARAM;
       CanFrame sf[STREAM_MAX_TX];
-      int ns = stream.Tick10ms(Param::GetInt(Param::StreamBaseId), si, sf);
+      int ns = stream.Tick10ms(COMM_STREAM_BASE_ID, si, sf);
       for (int i = 0; i < ns; i++)
         bus->Send(sf[i].id, sf[i].data, sf[i].dlc);
     }
   }
-  // Lever display / LEDs: only with LeverTxEnable and CanTxEnable. Only
+  // Lever display / LEDs: only with COMM_LEVER_TX (off) and CanTxEnable. Only
   // one node may own these ids (see README "CAN gear levers").
   if (lever.IsCan() && Param::GetBool(Param::CanTxEnable) &&
-      Param::GetBool(Param::LeverTxEnable)) {
+      COMM_LEVER_TX) {
     LeverTxIn lt = {Param::GetBool(Param::t15), in.selector, o.gear};
     CanFrame lf[LEVER_MAX_TX];
     int nl = lever.Tx10ms(lt, lf);
@@ -1175,7 +1240,7 @@ static void Ms10Task() {
   Param::SetInt(Param::lvCrcErr, lever.CrcErrors());
   Param::SetInt(Param::lvCntErr, lever.CounterErrors());
   Param::SetInt(Param::lvTmo, lever.Seen() && !lever.Valid());
-  if (Param::GetBool(Param::LogEnable) && can2)
+  if (COMM_LOG_ENABLE && can2)
     SendLog(o, in);
 
   Param::SetInt(Param::opmode, o.mode);
@@ -1269,9 +1334,6 @@ static void Ms10Task() {
   Param::SetInt(Param::lpBusFlt, linActive && (linPump.Classes() & LPC_COMM) != 0);
   Param::SetInt(Param::parkSt, o.parkState);
   Param::SetInt(Param::canLoss, !in.canOk);
-  f11TqQual = CanIf::F11TqTarget(in.m_t, o.tqDelta, &f11TqNm);
-  Param::SetInt(Param::tq0B0, f11TqNm);
-  Param::SetInt(Param::tqQual, f11TqQual);
   Param::SetInt(Param::tqSrc, tqSrc);
   Param::SetInt(Param::tqUsed, in.m_t);
   Param::SetInt(Param::adaStat, adapt.Status());
@@ -1317,8 +1379,8 @@ static void Ms100Task() {
     ErrorMessage::Post(ERR_UNDERVOLT);
 
   // ATF temperature: sensor resistance from the selected input, then the
-  // AtfR / AtfT table (generic NTC until the sensor is known). Fixed value
-  // by default (AtfSource = Fixed).
+  // fixed curve in AnaConv::AtfTempC (provisional, a generic NTC until the
+  // 8HP sensor is measured). Fixed value by default (AtfSource = Fixed).
   bool in2 = Param::GetInt(Param::AtfInput) == 1;
   int32_t adc = SlowAdc::Get(in2 ? SlowAdc::ATF2 : SlowAdc::ATF1);
   int32_t ohm = AnaConv::TempInputOhms(adc, in2 ? AnaConv::TEMPIN2_PULLUP
@@ -1330,14 +1392,7 @@ static void Ms100Task() {
       atfTemp = ATF_SUBSTITUTE_C; // open (-1), short or out of range
       ErrorMessage::Post(ERR_ATFSENSOR);
     } else {
-      int32_t r[6], t[6];
-      const Param::PARAM_NUM rp[6] = {Param::AtfR1, Param::AtfR2, Param::AtfR3,
-                                      Param::AtfR4, Param::AtfR5, Param::AtfR6};
-      for (int i = 0; i < 6; i++) {
-        r[i] = Param::GetInt(rp[i]);
-        t[i] = Param::GetInt((Param::PARAM_NUM)(Param::AtfT1 + i));
-      }
-      atfTemp = AnaConv::TempFromOhms(ohm, r, t, 6);
+      atfTemp = AnaConv::AtfTempC(ohm);
     }
   } else {
     atfTemp = Param::GetInt(Param::AtfFixed);
@@ -1459,7 +1514,6 @@ static void Ms100Task() {
 /// Called by libopeninv whenever a parameter changes.
 void Param::Change(Param::PARAM_NUM paramNum) {
   switch (paramNum) {
-  case Param::CanCmdId:
   case Param::EcuType:
     if (can1)
       can1->ClearUserMessages(); // calls SetCanFilters() again
@@ -1545,7 +1599,7 @@ extern "C" int main(void) {
   // names parameters by ids that are not ours.
   CanMap cm(&c, paramSrc != 2);
   CanSdo sdo(&c, &cm);
-  sdo.SetNodeId(Param::GetInt(Param::SdoNodeId));
+  sdo.SetNodeId(COMM_SDO_NODE_ID);
   TerminalCommands::SetCanMap(&cm);
 
   BootStage(BOOT_DRIVERS);

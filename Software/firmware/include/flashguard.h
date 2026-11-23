@@ -31,7 +31,7 @@
  * lands on our Can1Baud, which only allows 0 to 4), and libopeninv
  * loads them without a range check. So before loading we look at the
  * keys in the parameter page: if any key is not one of our parameter
- * ids, the page was written by other firmware and we keep our defaults
+ * ids (or one we used before, see Retired), the page was written by other firmware and we keep our defaults
  * (and do not load the CAN map either).
  *
  * Hardware free, so the host tests can run it.
@@ -53,6 +53,11 @@ const uint16_t KEY_BLANK = 0xFFFF;
  * whether id is one of our parameters. 0 means the page is ours (or blank).
  */
 int UnknownKeys(const StoredParam *page, int entries, bool (*known)(uint16_t id));
+
+/* True for an id this firmware used before and has removed
+ * (PARAM_RETIRED_IDS in param_prj.h). A page we saved with an older build
+ * holds these, and must still load. */
+bool Retired(uint16_t id);
 
 // The value if it is inside min..max, else the default.
 int32_t InRange(int32_t value, int32_t min, int32_t max, int32_t def);

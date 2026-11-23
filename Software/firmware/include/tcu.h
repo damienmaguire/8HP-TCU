@@ -237,7 +237,7 @@ struct TcuOutputs
    bool parkRequest;    // park lock should be engaged
    bool safeOutputs;    // caller must switch every coil off
    bool tqHold;         // gear-in: hold motor torque near 0 until clamped
-   bool canLossHold;    // CAN lost, holding the gear (CanLossMode 1)
+   bool canLossHold;    // CAN lost, holding the gear (COMM_CANLOSS_MODE = hold)
    bool coast;          // the running shift is a coast (negative torque) shift
    int32_t tSyn;        // predicted ms to sync, for logging
    int32_t gls;         // GLS correction, mbar

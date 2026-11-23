@@ -21,8 +21,8 @@
 
 #include "hwdefs.h"
 
-/* Stm32_TCU_V4 rev C pin map (provisional; Bob's firmware_answers.md,
- * Damien approved the header mapping).
+/* Stm32_TCU_V4 rev C pin map (final; Bob's firmware_answers.md and
+ * pin map CSVs, Damien approved the header mapping).
  *
  * Two MAX22200 on SPI1 (RREF 15k on both -> IFS 1.0 A, 0.5 A with HFS = 1):
  *  max_cs0     CSB of IC2, PA4, software chip select, active low
@@ -41,10 +41,11 @@
  *              (valveout.h), not pins here.
  *
  * 12 V inputs, all the ZV1.3 circuit (SMF16A TVS, 4.7k series, 1.5k to
- * GND, 1 uF; 12 V -> 2.9 V, RC about 1.1 ms), active high (switch to
+ * GND, 1 uF; 12 V -> 2.9 V, RC about 1.14 ms), active high (switch to
  * +12 V). The 1.5k is the pull-down, so INPUT_FLT:
  *  t15_in      PD0, J1.15, terminal 15 (ignition on)
- *  brake_in    PD1, J1.46, brake switch (rev C)
+ *  brake_in    PD1 (pin 82, EXTI1), J1.46, brake switch; debounced over
+ *              3 samples (30 ms) in software
  *  shift_up    PD2, J1.50; shift_dn PD3, J1.49
  *  din1, din2, park_in, notpark_in  PD4..PD7, J1.54/53/52/51
  *

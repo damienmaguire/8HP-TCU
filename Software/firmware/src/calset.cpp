@@ -35,33 +35,31 @@
                    &calF11Global
 #define F11_MODES {0, calF11Up[1], calF11Up[2]}, {0, calF11Down[1], calF11Down[2]}, \
                   {0, calClutchSport, calClutchSport}
-// Engine torque intervention: 0x0B0 on every row [C, F11 log + Q030].
-#define TQ_TX 0x0B0
 
 static const VariantCal variants[CALVAR_COUNT] = {
     // 8HP75 330e Q030: the reference set, K0 reference.
     {"8HP75_330e", "330e Q030", GBX_8HP75, Q030_TABLES, SOLSET_330E_Q030, true,
-     CH7_K0, ENG_VAR_330E, true, TQ_TX, true, &calSizes[CALSIZE_330E_Q030], SPORT_SET},
+     CH7_K0, ENG_VAR_330E, true, true, &calSizes[CALSIZE_330E_Q030], SPORT_SET},
     // 8HP45 F11 v058: own solenoid block; the size data is the v095 F11
     // N47 cal's (same car and gearbox; the v058 port has no [C] size rows).
     {"8HP45_F11", "F11 v058", GBX_8HP45, F11_TABLES, SOLSET_F11_V058, false,
-     CH7_TCC, ENG_VAR_F11, false, TQ_TX, false, &calSizes[CALSIZE_V095_F11N47],
+     CH7_TCC, ENG_VAR_F11, false, false, &calSizes[CALSIZE_V095_F11N47],
      F11_MODES},
     // a81 v095 cals [I]. Gear-in roles: the F11 (Gen1 a81) table [I].
     {"8HP45_F11N47_v095", "a81 v095 2768", GBX_8HP45, Q030_TABLES,
-     SOLSET_V095_45_70, false, CH7_TCC, ENG_VAR_F11, false, TQ_TX, false,
+     SOLSET_V095_45_70, false, CH7_TCC, ENG_VAR_F11, false, false,
      &calSizes[CALSIZE_V095_F11N47], SPORT_SET},
     {"8HP70_N57_v095", "a81 v095 1367", GBX_8HP70, Q030_TABLES, SOLSET_V095_45_70,
-     false, CH7_TCC, ENG_VAR_F11, false, TQ_TX, false, &calSizes[CALSIZE_V095_N57],
+     false, CH7_TCC, ENG_VAR_F11, false, false, &calSizes[CALSIZE_V095_N57],
      SPORT_SET},
     {"8HP70_N63_v095", "a81 v095 317e", GBX_8HP70, Q030_TABLES, SOLSET_V095_45_70,
-     false, CH7_TCC, ENG_VAR_F11, false, TQ_TX, false, &calSizes[CALSIZE_V095_N63],
+     false, CH7_TCC, ENG_VAR_F11, false, false, &calSizes[CALSIZE_V095_N63],
      SPORT_SET},
     {"8HP90_N74_v095", "a81 v095 0a8b", GBX_8HP90, Q030_TABLES, SOLSET_V095_90,
-     false, CH7_TCC, ENG_VAR_F11, false, TQ_TX, false, &calSizes[CALSIZE_V095_N74],
+     false, CH7_TCC, ENG_VAR_F11, false, false, &calSizes[CALSIZE_V095_N74],
      SPORT_SET},
     {"8HP90_RR4N74_v095", "a81 v095 0a92", GBX_8HP90, Q030_TABLES, SOLSET_V095_90,
-     false, CH7_TCC, ENG_VAR_F11, false, TQ_TX, false, &calSizes[CALSIZE_V095_RR4N74],
+     false, CH7_TCC, ENG_VAR_F11, false, false, &calSizes[CALSIZE_V095_RR4N74],
      SPORT_SET},
 };
 

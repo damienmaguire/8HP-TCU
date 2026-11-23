@@ -983,7 +983,6 @@ static void TestVariants() {
     CHECK_EQ(v.ch7Default, w.k0 ? CH7_K0 : CH7_TCC);
     CHECK_EQ(v.engVar, w.k0 ? ENG_VAR_330E : ENG_VAR_F11);
     CHECK_EQ(v.linPump, w.k0);
-    CHECK_EQ(v.torqueTxId, 0x0B0); // every row [C]
     CHECK_EQ(v.posConfirmed, w.k0);
     CHECK_EQ(v.size->torqueClassNm, w.cls);
     CHECK_EQ(v.size->revLimitNm, w.rev);

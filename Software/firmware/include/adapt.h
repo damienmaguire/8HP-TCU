@@ -34,10 +34,12 @@
  *
  * Learning rule (deliberately slow): after a learning shift, if the
  * input speed flared above the old gear's sync speed by more than
- * AdaFlareRpm, or the shift took longer than AdaShiftMs + AdaBandMs, the
- * clutch filled late: offset + AdaStep. If it was quicker than
- * AdaShiftMs - AdaBandMs (harsh): offset - AdaStep. The offset is
- * limited to +-AdaMax. The target time and band are placeholders.
+ * flareRpm, or the shift took longer than shiftMs + bandMs, the clutch
+ * filled late: offset + step (AdaStep). If it was quicker than
+ * shiftMs - bandMs (harsh): offset - step. The offset is limited to
+ * +-maxOfs (AdaMax). The target time and band are placeholders; apart
+ * from AdaptEnable, AdaStep and AdaMax the settings are fixed values
+ * (stm32_tcu.cpp, ConfigureTcu).
  *
  * Every entry condition must hold at the start AND the end of the shift
  * (Status() = 0 means allowed, else the ADA_BLK_* bits).

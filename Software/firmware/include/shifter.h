@@ -26,7 +26,7 @@
  * one-shot tip up / tip down requests for Manual mode.
  *
  * ShifterType (param_prj.h):
- *  CAN     placeholder fields in the CAN1 command frame (CanCmdId):
+ *  CAN     placeholder fields in the CAN1 command frame (COMM_CMD_ID):
  *          byte 0 selector 0=P 1=R 2=N 3=D, byte 6 bit 0 tip up, bit 1
  *          tip down (level, held while the paddle/lever is held).
  *  Analog  PLACEHOLDER mapping until the real shifter is chosen:

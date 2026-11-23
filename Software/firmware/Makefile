@@ -16,7 +16,7 @@
 ## along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ##
 
-# One board: Stm32_TCU_V4 rev C (provisional). `make` -> stm32_tcu in obj/.
+# One board: Stm32_TCU_V4 rev C. `make` -> stm32_tcu in obj/.
 CPUFLAGS        = -mcpu=cortex-m3 -mthumb
 ARCHDEF         = -DSTM32F1
 BINARY          = stm32_tcu

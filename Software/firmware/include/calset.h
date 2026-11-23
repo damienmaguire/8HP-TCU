@@ -116,8 +116,6 @@ struct VariantCal
    uint8_t ch7Default;          // CH7_TCC or CH7_K0
    uint8_t engVar;              // EngageVariant: gear-in role table
    bool linPump;                // has the LIN electric oil pump
-   uint16_t torqueTxId;         // engine torque intervention frame: 0x0B0 on
-                                // every row [C], 0 = none
    bool posConfirmed;           // POS valve seen in this row's software
    const CalSizeInfo *size;     // per-size data [I]
    /* Tables per DriveMode, 0 = the Normal ones. Sport and Track use the

@@ -405,9 +405,9 @@ void Tcu::Tick10ms(const TcuInputs &in) {
   out.tqHold = false;
   int32_t shiftTq = 0;
   // CAN loss: without the VCU frames we do not know the torque or the
-  // driver's intent, so no gear-in and no upshifts. With CanLossMode = hold
+  // driver's intent, so no gear-in and no upshifts. With COMM_CANLOSS_MODE = hold
   // (default) the gear is kept and only steps down as the car slows, so it
-  // can pull away again; with CanLossMode = neutral stm32_tcu.cpp turns the
+  // can pull away again; with a neutral CAN loss mode stm32_tcu.cpp turns the
   // selector to N and the clutches open.
   bool canHold = !in.canOk && cfg.canLossMode == CANLOSS_HOLD;
 
@@ -561,7 +561,7 @@ void Tcu::Tick10ms(const TcuInputs &in) {
     allowed = Gears::ClutchMask(out.gear);
     int tgt = ChooseTarget(in, manual);
     out.target = (uint8_t)tgt;
-    // Shifts need the VCU frames, except the downshifts CanLossMode 1
+    // Shifts need the VCU frames, except the downshifts COMM_CANLOSS_MODE = hold
     // makes as the car slows.
     if (tgt != out.gear && (in.canOk || (canHold && tgt < out.gear)) &&
         in.speedsValid) {
@@ -641,7 +641,7 @@ void Tcu::Tick10ms(const TcuInputs &in) {
 
   // ---- Line pressure --------------------------------------------------
   out.pSys = LinePressure(in, minLine);
-  // CanLossMode 1: hold the gear at high line pressure so nothing slips.
+  // COMM_CANLOSS_MODE = hold: hold the gear at high line pressure so nothing slips.
   out.canLossHold = canHold && (out.mode == TCU_DRIVE || out.mode == TCU_SHIFT);
   if (out.canLossHold)
     out.pSys = cfg.lineMax;
