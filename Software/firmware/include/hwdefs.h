@@ -146,6 +146,9 @@
  * on PD11 (lin_nslp, high = awake). TJA1021 (U7, master termination
  * 1k + diode). Only the 330e needs it, so the
  * driver is still off by default (LinPumpEnable = 0) and U7 sleeps.
+ * SLP_N has only the chip's own pull-down, so U7 is asleep until the
+ * firmware drives PD11 high; see LinWake (stm32_tcu.cpp, 330e only) for
+ * the wake-up timing. R38 (2k7) pulls TXD up, and RXD has a 2k7 pull-up too.
  */
 #define LIN_USART UART4
 #define LIN_USART_RCC RCC_UART4

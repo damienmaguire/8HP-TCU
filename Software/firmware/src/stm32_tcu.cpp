@@ -550,8 +550,58 @@ static uint8_t linId = 0;
 static bool linPublish = false;
 static uint8_t linBusyMs = 0;
 static bool linActive = false; // bus on: enabled and the gearbox has a pump
+static bool linAwake = false;  // U7 SLP_N high and the wake-up wait is over
 static bool linWanted = false; // operating point 55
 static int32_t linOilC = 40;
+
+// Waking the TJA1021 LIN transceiver (U7). Its SLP_N pin (PD11, lin_nslp)
+// has a pull-down inside the chip and no pull-up on the board, so U7 starts
+// up asleep and only listens once we drive SLP_N high. Times are from the
+// NXP TJA1021 data sheet, Rev. 9 (10 Feb 2023), Table 8:
+//  - tgotonorm (SLP_N high until Normal mode): 2 / 5 / 10 us min / typ / max.
+//  - tinit(norm) (Normal mode until transmit and receive work): 5 to 20 us.
+//  - tgotosleep (SLP_N low until Sleep mode): 2 / 5 / 10 us.
+// So the transmitter is ready at most 30 us after SLP_N goes high. We wait
+// 100 us (more than 3 times that, and still under two LIN bits at 19200
+// baud) before any break goes out.
+// After a local wake-up (WAKE_N) the chip pulls TXD low as its "woken
+// locally" flag (section 7.8), against R38, the 2k7 pull-up on TXD (RXD
+// has a 2k7 pull-up too). A rising edge on SLP_N clears that flag, so every
+// wake gives SLP_N a short low pulse and then high again. The pulse is 5
+// us: inside the 2..10 us tgotosleep window, so the chip may or may not
+// start to sleep, but either way the rising edge clears the flag and the
+// 100 us wait that follows covers its return to Normal mode. The bus is
+// idle at this point, so a few microseconds of sleep do not matter.
+// This wake-up sequence only runs with GearboxType = 0 (8HP75_330e), the
+// one gearbox with the LIN pump. Every other selection keeps the plain
+// SLP_N handling it always had.
+#define LIN_WAKE_WAIT_US 100 // us, after SLP_N goes high
+#define LIN_FLAG_PULSE_US 5  // us, SLP_N low to clear the wake flag
+
+// Busy-wait a few microseconds on the cycle counter (72 MHz).
+static void WaitUs(uint32_t us) {
+  uint32_t t0 = DWT_CYCCNT;
+  while (DWT_CYCCNT - t0 < us * 72) {
+  }
+}
+
+// Wake U7 and make it ready to transmit: SLP_N high, wait, short low pulse
+// to clear the local wake flag on TXD, high again, wait. Takes about 205
+// us. No LIN break may go out until this returns.
+static void LinWake() {
+  DigIo::lin_nslp.Set();
+  WaitUs(LIN_WAKE_WAIT_US);
+  DigIo::lin_nslp.Clear();
+  WaitUs(LIN_FLAG_PULSE_US);
+  DigIo::lin_nslp.Set();
+  WaitUs(LIN_WAKE_WAIT_US);
+  linAwake = true;
+}
+
+// True when the menu has the 330e selected (GearboxType 0).
+static bool Lin330e() {
+  return Param::GetInt(Param::GearboxType) == CALVAR_330E;
+}
 
 // LIN UART interrupt: collect the bytes of the running slot.
 extern "C" void uart4_isr(void) {
@@ -622,12 +672,29 @@ static void LinTick1ms() {
     }
   }
   LinSlot slot;
-  if (linPump.Tick1ms(linActive, linWanted, linOilC, &slot) && !linBusyMs)
-    LinStart(slot); // a slot that falls into a busy frame is skipped
-  if (linPump.TransceiverAwake())
-    DigIo::lin_nslp.Set();
-  else
+  bool send = linPump.Tick1ms(linActive, linWanted, linOilC, &slot);
+  if (!Lin330e()) {
+    // Not the 330e: exactly as before, SLP_N follows the pump state.
+    if (send && !linBusyMs)
+      LinStart(slot); // a slot that falls into a busy frame is skipped
+    if (linPump.TransceiverAwake())
+      DigIo::lin_nslp.Set();
+    else
+      DigIo::lin_nslp.Clear();
+    linAwake = false; // so a later switch to the 330e wakes it properly
+    return;
+  }
+  // 330e: set the transceiver before any break. Wake it (with the waits)
+  // when the bus starts, put it to sleep when the bus stops.
+  if (linPump.TransceiverAwake()) {
+    if (!linAwake)
+      LinWake();
+  } else {
     DigIo::lin_nslp.Clear();
+    linAwake = false;
+  }
+  if (send && linAwake && !linBusyMs)
+    LinStart(slot); // a slot that falls into a busy frame is skipped
 }
 
 // The scheduler object is made after the interrupts are switched on, so
@@ -1549,7 +1616,7 @@ extern "C" int main(void) {
   DigIo::max_triga.Clear(); // SPI-controlled channels: TRIGA/B held low
   DigIo::max_trigb.Clear();
   DigIo::park_hold.Clear();
-  DigIo::lin_nslp.Clear(); // LIN transceiver asleep
+  DigIo::lin_nslp.Clear(); // LIN transceiver asleep (330e: until LinWake)
   DigIo::led_out.Set();    // active low: off
   dwt_enable_cycle_counter(); // for the spdLoad measurement and WaitMs
   int lastStage = ShowLastBootStage(prevStage);
@@ -1564,6 +1631,9 @@ extern "C" int main(void) {
   BootStage(BOOT_SPI_LIN);
   max_spi_setup();
   lin_usart_setup();
+  if (Lin330e())
+    LinWake(); // U7 awake and its wake flag cleared; the scheduler (and so
+               // the first LIN break) only starts later
   BootStage(BOOT_PARAM_CHANGE);
   Param::Change(Param::PARAM_LAST);
   Param::SetInt(Param::paramSrc, paramSrc);

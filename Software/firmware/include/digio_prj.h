@@ -52,7 +52,8 @@
  * Speed sensors are on PA0 / PA1 / PA2 as analogue inputs (hwdefs.h), not
  * EXTI pins. The sensor supply is always on.
  *
- * lin_nslp     PD11, TJA1021 LIN transceiver SLP_N (high = awake).
+ * lin_nslp     PD11, TJA1021 LIN transceiver SLP_N (high = awake; the chip
+ *              pulls it low inside, so U7 sleeps until we drive it high).
  * led_out      PE2, active low.
  */
 #define DIG_IO_LIST                                                            \
