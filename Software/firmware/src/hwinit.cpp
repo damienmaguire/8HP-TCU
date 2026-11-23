@@ -26,10 +26,9 @@
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/rtc.h>
 #include <libopencm3/stm32/spi.h>
-#include <libopencm3/stm32/timer.h>
 #include <libopencm3/stm32/usart.h>
 
-/* 8 MHz crystal (V4) -> 72 MHz, as on the ZombieVerter. */
+/* 8 MHz crystal -> 72 MHz, as on the ZombieVerter. */
 void clock_setup(void) {
   rcc_clock_setup_pll(&rcc_hse_configs[RCC_CLOCK_HSE8_72MHZ]);
   rcc_set_adcpre(RCC_CFGR_ADCPRE_PCLK2_DIV6); // 12 MHz ADC clock
@@ -45,12 +44,6 @@ void clock_setup(void) {
   rcc_periph_clock_enable(RCC_AFIO);
   rcc_periph_clock_enable(RCC_USART3); // terminal
   rcc_periph_clock_enable(RCC_TIM4);   // scheduler
-#if !HW_SPEED_DMA
-  rcc_periph_clock_enable(SPEED_TRIG_RCC); // V4: TIM1 triggers ADC2
-#endif
-#if HW_HAS_GP_DISCRETE
-  rcc_periph_clock_enable(GP_PWM_RCC); // V4: TIM3 for the PC6 GP PWM
-#endif
   rcc_periph_clock_enable(LIN_USART_RCC);
   rcc_periph_clock_enable(MAX_SPI_RCC);
   rcc_periph_clock_enable(RCC_DMA1); // ADC1 and terminal UART
@@ -67,14 +60,11 @@ void rtc_setup(void) {
   rtc_set_counter_val(0);
 }
 
-/* AFIO: SWD only (JTAG pins freed), TIM3 full remap so TIM3_CH1 is on PC6
- * (V4 gp_pwm; harmless on rev B, where TIM3 is not used). CAN1 stays on
- * PA11/PA12 (no remap). CAN2 is remapped to PB5 RX / PB6 TX, where rev B
- * has its transceiver (V4 has none there).
+/* AFIO: SWD only (JTAG pins freed). CAN1 stays on PA11/PA12 (no remap).
+ * CAN2 is remapped to PB5 RX / PB6 TX, where its transceiver is.
  */
 void afio_setup(void) {
-  gpio_primary_remap(AFIO_MAPR_SWJ_CFG_JTAG_OFF_SW_ON,
-                     AFIO_MAPR_TIM3_REMAP_FULL_REMAP | AFIO_MAPR_CAN2_REMAP);
+  gpio_primary_remap(AFIO_MAPR_SWJ_CFG_JTAG_OFF_SW_ON, AFIO_MAPR_CAN2_REMAP);
 }
 
 // Interrupt priorities and enables (CAN, LIN UART, speed ADC, scheduler timer).
@@ -84,13 +74,8 @@ void nvic_setup(void) {
 
   // Speed sensor samples: same priority as the scheduler, so neither can
   // interrupt the other and the edge counters stay consistent.
-#if HW_SPEED_DMA
-  nvic_enable_irq(SPEED_DMA_IRQ); // rev B: DMA half / full buffer
+  nvic_enable_irq(SPEED_DMA_IRQ); // DMA half / full buffer
   nvic_set_priority(SPEED_DMA_IRQ, 0);
-#else
-  nvic_enable_irq(NVIC_ADC1_2_IRQ); // V4: ADC2 JEOC per sample
-  nvic_set_priority(NVIC_ADC1_2_IRQ, 0);
-#endif
 
   // LIN bytes: lower priority, 19200 baud leaves 520 us per byte.
   nvic_enable_irq(LIN_USART_IRQ);
@@ -122,8 +107,7 @@ uint8_t max_spi_transfer(uint8_t tx) {
   return (uint8_t)spi_xfer(MAX_SPI, tx);
 }
 
-#if HW_SPEED_DMA
-/* Rev B speed inputs: ADC1 regular group IN0, IN1, IN2 in continuous scan
+/* Speed inputs: ADC1 regular group IN0, IN1, IN2 in continuous scan
  * mode, DMA1 channel 1 circular into buf (2 x SPEED_HALF_SCANS scans of
  * SPEED_NUM samples), half- and full-transfer interrupts on. 13.5 + 12.5
  * cycles per conversion: one scan every 6.5 us (153.8 kS/s per input).
@@ -173,74 +157,6 @@ void speed_adc_setup(volatile uint16_t *buf) {
   dma_enable_channel(SPEED_DMA, SPEED_DMA_CH);
   adc_start_conversion_regular(SPEED_ADC); // runs from here on
 }
-#else
-/* Speed sensors: ADC2 injected group IN0 (ISS, PA0), IN1 (OSS, PA1),
- * started by TIM1 TRGO (update) at SPEED_TIMER_HZ (V4). JEOC interrupt reads
- * both results (adc1_2_isr in stm32_tcu.cpp). 2 x (7.5 + 12.5) cycles at
- * 12 MHz = 3.3 us per pair, so 40 kHz leaves plenty of margin.
- */
-void speed_adc_setup(volatile uint16_t *buf) {
-  (void)buf; // V4: no DMA buffer
-  gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_ANALOG,
-                GPIO0 | GPIO1);
-  adc_power_off(SPEED_ADC);
-  adc_enable_scan_mode(SPEED_ADC);
-  adc_set_single_conversion_mode(SPEED_ADC);
-  adc_set_right_aligned(SPEED_ADC);
-  adc_set_sample_time(SPEED_ADC, SPEED_ADC_CH_IN, ADC_SMPR_SMP_7DOT5CYC);
-  adc_set_sample_time(SPEED_ADC, SPEED_ADC_CH_OUT, ADC_SMPR_SMP_7DOT5CYC);
-  adc_set_sample_time(SPEED_ADC, SPEED_ADC_CH_AUX, ADC_SMPR_SMP_7DOT5CYC);
-  uint8_t ch[3] = {SPEED_ADC_CH_IN, SPEED_ADC_CH_OUT, SPEED_ADC_CH_AUX};
-  adc_set_injected_sequence(SPEED_ADC, SPEED_NUM, ch);
-  adc_enable_external_trigger_injected(SPEED_ADC, ADC_CR2_JEXTSEL_TIM1_TRGO);
-  adc_enable_eoc_interrupt_injected(SPEED_ADC);
-  adc_power_on(SPEED_ADC);
-  for (volatile int i = 0; i < 800; i++) {
-  } // tSTAB
-  adc_reset_calibration(SPEED_ADC);
-  adc_calibrate(SPEED_ADC);
-
-  // TIM1 on APB2: 72 MHz timer clock, update -> TRGO.
-  timer_set_mode(SPEED_TRIG_TIMER, TIM_CR1_CKD_CK_INT, TIM_CR1_CMS_EDGE,
-                 TIM_CR1_DIR_UP);
-  timer_set_prescaler(SPEED_TRIG_TIMER, 0);
-  timer_set_period(SPEED_TRIG_TIMER, (72000000u / SPEED_TIMER_HZ) - 1);
-  timer_set_master_mode(SPEED_TRIG_TIMER, TIM_CR2_MMS_UPDATE);
-  timer_enable_counter(SPEED_TRIG_TIMER);
-}
-
-#endif
-
-#if HW_HAS_GP_DISCRETE
-/* gp_pwm: TIM3_CH1 on PC6 (full remap), inverted output polarity because
- * the FAN3121 inverts. Starts at 0 % (J1.12 off).
- */
-void gp_pwm_setup(uint32_t freqHz) {
-  if (freqHz < 10)
-    freqHz = 10;
-  gpio_set_mode(GPIOC, GPIO_MODE_OUTPUT_50_MHZ, GPIO_CNF_OUTPUT_ALTFN_PUSHPULL,
-                GPIO6);
-  timer_set_mode(GP_PWM_TIMER, TIM_CR1_CKD_CK_INT, TIM_CR1_CMS_EDGE,
-                 TIM_CR1_DIR_UP);
-  // 72 MHz / 72 = 1 MHz count, 10 Hz .. 20 kHz with a 16 bit period.
-  timer_set_prescaler(GP_PWM_TIMER, 71);
-  timer_set_period(GP_PWM_TIMER, 1000000u / freqHz - 1);
-  timer_set_oc_mode(GP_PWM_TIMER, TIM_OC1, TIM_OCM_PWM1);
-  timer_enable_oc_preload(GP_PWM_TIMER, TIM_OC1);
-  timer_set_oc_polarity_low(GP_PWM_TIMER, TIM_OC1); // inverted driver
-  timer_set_oc_value(GP_PWM_TIMER, TIM_OC1, 0);
-  timer_enable_oc_output(GP_PWM_TIMER, TIM_OC1);
-  timer_enable_counter(GP_PWM_TIMER);
-}
-
-// Duty of the spare PWM output, %.
-void gp_pwm_set(uint32_t dutyPct) {
-  if (dutyPct > 100)
-    dutyPct = 100;
-  uint32_t arr = TIM_ARR(GP_PWM_TIMER) + 1;
-  timer_set_oc_value(GP_PWM_TIMER, TIM_OC1, (arr * dutyPct) / 100);
-}
-#endif // HW_HAS_GP_DISCRETE
 
 /* LIN on UART4: PC10 TX (AF push-pull), PC11 RX, 19200 8N1, LIN mode
  * (LINEN, break generation with SBK). RXNE interrupt on; TXE is turned on

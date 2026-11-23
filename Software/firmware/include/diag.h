@@ -41,7 +41,7 @@
  *   HHF (hit current not reached) -> resistance too high / supply low
  * A short to ground on a low-side output keeps the coil on and is not a
  * MAX22200 flag; it shows only in the resistance check (below 1 ohm),
- * which needs a coil current read-back: V4 has none, so on V4 the check
+ * which needs a coil current read-back: the board has none, so the check
  * is not fed (README). */
 
 #include <stdint.h>

@@ -145,7 +145,7 @@ struct Max22200Config
    uint16_t maxCurrentmA; // hard ceiling on any HOLD code (e.g. 850 mA)
 };
 
-/// Optional HIT phase for an on/off solenoid (none on the V4 board).
+/// Optional HIT phase for an on/off solenoid (none on the board).
 struct Max22200Hit
 {
    uint16_t hitmA;  // 0 = no HIT phase

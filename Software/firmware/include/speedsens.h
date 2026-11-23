@@ -30,9 +30,9 @@
  * (input) and 40 (output) [H]. The tooth count is therefore a parameter
  * per sensor, to be set after a bench spin test (open question Q3).
  *
- * On V4 the sensor pins are sampled by ADC2 at SPEED_TIMER_HZ (hwdefs.h)
- * and AdcEdge (anaconv.h) finds the edges; the ISR calls Edge() with the
- * number of samples since the previous edge (32 bit, no wrap in practice).
+ * The sensor pins are scanned by ADC1 at SPEED_TIMER_HZ (hwdefs.h) and
+ * ScanEdges below finds the edges; it calls Edge() with the number of
+ * scans since the previous edge (32 bit, no wrap in practice).
  * Tick10ms() turns the edges seen in the last 10 ms into an average
  * speed. No edge for timeoutMs means 0 rpm.
  */
@@ -70,7 +70,7 @@ private:
 /// OEM substitute temperature when the ATF sensor is faulty [C].
 const int32_t ATF_SUBSTITUTE_C = 120;
 
-/** Rev B speed front end: ADC1 scans the speed pins back to back
+/** Speed front end: ADC1 scans the speed pins back to back
  * (continuous scan, circular DMA), and the DMA half / full interrupts hand
  * over a block of scans. Block() walks one block, channel by channel,
  * finds the rising edges with AdcEdge (hysteresis) and gives each sensor

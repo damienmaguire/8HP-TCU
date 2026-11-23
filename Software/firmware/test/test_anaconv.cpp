@@ -21,7 +21,7 @@
 #include "test.h"
 #include <stdlib.h>
 
-/// Counts an ideal ADC would read for sensor resistance rs on a V4
+/// Counts an ideal ADC would read for sensor resistance rs on a
 /// temperature input (pull-up rpu to 5 V, 10k/10k divider).
 static int32_t TempCounts(int64_t rs, int64_t rpu) {
   int64_t rp = rs * 20000 / (rs + 20000);
@@ -44,7 +44,7 @@ void TestAnaConv() {
   CHECK_EQ(McuTempC(ToCounts(1430 - 43 * 6)), 85); // 1.172 V
   CHECK_EQ(McuTempC(ToCounts(1430 + 43 * 6)), -35);
 
-  // Board NTC (rev B): 10k B3950 to GND, 10k pull-up to 3V3.
+  // Board NTC: 10k B3950 to GND, 10k pull-up to 3V3.
   int32_t tb = 999;
   CHECK(BoardNtcC(2048, &tb)); // R = 10k: 25 degC
   CHECK_EQ(tb, 25);

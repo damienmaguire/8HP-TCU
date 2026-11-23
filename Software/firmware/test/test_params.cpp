@@ -43,7 +43,7 @@ static const Entry entries[] = {PARAM_LIST};
 #undef VALUE_ENTRY
 
 static const int kNextParamId = 273; // keep equal to param_prj.h
-static const int kNextValueId = 2161;
+static const int kNextValueId = 2162;
 
 static const int retired[] = {1, 22, 23, 24, 25, 26, 27, 34, 35, 40, 42, 53, 54, 69, 70, 102, 106, 107, 157, 158, 159, 160, 161, 162, 2037};
 
@@ -178,7 +178,7 @@ static const Frozen frozen[] = {
     {"diagPair", 2148}, {"spdInDiag", 2149}, {"spdOutDiag", 2150},
     {"canBus", 2151}, {"calSig", 2152}, {"tccSlip", 2153},
     {"tccSlipFlt", 2154}, {"parkInh", 2155}, {"brake", 2156},
-    {"parkBrkW", 2157}, {"drvFlags1", 2158}, {"gpFault", 2159}, {"spdLoad", 2160},
+    {"parkBrkW", 2157}, {"drvFlags1", 2158}, {"gpFault", 2159}, {"spdLoad", 2160}, {"brakePin", 2161},
 };
 
 static const Entry *Find(const char *name) {

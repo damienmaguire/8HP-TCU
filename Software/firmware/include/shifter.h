@@ -22,7 +22,7 @@
 #include <stdint.h>
 
 /* Gear selector front end: turns either the CAN shifter fields or the
- * V4 digital/analogue inputs into a selector position (P/R/N/D) and
+ * board digital/analogue inputs into a selector position (P/R/N/D) and
  * one-shot tip up / tip down requests for Manual mode.
  *
  * ShifterType (param_prj.h):
@@ -41,8 +41,8 @@
  * (the board RC is only about 1.1 ms). A tip gives one request on the
  * rising edge; holding it does not repeat.
  *
- * 12 V shift up / down inputs (rev B: PD2 / PD3, see
- * hwdefs.h HW_HAS_SHIFT12V): debounced over Tip12Deb samples of 10 ms,
+ * 12 V shift up / down inputs (PD2 / PD3, see
+ * hwdefs.h): debounced over Tip12Deb samples of 10 ms,
  * edge-triggered, one gear per press, in addition to the shifter tips
  * above and whatever ShifterType is. Whether a tip does anything is up
  * to the TCU: Manual mode, or Auto with TipOverride set; never in VCU
@@ -64,7 +64,7 @@ struct ShifterRaw
    // Analog
    bool din1, din2, parkIn, notParkIn;
    int32_t anaMv; // ana_in at the connector (after undoing the /2), mV
-   // 12 V shift inputs (rev B; false where not fitted)
+   // 12 V shift inputs (PD2 / PD3)
    bool up12, down12;
 };
 

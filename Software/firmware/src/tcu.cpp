@@ -679,3 +679,29 @@ bool OnTimeLimit::Tick(bool request, int32_t maxMs, int32_t tickMs) {
   onMs += tickMs;
   return true;
 }
+
+// Footbrake from the ParkBrake source (see tcu.h).
+bool FootbrakeFrom(int src, bool canOk, bool canBrake, bool paramBrake,
+                   bool pinFitted, bool pinBrake) {
+  switch (src) {
+  case PARKBRAKE_PARAM:
+    return paramBrake;
+  case PARKBRAKE_BYPASS:
+    return true;
+  case PARKBRAKE_INPUT:
+    return pinFitted && pinBrake;
+  default: // PARKBRAKE_CAN
+    return canOk && canBrake;
+  }
+}
+
+// Change state only after n equal samples that differ from it.
+bool Debounce::Tick(bool raw, int n) {
+  if (raw == state) {
+    count = 0;
+  } else if (++count >= n) {
+    state = raw;
+    count = 0;
+  }
+  return state;
+}

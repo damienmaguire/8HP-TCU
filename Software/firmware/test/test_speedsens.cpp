@@ -20,7 +20,7 @@
 #include "anaconv.h"
 #include "test.h"
 
-/* Rev B: three channels scanned back to back by ADC1 + DMA at 153.8 kHz
+/* Three channels scanned back to back by ADC1 + DMA at 153.8 kHz
  * (12 MHz / 78 cycles), processed a half-buffer (64 scans) at a time. */
 static void TestScanEdges() {
   const uint32_t hz = 153846;
@@ -154,7 +154,7 @@ void TestSpeedSens() {
   s.Tick10ms();
   CHECK_EQ(s.Rpm(), 0);
 
-  // V4 time base: ADC2 samples at 40 kHz. 60 teeth at 1000 rpm =
+  // A 40 kHz time base: 60 teeth at 1000 rpm =
   // 1000 edges/s = 40 samples per edge.
   s.Configure(40000, 60, 100, 30);
   s.Edge(40);

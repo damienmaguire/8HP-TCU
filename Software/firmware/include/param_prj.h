@@ -20,16 +20,7 @@
 #ifndef PARAM_PRJ_H_INCLUDED
 #define PARAM_PRJ_H_INCLUDED
 
-#include "hwdefs.h" // HW_HAS_* for board-dependent defaults
-
 #define VER 0.1.0
-
-// PZYL channel: not on V4; OUT0 of the second MAX22200 (IC4, global
-// channel 8) on rev B.
-#define CHANPZYL_DEFAULT (HW_HAS_MAX2 ? 8 : 255)
-// CAN2 = ZombieVerter link on rev B (transceiver on PB5 / PB6), so it is
-// started by default there; V4 has no CAN2 transceiver.
-#define CAN2ENABLE_DEFAULT (HW_REV >= 5 ? 1 : 0)
 
 /* Entries must be ordered as follows:
    1. Saveable parameters (id != 0)
@@ -37,7 +28,7 @@
    3. Display values
  */
 // Next param id (increase when adding a new parameter!): 273
-// Next value id: 2161. Retired ids are never reused (test_params.cpp).
+// Next value id: 2162. Retired ids are never reused (test_params.cpp).
 // (ids 9, 101, 103-105 and 108 were free slots and are used below; 102,
 // 106 and 107 were used by an unreleased draft and are left free. The V4
 // update dropped 1, 22-27, 34, 35, 40, 42, 53, 54, 69 and 70; they are
@@ -112,7 +103,7 @@
   PARAM_ENTRY(CAT_VALVE, ChanSYS, "ch", 0, 255, 5, 65)                         \
   PARAM_ENTRY(CAT_VALVE, ChanK0, "ch", 0, 255, 7, 66)                          \
   PARAM_ENTRY(CAT_VALVE, ChanPOS, "ch", 0, 255, 6, 67)                         \
-  PARAM_ENTRY(CAT_VALVE, ChanPZYL, "ch", 0, 255, CHANPZYL_DEFAULT, 68)         \
+  PARAM_ENTRY(CAT_VALVE, ChanPZYL, "ch", 0, 255, 8, 68)                        \
   PARAM_ENTRY(CAT_VALVE, Ch7Mode, CH7MODES, 0, 3, 0, 174)                      \
   PARAM_ENTRY(CAT_VALVE, K0Press, "mbar", 0, 20000, 0, 175)                    \
   PARAM_ENTRY(CAT_VALVE, TccPress, "mbar", 0, 12000, 6000, 176)                \
@@ -177,7 +168,7 @@
   PARAM_ENTRY(CAT_SHIFT, ParkEngKmh, "km/h", 0, 30, 5, 267)                    \
   PARAM_ENTRY(CAT_SHIFT, NabPerKmh, "rpm", 0, 200, 25, 268)                    \
   PARAM_ENTRY(CAT_SHIFT, ParkEngNab, "rpm", 0, 100, 5, 269)                    \
-  PARAM_ENTRY(CAT_SHIFT, ParkBrake, PARKBRAKES, 0, 2, 0, 270)                  \
+  PARAM_ENTRY(CAT_SHIFT, ParkBrake, PARKBRAKES, 0, 3, 0, 270)                  \
   PARAM_ENTRY(CAT_SHIFT, BrakeIn, ONOFF, 0, 1, 0, 271)                         \
   PARAM_ENTRY(CAT_SHIFT, GearInMinP, "mbar", 0, 20000, 8000, 191)              \
   PARAM_ENTRY(CAT_SHIFT, GearInPumpMs, "ms", 0, 10000, 1000, 192)              \
@@ -193,7 +184,7 @@
   PARAM_ENTRY(CAT_COMM, LogEnable, ONOFF, 0, 1, 0, 117)                        \
   PARAM_ENTRY(CAT_COMM, LogBaseId, "", 1, 2040, 1520, 118)                     \
   PARAM_ENTRY(CAT_COMM, Can2Baud, CANBAUDS, 0, 4, 2, 119)                      \
-  PARAM_ENTRY(CAT_COMM, Can2Enable, ONOFF, 0, 1, CAN2ENABLE_DEFAULT, 163)      \
+  PARAM_ENTRY(CAT_COMM, Can2Enable, ONOFF, 0, 1, 1, 163)                       \
   PARAM_ENTRY(CAT_COMM, F11TqTx, ONOFF, 0, 1, 0, 181)                          \
   PARAM_ENTRY(CAT_COMM, TqCeilTx, ONOFF, 0, 1, 0, 215)                         \
   PARAM_ENTRY(CAT_COMM, TqCeilNm, "Nm", 0, 2000, 0, 216)                       \
@@ -432,7 +423,8 @@
   VALUE_ENTRY(parkBrkW, ONOFF, 2157)                                           \
   VALUE_ENTRY(drvFlags1, "bits", 2158)                                         \
   VALUE_ENTRY(gpFault, "bits", 2159)                                           \
-  VALUE_ENTRY(spdLoad, "0.1%", 2160)
+  VALUE_ENTRY(spdLoad, "0.1%", 2160)                                           \
+  VALUE_ENTRY(brakePin, ONOFF, 2161)
 
 // Generate the version string. This must be formatted without spaces to meet
 // the format requirements of the "units".
@@ -461,10 +453,9 @@
 #define SHIFTMODES "0=Auto, 1=Manual, 2=VCU"
 #define DRIVEMODES "0=Normal, 1=Sport, 2=Track"
 #define PARKSTATES "0=Engaged, 1=Releasing, 2=Released, 3=Engaging, 4=Unheld"
-// Where the footbrake for the park release comes from. Bypass is for the
-// bench only: on a car the lock must not come out without the brake.
-#define PARKBRAKES "0=VcuCan, 1=Param, 2=Bypass"
-enum ParkBrakeSrc { PARKBRAKE_CAN = 0, PARKBRAKE_PARAM = 1, PARKBRAKE_BYPASS = 2 };
+// Where the footbrake for the park release comes from (ParkBrakeSrc in
+// tcu.h). Input = the 12 V brake switch input on J1.46 (PD1).
+#define PARKBRAKES "0=VcuCan, 1=Param, 2=Bypass, 3=Input"
 #define TQQUALS "0=None, 1=Raise, 2=Reduce"
 // ShifterType: 0 and 1 keep their ids (0 = CAN is now the BMW GWS lever,
 // with the VCU-frame selector as fallback until the lever is seen).

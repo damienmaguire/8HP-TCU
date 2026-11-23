@@ -16,24 +16,12 @@
 ## along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ##
 
-# Board: HW_REV=4 Stm32_TCU_V4 (default), HW_REV=5 Stm32_TCU_V4 rev B
-# (`make HW_REV=5`, image stm32_tcu_revb, objects in obj_revb/).
-HW_REV          ?= 4
+# One board: Stm32_TCU_V4 rev C (provisional). `make` -> stm32_tcu in obj/.
 CPUFLAGS        = -mcpu=cortex-m3 -mthumb
-ARCHDEF         = -DSTM32F1 -DHW_REV=$(HW_REV)
-ifeq ($(HW_REV),4)
+ARCHDEF         = -DSTM32F1
 BINARY          = stm32_tcu
 OUT_DIR         = obj
 MAPFILE         = linker.map
-# V4: slow analogue inputs through libopeninv AnaIn (ADC1 + DMA)
-ANAIN_OBJ       = anain.o
-else
-BINARY          = stm32_tcu_revb
-OUT_DIR         = obj_revb
-MAPFILE         = linker_revb.map
-# Rev B: ADC1 + DMA run the speed scan, AnaIn is not linked (slowadc.cpp)
-ANAIN_OBJ       =
-endif
 LDSCRIPT        = stm32_tcu.ld
 OPENCM3_LIB     = opencm3_stm32f1
 OPENCM3_TARGETS = stm32/f1
@@ -62,7 +50,7 @@ CORE_OBJS = caltypes.o cal_330e.o cal_f11.o cal_v095.o calset.o canif.o drivemod
 # Firmware glue and libopeninv
 OBJSL     = stm32_tcu.o hwinit.o slowadc.o terminal_prj.o $(CORE_OBJS) \
             stm32scheduler.o params.o terminal.o my_string.o digio.o my_fp.o \
-            printf.o $(ANAIN_OBJ) canhardware.o canmap.o cansdo.o sdocommands.o \
+            printf.o canhardware.o canmap.o cansdo.o sdocommands.o \
             param_save.o errormessage.o stm32_can.o terminalcommands.o
 
 OBJS      = $(patsubst %.o,$(OUT_DIR)/%.o, $(OBJSL))
