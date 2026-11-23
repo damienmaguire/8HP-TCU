@@ -42,17 +42,26 @@
  *             sensor on. PE15 is named here because it is the unused
  *             dummypin; it is set to analogue input and still reads 0.
  *
+ *  board_ntc  HW_REV 5 only: board NTC (pin TBD, Bob), ZombieVerter V1.3
+ *             style divider; AnaConv::BoardNtcC.
+ *
  * The speed sensor pins spd_in_ana (PA0, ADC12_IN0) and spd_out_ana
  * (PA1, ADC12_IN1) are sampled by ADC2 at SPEED_TIMER_HZ, not by this
  * slow scan, so the same channel is never converted by both ADCs at
  * once. REV: the RC filter on these pins comes with the next revision.
  */
+#if HW_HAS_BOARD_NTC
+#define ANA_IN_BOARD_NTC ANA_IN_ENTRY(board_ntc, BOARD_NTC_PORT, BOARD_NTC_PIN)
+#else
+#define ANA_IN_BOARD_NTC
+#endif
 #define ANA_IN_LIST                                                            \
   ANA_IN_ENTRY(vbat, GPIOC, 0)                                                 \
   ANA_IN_ENTRY(atf_temp1, GPIOC, 1)                                            \
   ANA_IN_ENTRY(atf_temp2, GPIOC, 2)                                            \
   ANA_IN_ENTRY(ana_in, GPIOC, 3)                                               \
-  ANA_IN_ENTRY(mcu_temp, GPIOE, 15)
+  ANA_IN_ENTRY(mcu_temp, GPIOE, 15)                                            \
+  ANA_IN_BOARD_NTC
 
 /* ADC2 injected inputs for the speed sensors (hwinit.cpp speed_adc_setup).
  * Next revision: the third input (n6, an internal shaft, safety cross-check

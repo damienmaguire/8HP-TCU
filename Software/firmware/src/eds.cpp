@@ -43,7 +43,7 @@ int32_t Eds::PressureToCurrent(EdsValve v, int32_t p_mbar) {
     return 0;
   if (p_mbar < 0)
     p_mbar = 0;
-  return Cal::Curve(Cal::Active().eds[v], p_mbar);
+  return Cal::Curve(Cal::Eds()[v], p_mbar);
 }
 
 int32_t Eds::TempCorrection(EdsValve v, int32_t i_0p1mA, int32_t atfTemp) {

@@ -131,6 +131,7 @@ static bool configError = false;
 // Latest decoded CAN1 input (canif.h; EcuType picks the protocol).
 static volatile CanRx canRx = {SEL_N, 0, 0, 0, 0};
 static uint8_t f11TqCounter = 0;
+static uint8_t tqCeilCounter = 0;
 static uint8_t f11TqQual = 0; // 0x0B0 qualifier and absolute target, Nm
 static int32_t f11TqNm = 0;
 static volatile uint32_t msSinceRx = 0xFFFF;
@@ -168,7 +169,7 @@ static void ConfigureTcu() {
   c.engage.fastCloseGrad = Param::GetInt(Param::EngageCloseGrad);
   c.engage.syncConfirmMs = Param::GetInt(Param::EngageSyncMs);
   c.engage.tqZeroNm = Param::GetInt(Param::EngageTqZero);
-  c.engage.variant = Param::GetInt(Param::GearboxType);
+  c.engage.variant = Cal::Variant(Param::GetInt(Param::GearboxType)).engVar;
   c.shiftMode = Param::GetInt(Param::ShiftMode);
   c.manMaxRpm = Param::GetInt(Param::ManMaxRpm);
   c.manMinRpm = Param::GetInt(Param::ManMinRpm);
@@ -208,7 +209,7 @@ static void ConfigureTcu() {
   c.pumpFaultRpm = Param::GetInt(Param::PumpFaultRpm);
   c.tipOverrideMs = Param::GetInt(Param::TipOverride);
   int variant = Param::GetInt(Param::GearboxType);
-  Cal::Select(variant);
+  Cal::Select(variant, Param::GetInt(Param::SolCurveSet));
   c.ch7Mode = Cal::Ch7Effective(Param::GetInt(Param::Ch7Mode), variant);
   c.k0P = Param::GetInt(Param::K0Press);
   c.tccP = Param::GetInt(Param::TccPress);
@@ -481,8 +482,9 @@ static void SetCanFilters() {
     can1->RegisterUserMessage(ids[i]);
 }
 
-/// Status frames for the selected EcuType (canif.cpp), and the F11
-/// 0x0B0 torque frame if switched on. Only called with CanTxEnable on.
+/// Status frames for the selected EcuType (canif.cpp), the 0x0B0 torque
+/// frame (F11TqTx, every row) and the optional 0x0A0 ceiling (TqCeilTx).
+/// Only called with CanTxEnable on.
 static void SendStatus(const TcuOutputs &o, int32_t temp) {
   CanTxIn in = {&o, temp, linPump.Classes(),
                 (uint32_t)Param::GetInt(Param::CanStatId)};
@@ -490,12 +492,21 @@ static void SendStatus(const TcuOutputs &o, int32_t temp) {
   int n = CanIf::Tx(Param::GetInt(Param::EcuType), in, f);
   for (int i = 0; i < n; i++)
     can1->Send(f[i].id, f[i].data, f[i].dlc);
-  if (Param::GetBool(Param::F11TqTx) &&
-      Param::GetInt(Param::GearboxType) == CALVAR_F11) {
+  const VariantCal &v = Cal::Active();
+  if (Param::GetBool(Param::F11TqTx) && v.torqueTxId != 0) {
     uint8_t d[8];
     CanIf::PackF11Torque(f11TqQual, f11TqNm, f11TqCounter, d);
     f11TqCounter = (uint8_t)((f11TqCounter + 1) % 15);
-    can1->Send(CANIF_F11_TQ_ID, d, 8);
+    can1->Send(v.torqueTxId, d, 8);
+  }
+  if (Param::GetBool(Param::TqCeilTx)) {
+    uint8_t d[8];
+    int32_t ceil = Param::GetInt(Param::TqCeilNm);
+    if (ceil <= 0)
+      ceil = v.size->torqueClassNm; // [I] size data
+    CanIf::PackTqCeiling(ceil, tqCeilCounter, d);
+    tqCeilCounter = (uint8_t)((tqCeilCounter + 1) % 15);
+    can1->Send(CANIF_TQ_CEIL_ID, d, 8);
   }
 }
 
@@ -691,7 +702,7 @@ static void Ms10Task() {
     // POS: position valve, switch-over at 420 mA (I_EDSPOSV [C]); when to
     // switch it is not known, so it is a plain current command.
     eds.SetCurrent(EDS_POS, Param::GetInt(Param::PosCurrent) * 10);
-    // PZYL (park-lock cylinder valve = the old PREL [I]): from the park
+    // PZYL (park-lock cylinder valve MvPZyl, IC4 OUT0 / J1.42 [I]): from the park
     // sequence with ParkCtrl on, else 0. Not on a V4 channel by default.
     eds.SetCurrent(EDS_PZYL, o.pzylI);
 
@@ -740,6 +751,14 @@ static void Ms10Task() {
   Param::SetInt(Param::pCh7, o.pCh7);
   Param::SetInt(Param::iPZYL, eds.Setpoint(EDS_PZYL) / 10);
   Param::SetInt(Param::parkMag, o.parkMagnet && !o.safeOutputs);
+  {
+    const VariantCal &v = Cal::Active();
+    Param::SetInt(Param::solSetAct, Cal::ActiveSolSet());
+    Param::SetInt(Param::tqClass, v.size->torqueClassNm);
+    Param::SetInt(Param::revLimNm, v.size->revLimitNm);
+    Param::SetInt(Param::safeOfsNm, v.size->safetyOfsNm);
+    Param::SetInt(Param::k0Present, v.k0Present);
+  }
   Param::SetInt(Param::ch7Act, Cal::Ch7Effective(Param::GetInt(Param::Ch7Mode),
                                                  Param::GetInt(Param::GearboxType)));
 #if HW_HAS_T15
@@ -844,7 +863,16 @@ static void Ms100Task() {
     atfTemp = Param::GetInt(Param::AtfFixed);
   }
   Param::SetInt(Param::atfTemp, atfTemp);
-  Param::SetInt(Param::tBoard, AnaConv::McuTempC(AnaIn::mcu_temp.Get()));
+  {
+    int32_t tb;
+#if HW_HAS_BOARD_NTC
+    int src = AnaConv::BoardTempC(true, AnaIn::board_ntc.Get(), AnaIn::mcu_temp.Get(), &tb);
+#else
+    int src = AnaConv::BoardTempC(false, 0, AnaIn::mcu_temp.Get(), &tb);
+#endif
+    Param::SetInt(Param::tBoard, tb);
+    Param::SetInt(Param::tBoardSrc, src);
+  }
 
   if (driversUp) {
     uint16_t f = valves.PollFaults();

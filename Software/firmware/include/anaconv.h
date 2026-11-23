@@ -92,6 +92,28 @@ int32_t TempFromOhms(int32_t ohms, const int32_t *rPts, const int32_t *tPts, int
  * can be some 20 degC off. A die temperature, used as the board
  * temperature (V4 has no board sensor). */
 int32_t McuTempC(int32_t counts);
+
+/* Board NTC (HW_REV 5), in the libopeninv / ZombieVerter TempMeas style:
+ * a table of ADC counts at fixed temperature steps, interpolated.
+ * Placeholder values = the ZombieVerter V1.3 TH1 circuit: 10k NTC B3450
+ * (SDNT2012X103F3450) to GND, 10k pull-up to 3V3, counts =
+ * 4095 x R / (R + 10k), -40..125 degC in 5 degC steps. The real board's
+ * NTC and pull-up are TBD (Bob): change BOARD_NTC_* and the table. */
+#define BOARD_NTC_TMIN -40
+#define BOARD_NTC_STEP 5
+#define BOARD_NTC_TABLE                                                        \
+  3939, 3885, 3816, 3732, 3631, 3511, 3372, 3214, 3041, 2853, 2656, 2453,      \
+      2249, 2048, 1853, 1668, 1494, 1334, 1188, 1055, 937, 831, 736, 653, 580, \
+      515, 458, 408, 365, 326, 292, 262, 236, 212
+/// Counts outside this window mean open (pulled up) or shorted: not valid.
+#define BOARD_NTC_OPEN 4050
+#define BOARD_NTC_SHORT 40
+/** Board NTC temperature, degC, clamped to the table ends. Returns false
+ * (and leaves *degC alone) for an open or shorted sensor. */
+bool BoardNtcC(int32_t counts, int32_t *degC);
+/** tBoard source: the NTC if fitted and valid, else the die sensor.
+ * Returns 1 when the NTC was used, 0 for the die. */
+int BoardTempC(bool ntcFitted, int32_t ntcCounts, int32_t dieCounts, int32_t *degC);
 } // namespace AnaConv
 
 #endif // ANACONV_H

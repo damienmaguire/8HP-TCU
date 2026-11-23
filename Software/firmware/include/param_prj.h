@@ -33,8 +33,8 @@
    2. Temporary parameters (id = 0)
    3. Display values
  */
-// Next param id (increase when adding a new parameter!): 214
-// Next value id: 2112. Retired ids are never reused (test_params.cpp).
+// Next param id (increase when adding a new parameter!): 217
+// Next value id: 2118. Retired ids are never reused (test_params.cpp).
 // (ids 9, 101, 103-105 and 108 were free slots and are used below; 102,
 // 106 and 107 were used by an unreleased draft and are left free. The V4
 // update dropped 1, 22-27, 34, 35, 40, 42, 53, 54, 69 and 70; they are
@@ -52,7 +52,8 @@
   PARAM_ENTRY(CAT_SETUP, CmdSource, CMDSRC, 0, 1, 0, 3)                        \
   PARAM_ENTRY(CAT_SETUP, NtSource, NTSRC, 0, 1, 0, 7)                          \
   PARAM_ENTRY(CAT_SETUP, FaultClear, ONOFF, 0, 1, 0, 8)                        \
-  PARAM_ENTRY(CAT_SETUP, GearboxType, GBOXTYPES, 0, 1, 0, 9)                   \
+  PARAM_ENTRY(CAT_SETUP, GearboxType, GBOXTYPES, 0, 6, 0, 9)                   \
+  PARAM_ENTRY(CAT_SETUP, SolCurveSet, SOLSETS, 0, 4, 0, 214)                   \
   PARAM_ENTRY(CAT_SETUP, ShiftMode, SHIFTMODES, 0, 2, 0, 127)                  \
   PARAM_ENTRY(CAT_SETUP, ShifterType, SHIFTERS, 0, 1, 0, 128)                  \
   PARAM_ENTRY(CAT_SETUP, ShAnaR, "mV", 0, 6600, 1500, 129)                     \
@@ -134,11 +135,11 @@
   PARAM_ENTRY(CAT_DRIVE, DriveMode, DRIVEMODES, 0, 2, 0, 204)                 \
   PARAM_ENTRY(CAT_DRIVE, SportUpOfs, "rpm", -2000, 3000, 300, 205)             \
   PARAM_ENTRY(CAT_DRIVE, SportDnOfs, "rpm", -2000, 3000, 200, 206)             \
-  PARAM_ENTRY(CAT_DRIVE, SportTime, "%", 50, 100, 90, 207)                     \
+  PARAM_ENTRY(CAT_DRIVE, SportTime, "%", 50, 100, 100, 207)                    \
   PARAM_ENTRY(CAT_DRIVE, SportTccOfs, "rpm", 0, 3000, 200, 208)                \
   PARAM_ENTRY(CAT_DRIVE, TrackRedline, "rpm", 1000, 10000, 5500, 209)          \
   PARAM_ENTRY(CAT_DRIVE, TrackDnOfs, "rpm", -2000, 3000, 400, 210)             \
-  PARAM_ENTRY(CAT_DRIVE, TrackTime, "%", 50, 100, 80, 211)                     \
+  PARAM_ENTRY(CAT_DRIVE, TrackTime, "%", 50, 100, 100, 211)                    \
   PARAM_ENTRY(CAT_DRIVE, TrackTccOfs, "rpm", 0, 3000, 300, 212)                \
   PARAM_ENTRY(CAT_DRIVE, TrackLiftNm, "Nm", -200, 500, 10, 213)                \
   PARAM_ENTRY(CAT_SHIFT, ManMinRpm, "rpm", 0, 5000, 1000, 134)                 \
@@ -177,6 +178,8 @@
   PARAM_ENTRY(CAT_COMM, Can2Baud, CANBAUDS, 0, 4, 2, 119)                      \
   PARAM_ENTRY(CAT_COMM, Can2Enable, ONOFF, 0, 1, 0, 163)                       \
   PARAM_ENTRY(CAT_COMM, F11TqTx, ONOFF, 0, 1, 0, 181)                          \
+  PARAM_ENTRY(CAT_COMM, TqCeilTx, ONOFF, 0, 1, 0, 215)                         \
+  PARAM_ENTRY(CAT_COMM, TqCeilNm, "Nm", 0, 2000, 0, 216)                       \
   PARAM_ENTRY(CAT_IO, GpOut1Func, GPOUTFUNCS, 0, 2, 0, 147)                    \
   PARAM_ENTRY(CAT_IO, GpOut2Func, GPOUTFUNCS, 0, 2, 0, 148)                    \
   PARAM_ENTRY(CAT_IO, GpPwmFreq, "Hz", 10, 20000, 200, 150)                    \
@@ -321,7 +324,13 @@
   VALUE_ENTRY(parkSt, PARKSTATES, 2108)                                        \
   VALUE_ENTRY(canLoss, ONOFF, 2109)                                            \
   VALUE_ENTRY(tq0B0, "Nm", 2110)                                               \
-  VALUE_ENTRY(tqQual, TQQUALS, 2111)
+  VALUE_ENTRY(tqQual, TQQUALS, 2111)                                           \
+  VALUE_ENTRY(solSetAct, SOLSETS, 2112)                                        \
+  VALUE_ENTRY(tqClass, "Nm", 2113)                                             \
+  VALUE_ENTRY(revLimNm, "Nm", 2114)                                            \
+  VALUE_ENTRY(safeOfsNm, "Nm", 2115)                                           \
+  VALUE_ENTRY(k0Present, ONOFF, 2116)                                          \
+  VALUE_ENTRY(tBoardSrc, TBOARDSRCS, 2117)
 
 // Generate the version string. This must be formatted without spaces to meet
 // the format requirements of the "units".
@@ -330,9 +339,14 @@
 // clang-format on
 
 #define ONOFF "0=Off, 1=On"
-// GearboxType: one entry per calibration set (calset.cpp). 8HP45/70/90
-// sets from Ian go here later.
-#define GBOXTYPES "0=8HP75_330e, 1=8HP45_F11"
+// GearboxType: one row per gearbox and calibration (calset.cpp). Ids 0 and
+// 1 are kept; new rows are appended, never renumbered.
+#define GBOXTYPES                                                              \
+  "0=8HP75_330e, 1=8HP45_F11, 2=8HP45_F11N47_v095, 3=8HP70_N57_v095, "         \
+  "4=8HP70_N63_v095, 5=8HP90_N74_v095, 6=8HP90_RR4N74_v095"
+// SolCurveSet: solenoid p->I curves, per unit (valve hardware revision).
+#define SOLSETS "0=Auto, 1=330e_Q030, 2=F11_v058, 3=v095_8HP90, 4=v095_8HP45_70"
+#define TBOARDSRCS "0=Die, 1=NTC"
 // EcuType: who the TCU talks to on CAN1 (canif.cpp handler table). Only
 // the placeholder VCU protocol for now; OEM engine ECUs will be added later.
 #define ECUTYPES "0=None/VCU"

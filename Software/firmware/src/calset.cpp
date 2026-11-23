@@ -17,20 +17,58 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "calset.h"
-#include "cal_f11.h"
+#include "engage.h"
+#include <string.h>
+
+#define SPORT_SET {0, calUpSport, calUpSport}, {0, calDownSport, calDownSport}, \
+                  {0, calClutchSport, calClutchSport}
+// Shift / gear-in / line pressure / fill: 330e Q030 [C].
+#define Q030_TABLES calClutch, calUp, calDown, calEngage, calPsys, &calGlobal
+/* F11 v058: line pressure, EDS temperature corrections and the R / 1st
+ * gear-in pressures from the F11 export; fill, shift pressure, the other
+ * gear-in timings and the global scalars are the 330e Q030 ones
+ * (FALLBACK, see cal_f11.cpp). */
+#define F11_TABLES calClutch, calUp, calDown, calF11Engage, calF11Psys, &calF11Global
+// Engine torque intervention: 0x0B0 on every row [C, F11 log + Q030].
+#define TQ_TX 0x0B0
 
 static const VariantCal variants[CALVAR_COUNT] = {
-    // 8HP75 330e: the reference set.
-    {"8HP75_330e", calClutch, calEds, calUp, calDown, calEngage, calPsys,
-     &calGlobal, CH7_K0, true, 0, true,
-     {calUp, 0, 0}, {calDown, 0, 0}},
-    // 8HP45 F11: own EDS curves and fill items, the rest shared [I].
-    {"8HP45_F11", calF11Clutch, calF11Eds, calUp, calDown, calEngage, calPsys,
-     &calGlobal, CH7_TCC, false, 0x0B0, false,
-     {calUp, 0, 0}, {calDown, 0, 0}},
+    // 8HP75 330e Q030: the reference set, K0 reference.
+    {"8HP75_330e", "330e Q030", GBX_8HP75, Q030_TABLES, SOLSET_330E_Q030, true,
+     CH7_K0, ENG_VAR_330E, true, TQ_TX, true, &calSizes[CALSIZE_330E_Q030], SPORT_SET},
+    // 8HP45 F11 v058: own solenoid block; the size data is the v095 F11
+    // N47 cal's (same car and gearbox; the v058 port has no [C] size rows).
+    {"8HP45_F11", "F11 v058", GBX_8HP45, F11_TABLES, SOLSET_F11_V058, false,
+     CH7_TCC, ENG_VAR_F11, false, TQ_TX, false, &calSizes[CALSIZE_V095_F11N47],
+     SPORT_SET},
+    // a81 v095 cals [I]. Gear-in roles: the F11 (Gen1 a81) table [I].
+    {"8HP45_F11N47_v095", "a81 v095 2768", GBX_8HP45, Q030_TABLES,
+     SOLSET_V095_45_70, false, CH7_TCC, ENG_VAR_F11, false, TQ_TX, false,
+     &calSizes[CALSIZE_V095_F11N47], SPORT_SET},
+    {"8HP70_N57_v095", "a81 v095 1367", GBX_8HP70, Q030_TABLES, SOLSET_V095_45_70,
+     false, CH7_TCC, ENG_VAR_F11, false, TQ_TX, false, &calSizes[CALSIZE_V095_N57],
+     SPORT_SET},
+    {"8HP70_N63_v095", "a81 v095 317e", GBX_8HP70, Q030_TABLES, SOLSET_V095_45_70,
+     false, CH7_TCC, ENG_VAR_F11, false, TQ_TX, false, &calSizes[CALSIZE_V095_N63],
+     SPORT_SET},
+    {"8HP90_N74_v095", "a81 v095 0a8b", GBX_8HP90, Q030_TABLES, SOLSET_V095_90,
+     false, CH7_TCC, ENG_VAR_F11, false, TQ_TX, false, &calSizes[CALSIZE_V095_N74],
+     SPORT_SET},
+    {"8HP90_RR4N74_v095", "a81 v095 0a92", GBX_8HP90, Q030_TABLES, SOLSET_V095_90,
+     false, CH7_TCC, ENG_VAR_F11, false, TQ_TX, false, &calSizes[CALSIZE_V095_RR4N74],
+     SPORT_SET},
+};
+
+static const SolCurveSetInfo solSets[SOLSET_COUNT] = {
+    {"Auto", calEds, 'C'}, // resolved per row, never used directly
+    {"330e_Q030", calEds, 'C'},
+    {"F11_v058", calF11Eds, 'C'},
+    {"v095_8HP90", calV095Eds90, 'I'},
+    {"v095_8HP45_70", calV095Eds45, 'I'},
 };
 
 static const VariantCal *active = &variants[CALVAR_330E];
+static int activeSol = SOLSET_330E_Q030;
 static int activeMode = DM_NORMAL;
 
 namespace Cal {
@@ -41,7 +79,20 @@ const VariantCal &Variant(int id) {
   return variants[id];
 }
 
-void Select(int id) { active = &Variant(id); }
+void Select(int id, int solSet) {
+  active = &Variant(id);
+  activeSol = solSet > SOLSET_AUTO && solSet < SOLSET_COUNT ? solSet : active->solSet;
+}
+
+const SolCurveSetInfo &SolSet(int set) {
+  if (set <= SOLSET_AUTO || set >= SOLSET_COUNT)
+    set = SOLSET_330E_Q030;
+  return solSets[set];
+}
+
+int ActiveSolSet() { return activeSol; }
+
+const CalCurve *Eds() { return solSets[activeSol].eds; }
 
 const VariantCal &Active() { return *active; }
 
@@ -61,9 +112,24 @@ const DownShiftCal *Down() {
   return t ? t : active->down;
 }
 
+const ClutchFillCal *Clutch() {
+  const ClutchFillCal *t = active->clutchMode[activeMode];
+  return t ? t : active->clutch;
+}
+
+const CalRef *Ref(const CalSizeInfo &s, const char *name) {
+  for (int i = 0; i < s.nRef; i++)
+    if (strcmp(s.ref[i].name, name) == 0)
+      return &s.ref[i];
+  return 0;
+}
+
 uint8_t Ch7Effective(uint8_t mode, int variant) {
+  const VariantCal &v = Variant(variant);
   if (mode == CH7_VARIANT || mode > CH7_OPEN)
-    return Variant(variant).ch7Default;
+    mode = v.ch7Default;
+  if (mode == CH7_K0 && !v.k0Present)
+    return CH7_OPEN;
   return mode;
 }
 

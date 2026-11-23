@@ -17,6 +17,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "calset.h"
+#include <string.h>
 #include "caltypes.h"
 #include "eds.h"
 #include "engage.h"
@@ -893,23 +894,124 @@ static void TestCh7() {
   CHECK_EQ(t.Out().pCh7, 0);
 }
 
-/* Variant tables: GearboxType picks the EDS curves and fill items; the
- * shift tables are shared. */
+static bool SameCurve(const CalCurve &a, const CalCurve &b) {
+  if (a.n != b.n)
+    return false;
+  for (int i = 0; i < a.n; i++)
+    if (a.x[i] != b.x[i] || a.y[i] != b.y[i])
+      return false;
+  return true;
+}
+
+/* Variant rows: one per gearbox and cal. GearboxType ids 0 / 1 unchanged,
+ * new rows appended; the solenoid set is a separate per-unit setting. */
 static void TestVariants() {
   const VariantCal &e = Cal::Variant(CALVAR_330E);
   const VariantCal &f = Cal::Variant(CALVAR_F11);
+  CHECK_EQ(CALVAR_330E, 0);
+  CHECK_EQ(CALVAR_F11, 1);
+  CHECK_EQ(CALVAR_COUNT, 7);
   CHECK_EQ(Cal::Variant(99).ch7Default, CH7_K0); // unknown -> 330e
+  CHECK(Cal::Variant(-1).name == e.name);
   CHECK(e.linPump);
   CHECK(!f.linPump);
-  CHECK_EQ(f.torqueTxId, 0x0B0);
-  CHECK_EQ(e.torqueTxId, 0);
-  CHECK(e.up == f.up && e.down == f.down && e.engage == f.engage);
-  CHECK(e.clutch != f.clutch && e.eds != f.eds);
   CHECK_EQ(Cal::Ch7Effective(CH7_VARIANT, CALVAR_F11), CH7_TCC);
   CHECK_EQ(Cal::Ch7Effective(CH7_VARIANT, CALVAR_330E), CH7_K0);
   CHECK_EQ(Cal::Ch7Effective(CH7_OPEN, CALVAR_F11), CH7_OPEN);
   CHECK_EQ(Cal::Ch7Effective(CH7_OPEN, CALVAR_330E), CH7_OPEN);
   CHECK_EQ(Cal::Ch7Effective(CH7_TCC, CALVAR_330E), CH7_TCC);
+
+  // Every row, against VARIANTS_SUMMARY.md 5 and the exports.
+  struct Want {
+    int id; const char *name; uint8_t gbx; uint8_t sol; bool k0;
+    int16_t cls, rev, ofs; const char *sizeCal;
+  };
+  static const Want want[CALVAR_COUNT] = {
+      {CALVAR_330E, "8HP75_330e", GBX_8HP75, SOLSET_330E_Q030, true, 760, 500, 0, "Q030"},
+      {CALVAR_F11, "8HP45_F11", GBX_8HP45, SOLSET_F11_V058, false, 550, 330, 30, "F11N47"},
+      {CALVAR_V095_F11N47, "8HP45_F11N47_v095", GBX_8HP45, SOLSET_V095_45_70, false, 550, 330, 30, "F11N47"},
+      {CALVAR_V095_N57, "8HP70_N57_v095", GBX_8HP70, SOLSET_V095_45_70, false, 760, 500, 0, "N57"},
+      {CALVAR_V095_N63, "8HP70_N63_v095", GBX_8HP70, SOLSET_V095_45_70, false, 760, 500, 0, "N63"},
+      {CALVAR_V095_N74, "8HP90_N74_v095", GBX_8HP90, SOLSET_V095_90, false, 1100, 600, 15, "N74"},
+      {CALVAR_V095_RR4, "8HP90_RR4N74_v095", GBX_8HP90, SOLSET_V095_90, false, 1100, 600, 15, "RR4N74"},
+  };
+  for (const Want &w : want) {
+    const VariantCal &v = Cal::Variant(w.id);
+    CHECK(strcmp(v.name, w.name) == 0);
+    CHECK_EQ(v.gearbox, w.gbx);
+    CHECK_EQ(v.solSet, w.sol);
+    CHECK_EQ(v.k0Present, w.k0);
+    CHECK_EQ(v.ch7Default, w.k0 ? CH7_K0 : CH7_TCC);
+    CHECK_EQ(v.engVar, w.k0 ? ENG_VAR_330E : ENG_VAR_F11);
+    CHECK_EQ(v.linPump, w.k0);
+    CHECK_EQ(v.torqueTxId, 0x0B0); // every row [C]
+    CHECK_EQ(v.posConfirmed, w.k0);
+    CHECK_EQ(v.size->torqueClassNm, w.cls);
+    CHECK_EQ(v.size->revLimitNm, w.rev);
+    CHECK_EQ(v.size->safetyOfsNm, w.ofs);
+    CHECK(strcmp(v.size->cal, w.sizeCal) == 0);
+    // The size data comes from the tables it names (exported values).
+    const CalRef *r = Cal::Ref(*v.size, "KL_RGANGLIMIT");
+    CHECK(r && r->kind == 1 && r->z[0] == w.rev * 1000);
+    const CalRef *t = Cal::Ref(*v.size, "TAB_MVG_MT");
+    CHECK(t && t->z[t->nx - 1] == w.cls * 1000);
+    CHECK(Cal::Ref(*v.size, "NO_SUCH_LABEL") == 0);
+    // Shift / fill tables: 330e Q030 [C] on every row, Sport set for
+    // Sport and Track.
+    CHECK(v.up == calUp && v.down == calDown && v.clutch == calClutch);
+    CHECK(v.upMode[DM_NORMAL] == 0);
+    CHECK(v.upMode[DM_SPORT] == calUpSport && v.upMode[DM_TRACK] == calUpSport);
+    CHECK(v.downMode[DM_SPORT] == calDownSport);
+    CHECK(v.clutchMode[DM_SPORT] == calClutchSport);
+    // Line pressure / gear-in: own F11 tables on the F11 row only.
+    if (w.id == CALVAR_F11)
+      CHECK(v.psys == calF11Psys && v.engage == calF11Engage && v.global == &calF11Global);
+    else
+      CHECK(v.psys == calPsys && v.engage == calEngage && v.global == &calGlobal);
+    // K0 guard: K0 asked on a row without one -> open.
+    CHECK_EQ(Cal::Ch7Effective(CH7_K0, w.id), w.k0 ? CH7_K0 : CH7_OPEN);
+    // Select with Auto picks the row default; an explicit set wins.
+    Cal::Select(w.id);
+    CHECK_EQ(Cal::ActiveSolSet(), w.sol);
+    CHECK(Cal::Eds() == Cal::SolSet(w.sol).eds);
+    Cal::Select(w.id, SOLSET_330E_Q030);
+    CHECK_EQ(Cal::ActiveSolSet(), SOLSET_330E_Q030);
+    CHECK(Cal::Eds() == calEds);
+    Cal::Select(w.id, 77); // out of range -> row default
+    CHECK_EQ(Cal::ActiveSolSet(), w.sol);
+  }
+  CHECK_EQ(Cal::SolSet(SOLSET_AUTO).eds, calEds);
+  CHECK_EQ(Cal::SolSet(SOLSET_V095_90).evidence, 'I');
+  CHECK_EQ(Cal::SolSet(SOLSET_F11_V058).evidence, 'C');
+
+  // F11 v058 vs v095 8HP90 solenoid sets: A..E and ch7 identical [C],
+  // SYS differs; the v095 45 / 70 set is its own.
+  for (int i = 0; i < 7; i++)
+    CHECK_EQ(SameCurve(calF11Eds[i], calV095Eds90[i]), i != 5);
+  CHECK(!SameCurve(calV095Eds45[0], calV095Eds90[0]) ||
+        !SameCurve(calV095Eds45[5], calV095Eds90[5]));
+
+  // DriveMode tables: Sport has its own OEM labels (Q030 *SPORT*).
+  CHECK(CAL_SPORT_LABELS > 100);
+  Cal::Select(CALVAR_330E);
+  Cal::SelectMode(DM_SPORT);
+  CHECK(Cal::Up() == calUpSport && Cal::Down() == calDownSport &&
+        Cal::Clutch() == calClutchSport);
+  Cal::SelectMode(DM_TRACK);
+  CHECK(Cal::Up() == calUpSport);
+  Cal::SelectMode(9);
+  CHECK(Cal::Up() == calUp && Cal::Clutch() == calClutch);
+  int differ = 0;
+  for (int i = 0; i < CAL_NUM_PAIRS; i++)
+    differ += calUpSport[i].pofmtn.z != calUp[i].pofmtn.z;
+  CHECK(differ > 0);
+  Cal::SelectMode(DM_NORMAL);
+
+  // n6 k-factors exported (not used): D_k_n6 starts 1.5, x10000.
+  CHECK_EQ(calN6.k_n6.n, 20);
+  CHECK_EQ(calN6.k_n6.y[0], 15000);
+  CHECK_EQ(calN6.k_n6_ntopt.n, 32);
+  CHECK_EQ(calN6.i_targetgear.y[0], 33060);
 
   // Clutch A start current: F11 ~176 mA, 330e ~240.6 mA [C]
   Cal::Select(CALVAR_F11);
@@ -918,13 +1020,24 @@ static void TestVariants() {
   CHECK_EQ(Eds::PressureToCurrent(EDS_K0, 280), 3070); // TCC curve
   CHECK_EQ(Eds::PressureToCurrent(EDS_SYS, 3904), 8500);
   CHECK_EQ(Eds::PressureToCurrent(EDS_C, 14625), 500);
-  // F11 fill items (F11_8HP45_SHIFT_CLUTCH.md 3.1)
-  CHECK_EQ(Cal::Curve(Cal::Active().clutch[CL_A].tsfcg, -30), 360);
-  CHECK_EQ(Cal::Curve(Cal::Active().clutch[CL_A].pfcg, 40), 800);
-  CHECK_EQ(Cal::Curve(Cal::Active().clutch[CL_D].pfcg, 40), 1000);
-  CHECK_EQ(Cal::Curve(Cal::Active().clutch[CL_E].pfcg, 40), 1150);
-  CHECK_EQ(Cal::Curve(Cal::Active().clutch[CL_B].tsfcg, -30), 490);
-  CHECK_EQ(Cal::Map(Cal::Active().clutch[CL_B].psfcgmt, 40, 59), 5000);
+  // F11 fill is the 330e Q030 set now (the F11 port's fill rows are [I]).
+  CHECK_EQ(Cal::Curve(Cal::Active().clutch[CL_A].tsfcg, -30), 390);
+  // F11 line pressure / gear-in from f11_psys_gearin_cal, the rest 330e.
+  CHECK_EQ(Cal::Map(Cal::Active().psys[0], -200, 2500), 14650);   // KF_PSYS_R
+  CHECK_EQ(Cal::Map(Cal::Active().global->psysn, 2000, 10), 10000);
+  CHECK_EQ(Cal::Map(calGlobal.psysn, 2000, 1000), 6000);
+  CHECK_EQ(Cal::Map(Cal::Active().engage[0].pkzu, 704, -18), 400); // KF_PKZU_1
+  CHECK_EQ(Cal::Curve(Cal::Active().engage[0].pgrasyn, -50), 500);
+  CHECK_EQ(Cal::Curve(calEngage[0].pgrasyn, -50), 1000);
+  CHECK_EQ(Cal::Active().engage[0].t_syn, calEngage[0].t_syn);       // fallback
+  CHECK(SameCurve(Cal::Active().engage[1].tfv1, calEngage[1].tfv1)); // fallback
+  CHECK_EQ(Cal::Active().global->p_sysmin_d, calGlobal.p_sysmin_d);  // fallback
+  CHECK(SameCurve(calF11Global.tvpsein, calGlobal.tvpsein)); // [C] port, same
+  CHECK_EQ(calF11TmaxPsys.n, 4);
+  // v095 rows run the 330e tables with their own solenoid set.
+  Cal::Select(CALVAR_V095_N74);
+  CHECK(Cal::Eds() == calV095Eds90);
+  CHECK(Cal::Active().psys == calPsys);
   // F11 gear-in through the whole TCU with the F11 tables: last clutch C
   // for 1st, D for R
   CHECK_EQ(Engage::PowerFlowClutch(GEAR_1, ENG_VAR_F11), CL_C);
@@ -1105,13 +1218,13 @@ static void TestDriveMode() {
   CHECK(tQuick < tNormal);
   CHECK_EQ(ShiftTicks(0), tNormal); // 0 = cal as is
 
-  // Shift tables: no OEM Sport / Track tables yet, so every mode uses the
-  // Normal ones; an out-of-range mode falls back to Normal.
+  // Shift tables: Normal uses the row's, Sport and Track the OEM Sport
+  // set from Q030; an out-of-range mode falls back to Normal.
   Cal::Select(CALVAR_330E);
   for (int m = 0; m < DM_COUNT; m++) {
     Cal::SelectMode(m);
-    CHECK(Cal::Up() == Cal::Active().up);
-    CHECK(Cal::Down() == Cal::Active().down);
+    CHECK(Cal::Up() == (m == DM_NORMAL ? Cal::Active().up : calUpSport));
+    CHECK(Cal::Down() == (m == DM_NORMAL ? Cal::Active().down : calDownSport));
   }
   Cal::SelectMode(7);
   CHECK_EQ(Cal::ActiveMode(), DM_NORMAL);

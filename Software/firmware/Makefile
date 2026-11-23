@@ -43,7 +43,7 @@ LDFLAGS   = -Llibopencm3/lib -T$(LDSCRIPT) -march=armv7 -nostartfiles \
             -Wl,--gc-sections,-Map,$(MAPFILE)
 
 # Hardware-free control code (also built by the host tests)
-CORE_OBJS = caltypes.o cal_330e.o cal_f11.o calset.o canif.o drivemode.o gears.o interlock.o max22200.o eds.o sas.o \
+CORE_OBJS = caltypes.o cal_330e.o cal_f11.o cal_v095.o calset.o canif.o drivemode.o gears.o interlock.o max22200.o eds.o sas.o \
             engage.o speedsens.o tcu.o valveout.o anaconv.o linpump.o \
             shifter.o
 # Firmware glue and libopeninv
@@ -99,18 +99,17 @@ $(OUT_DIR)/%.o: %.cpp Makefile | $(OUT_DIR)
 DEP = $(OBJS:%.o=%.d)
 -include $(DEP)
 
-# Regenerate the calibration tables from Ian's export (not run by 'all'):
-#   make cal CAL_JSON=/path/to/330e_sas_eds_cal.json [CAL_SET=el]
+# Regenerate the calibration tables from Ian's exports (not run by 'all';
+# the exports are not in the repo):
+#   make cal Q030_JSON=/path/330e_Q030_cal_full.json \
+#            F11_JSON=/path/f11_sas_eds_cal.json F11_PSYS_JSON=/path/f11_psys_gearin_cal.json \
+#            F11_PORT_JSON=/path/f11_a81v058_cal_ported.json V095_DIR=/path/cal_v095 [CAL_SET=el]
 CAL_SET ?= normal
 cal:
-	@test -n "$(CAL_JSON)" || (echo "set CAL_JSON=/path/to/330e_sas_eds_cal.json"; exit 1)
-	python3 tools/gen_cal.py $(CAL_JSON) --set $(CAL_SET)
-
-# F11 8HP45 set (EDS curves and fill items; the rest is shared with the 330e):
-#   make cal-f11 F11_JSON=/path/to/f11_sas_eds_cal.json CAL_JSON=/path/to/330e_sas_eds_cal.json
-cal-f11:
-	@test -n "$(F11_JSON)" -a -n "$(CAL_JSON)" || (echo "set F11_JSON=... and CAL_JSON=..."; exit 1)
-	python3 tools/gen_cal.py --variant f11 $(F11_JSON) --base $(CAL_JSON)
+	@test -n "$(Q030_JSON)" -a -n "$(F11_JSON)" -a -n "$(F11_PSYS_JSON)" -a -n "$(F11_PORT_JSON)" -a -n "$(V095_DIR)" || \
+	  (echo "set Q030_JSON=... F11_JSON=... F11_PSYS_JSON=... F11_PORT_JSON=... V095_DIR=..."; exit 1)
+	python3 tools/gen_cal.py --q030 $(Q030_JSON) --f11 $(F11_JSON) --f11-psys $(F11_PSYS_JSON) \
+	  --f11-port $(F11_PORT_JSON) --v095 $(V095_DIR) --set $(CAL_SET)
 
 clean:
 	@printf "  CLEAN   $(OUT_DIR)\n"
@@ -118,7 +117,7 @@ clean:
 	@printf "  CLEAN   firmware images\n"
 	$(Q)rm -f $(BINARY) $(BINARY).bin $(BINARY).hex $(MAPFILE)
 
-.PHONY: directories get-deps images clean cal cal-f11 Test cleanTest
+.PHONY: directories get-deps images clean cal Test cleanTest
 
 get-deps:
 ifneq ($(shell test -s libopencm3/lib/lib$(OPENCM3_LIB).a && echo -n yes),yes)

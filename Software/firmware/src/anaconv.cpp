@@ -28,6 +28,36 @@ int32_t McuTempC(int32_t counts) {
   return (num >= 0 ? (num + 21) / 43 : (num - 21) / 43) + 25;
 }
 
+static const uint16_t boardNtc[] = {BOARD_NTC_TABLE};
+
+bool BoardNtcC(int32_t c, int32_t *degC) {
+  if (c >= BOARD_NTC_OPEN || c <= BOARD_NTC_SHORT)
+    return false;
+  const int n = sizeof(boardNtc) / sizeof(boardNtc[0]);
+  // NTC: counts fall as the temperature rises (TempMeas::Lookup, NTC).
+  if (c >= boardNtc[0]) {
+    *degC = BOARD_NTC_TMIN;
+    return true;
+  }
+  for (int i = 1; i < n; i++) {
+    if (c >= boardNtc[i]) {
+      int32_t a = boardNtc[i - 1] - c, b = boardNtc[i - 1] - boardNtc[i];
+      *degC = BOARD_NTC_TMIN + BOARD_NTC_STEP * (i - 1) +
+              (BOARD_NTC_STEP * a + b / 2) / b;
+      return true;
+    }
+  }
+  *degC = BOARD_NTC_TMIN + BOARD_NTC_STEP * (n - 1);
+  return true;
+}
+
+int BoardTempC(bool ntcFitted, int32_t ntcCounts, int32_t dieCounts, int32_t *degC) {
+  if (ntcFitted && BoardNtcC(ntcCounts, degC))
+    return 1;
+  *degC = McuTempC(dieCounts);
+  return 0;
+}
+
 int32_t ToCounts(int32_t mv) {
   int32_t c = (mv * ADC_FS + VREF_MV / 2) / VREF_MV;
   return c < 0 ? 0 : (c > ADC_FS ? ADC_FS : c);

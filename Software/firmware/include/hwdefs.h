@@ -35,7 +35,10 @@
  *    (global channel 8, ChanPZYL);
  *  - a third speed input (n6), probably PA2 = ADC12_IN2;
  *  - 12 V shift up / down inputs (TBD);
- *  - terminal 15 (ignition) input (TBD).
+ *  - terminal 15 (ignition) input (TBD);
+ *  - a board NTC like the ZombieVerter V1.3 (TH1: 10k NTC B3450 to GND,
+ *    10k pull-up to 3V3, 100 nF): ADC pin and NTC values TBD (Bob).
+ *    tBoard then comes from the NTC, else from the STM32 die sensor.
  */
 #ifndef HW_REV
 #define HW_REV 4
@@ -46,6 +49,7 @@
 #define HW_HAS_SPD3 1
 #define HW_HAS_SHIFT12V 1
 #define HW_HAS_T15 1
+#define HW_HAS_BOARD_NTC 1
 /* TBD pins: set these from Bob's final V5 pin map. */
 #if !defined(MAX_CS1_PORT) || !defined(MAX_CS1_PIN)
 #error "HW_REV 5: MAX22200 #2 chip select pin is TBD (MAX_CS1_PORT / MAX_CS1_PIN)"
@@ -56,11 +60,15 @@
 #if !defined(T15_PORT) || !defined(T15_PIN)
 #error "HW_REV 5: terminal 15 input pin is TBD (T15_PORT / T15_PIN)"
 #endif
+#if !defined(BOARD_NTC_PORT) || !defined(BOARD_NTC_PIN)
+#error "HW_REV 5: board NTC ADC pin is TBD (BOARD_NTC_PORT / BOARD_NTC_PIN)"
+#endif
 #else
 #define HW_HAS_MAX2 0
 #define HW_HAS_SPD3 0
 #define HW_HAS_SHIFT12V 0
 #define HW_HAS_T15 0
+#define HW_HAS_BOARD_NTC 0
 #endif
 
 #define USART_BAUDRATE 115200

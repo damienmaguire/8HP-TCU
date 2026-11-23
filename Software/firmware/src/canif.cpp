@@ -158,17 +158,29 @@ void PackF11Torque(uint8_t qual, int32_t targetNm, uint8_t counter, uint8_t d[8]
   if (qual != TQ_QUAL_RAISE && qual != TQ_QUAL_REDUCE)
     qual = TQ_QUAL_NONE;
   uint16_t tgt = qual == TQ_QUAL_NONE ? CANIF_F11_TQ_NONE : TqRaw(targetNm);
-  uint16_t aux = qual == TQ_QUAL_REDUCE ? 0xFFE
-                 : qual == TQ_QUAL_RAISE ? tgt : 0xFFF;
-  uint16_t load = 0x7FF; // 0 Nm, as in the logged idle frame
-  d[1] = (uint8_t)((counter % 15) | ((aux & 0x0F) << 4));
-  d[2] = (uint8_t)(aux >> 4);
+  const uint16_t pred = CANIF_F11_TQ_NONE; // slow path: no value
+  const uint16_t gbx = CANIF_F11_TQ_NONE;  // absorbing torque: no value
+  const uint16_t sync = CANIF_F11_TQ_NONE; // sync speed: none (F11)
+  d[1] = (uint8_t)((counter % 15) | ((pred & 0x0F) << 4));
+  d[2] = (uint8_t)(pred >> 4);
   d[3] = (uint8_t)(tgt & 0xFF);
-  d[4] = (uint8_t)((tgt >> 8) | ((load & 0x0F) << 4));
-  d[5] = (uint8_t)(load >> 4);
-  d[6] = (uint8_t)(qual | 0xF0);
-  d[7] = 0xFF;
+  d[4] = (uint8_t)((tgt >> 8) | ((gbx & 0x0F) << 4));
+  d[5] = (uint8_t)(gbx >> 4);
+  d[6] = (uint8_t)(qual | ((sync & 0x0F) << 4));
+  d[7] = (uint8_t)(sync >> 4);
   d[0] = E2eCrc(d, CANIF_F11_TQ_DATAID);
+}
+
+void PackTqCeiling(int32_t maxNm, uint8_t counter, uint8_t d[8]) {
+  uint16_t raw = TqRaw(maxNm);
+  d[1] = (uint8_t)((counter % 15) | 0xF0);
+  d[2] = 0xFF;
+  d[3] = 0xFF;
+  d[4] = (uint8_t)(raw & 0xFF);
+  d[5] = (uint8_t)((raw >> 8) | 0xF0);
+  d[6] = 0xFF;
+  d[7] = 0xFF;
+  d[0] = E2eCrc(d, CANIF_TQ_CEIL_DATAID);
 }
 
 uint8_t F11TqTarget(int32_t inputNm, int32_t deltaNm, int32_t *targetNm) {

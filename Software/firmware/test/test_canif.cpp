@@ -62,12 +62,12 @@ void TestCanIf() {
   CHECK_EQ(out[1].data[4] | (out[1].data[5] << 8), 6000);
   CHECK(CanIf::Name(ECU_NONE_VCU)[0] == 'N');
 
-  // F11 0x0B0 [I], F11_EGS_CAN_LOGCHECK.md section A.
+  // 0x0B0 [C], F11_SAM_ADDSCOPE.md 3: every field we have no value for
+  // (slow path, absorbing torque, sync speed) is 0xFFF.
   uint8_t d[8];
-  // Idle: no request. Logged idle B2..B7 = FF FF FF 7F F0 FF.
   CanIf::PackF11Torque(CanIf::TQ_QUAL_NONE, 123, 3, d);
-  CHECK_EQ(d[1], 0xF3); // counter 3 in the low nibble, aux 0xFFF
-  const uint8_t idle[6] = {0xFF, 0xFF, 0xFF, 0x7F, 0xF0, 0xFF};
+  CHECK_EQ(d[1], 0xF3); // counter 3 in the low nibble, slow path 0xFFF
+  const uint8_t idle[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xF0, 0xFF};
   for (int i = 0; i < 6; i++)
     CHECK_EQ(d[2 + i], idle[i]);
   // CRC: poly 0x1D init 0 over Data ID 0x0001 + B1..B7, equal to the
@@ -84,18 +84,23 @@ void TestCanIf() {
   CHECK_EQ(CanIf::TqRaw(-52), 1943);
   CHECK_EQ(CanIf::TqRaw(5000), 0xFFE); // never reads as "no request"
   CHECK_EQ(CanIf::TqRaw(-5000), 0);
-  // Reduce to 150 Nm: target bits 24-35, aux 0xFFE, qualifier 2.
+  // Reduce to 150 Nm: target bits 24-35, qualifier 2 (decreasing).
   CanIf::PackF11Torque(CanIf::TQ_QUAL_REDUCE, 150, 7, d);
   CHECK_EQ(d[1] & 0x0F, 7);
-  CHECK_EQ(((d[1] >> 4) | (d[2] << 4)), 0xFFE);
+  CHECK_EQ(((d[1] >> 4) | (d[2] << 4)), 0xFFF);        // bits 12-23
   CHECK_EQ((d[3] | ((d[4] & 0x0F) << 8)), CanIf::TqRaw(150));
+  CHECK_EQ(((d[4] >> 4) | (d[5] << 4)), 0xFFF);        // bits 36-47
   CHECK_EQ(d[6] & 0x0F, 2);
-  CHECK_EQ(d[6] & 0xF0, 0xF0);
-  CHECK_EQ(d[7], 0xFF);
+  CHECK_EQ(((d[6] >> 4) | (d[7] << 4)), 0xFFF);        // bits 52-63
   CHECK_EQ(d[0], CanIf::E2eCrc(d, CANIF_F11_TQ_DATAID));
-  // Raise to -10 Nm: aux = target, qualifier 1.
+  // Hand-checked frame: counter 7, 150 Nm (raw 2347 = 0x92B), reduce.
+  const uint8_t red[8] = {0, 0xF7, 0xFF, 0x2B, 0xF9, 0xFF, 0xF2, 0xFF};
+  for (int i = 1; i < 8; i++)
+    CHECK_EQ(d[i], red[i]);
+  CHECK_EQ(d[0], CanIf::E2eCrc(d, CANIF_F11_TQ_DATAID));
+  // Raise to -10 Nm: qualifier 1 (increasing), slow path still 0xFFF.
   CanIf::PackF11Torque(CanIf::TQ_QUAL_RAISE, -10, 0, d);
-  CHECK_EQ(((d[1] >> 4) | (d[2] << 4)), CanIf::TqRaw(-10));
+  CHECK_EQ(((d[1] >> 4) | (d[2] << 4)), 0xFFF);
   CHECK_EQ((d[3] | ((d[4] & 0x0F) << 8)), CanIf::TqRaw(-10));
   CHECK_EQ(d[6] & 0x0F, 1);
   // Unknown qualifier (3) is sent as none.
@@ -104,6 +109,22 @@ void TestCanIf() {
   CHECK_EQ((d[3] | ((d[4] & 0x0F) << 8)), 0xFFF);
   // Counter 0..14, 15 skipped.
   CanIf::PackF11Torque(CanIf::TQ_QUAL_NONE, 0, 15, d);
+  CHECK_EQ(d[1] & 0x0F, 0);
+  // 0x0A0 ceiling: bits 32-43, Data ID 0x00A0, rest all ones.
+  CanIf::PackTqCeiling(444, 5, d);
+  CHECK_EQ(d[1], 0xF5);
+  CHECK_EQ(d[2], 0xFF);
+  CHECK_EQ(d[3], 0xFF);
+  CHECK_EQ((d[4] | ((d[5] & 0x0F) << 8)), CanIf::TqRaw(444));
+  CHECK_EQ(d[5] & 0xF0, 0xF0);
+  CHECK_EQ(d[6], 0xFF);
+  CHECK_EQ(d[7], 0xFF);
+  CHECK_EQ(d[0], CanIf::E2eCrc(d, CANIF_TQ_CEIL_DATAID));
+  uint8_t zc[9] = {0xA0, 0x00};
+  for (int i = 1; i < 8; i++)
+    zc[i + 1] = d[i];
+  CHECK_EQ(d[0], Lin::Crc8(zc, 9));
+  CanIf::PackTqCeiling(0, 15, d);
   CHECK_EQ(d[1] & 0x0F, 0);
   // Absolute target from the intervention delta.
   int32_t tgt = 1;

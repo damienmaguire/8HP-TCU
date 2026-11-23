@@ -18,14 +18,47 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 """
-Generate the C calibration tables the TCU firmware needs from Ian's export
-of the F30 330e GA8P75HZ EGS calibration (330e_sas_eds_cal.json).
+Generate the C calibration tables the TCU firmware needs.
 
-Only the items the first cut uses are emitted: the pressure-to-current
-curves, the per-clutch fill data, line pressure, N->1/N->R gear-in data,
-and the shift data for the seven adjacent upshifts (12..78) and seven
-adjacent downshifts (21..87). Every table carries its source name and flash
-address in a comment, so values can be traced back to the OEM image.
+Sources (Ian's exports; none of them is committed to the repo):
+  --q030  330e_Q030_cal_full.json: all 15,436 A2L characteristics of
+          Damien's 330e flash, EPK = the A2L build, so the labels are exact
+          [C]. Shift, gear-in, line pressure, global values, the 330e EDS
+          curves, the per-clutch fill data and the OEM Sport tables come
+          from here.
+  --f11   f11_sas_eds_cal.json: the F11 v058 solenoid curve block at
+          0x19FCA8 (seven p->I curves A..E, SYS, TCC).
+  --f11-psys f11_psys_gearin_cal.json (Ian, F11_SAM_ADDSCOPE.md 2): F11
+          line pressure KF_PSYS_R..8, KF_PSYSN, KL_TMAXPSYS (not used), the
+          KF_KIEDSCG* EDS temperature corrections and the R / 1st gear-in
+          pressures. Other F11 fields fall back to the 330e, marked.
+  --f11-port f11_a81v058_cal_ported.json: only its [C] rows are used
+          (KL_TVPSEIN); [I] and [H] rows never drive outputs.
+  --v095  directory with params_<cal>.json for the five a81 v095 cals
+          (F11 N47 8HP45, N57 8HP70, N63 8HP70, N74 8HP90, RR4 N74 8HP90),
+          all [I]. Used for the two v095 solenoid curve sets and the
+          per-size reference data (torque class, reverse limit, safety
+          offsets, fill / piston / hysteresis tables), never for the shift
+          engine's own tables.
+
+Outputs:
+  cal_330e.{h,cpp}   Normal and Sport shift / fill tables, gear-in, line
+                     pressure, globals, 330e EDS curves (all Q030 [C]).
+  cal_f11.{h,cpp}    the F11 v058 EDS block.
+  cal_v095.{h,cpp}   v095 EDS sets and the per-cal size / reference data,
+                     plus the 330e reference data from Q030.
+
+Only the items the shift engine uses are emitted for it: the
+pressure-to-current curves, the per-clutch fill data, line pressure,
+N->1/N->R gear-in data, and the shift data for the seven adjacent
+upshifts (12..78) and seven adjacent downshifts (21..87). Every table
+carries its source name and flash address in a comment.
+
+Sport set: for every shift / fill item the OEM Sport label (the A2L name
+with SPORT inserted before the shift pair or clutch suffix, e.g.
+KF_TFCGNTSPORT12, KF_TOSFHSSPORT_A) is used where Q030 has one, the Normal
+label otherwise (the same fall-back the OEM SAS uses for items without a
+Sport copy).
 
 Units in the generated tables (all integers, the F107 has no FPU):
   pressure  mbar          (export unit bar x 1000)
@@ -37,27 +70,20 @@ Units in the generated tables (all integers, the F107 has no FPU):
   temp      degC
 Map layout: z[iy * nx + ix], x = first A2L axis, y = second axis. This is
 the orientation Ian checked in 330E_SAS_FILL_RAMP.md (rows = second axis).
+Reference tables (cal_v095) are stored in milli-units of the export unit
+(value x 1000), with the unit string, because the v095 axes are not all in
+firmware units.
 
 Usage:
-  python3 tools/gen_cal.py <path to 330e_sas_eds_cal.json> [--set normal|el]
-  python3 tools/gen_cal.py --variant f11 <path to f11_sas_eds_cal.json> \
-          --base <path to 330e_sas_eds_cal.json>
-
---variant f11 writes cal_f11.h / cal_f11.cpp from Ian's F11 8HP45 export
-(F11_8HP45_SHIFT_CLUTCH.md). That export only has the seven EDS curves and
-the four fill items per clutch (quick-fill pressure map, quick-fill time,
-fill pressure, fill hysteresis), so only those are per variant. The two
-quick-fill time offset maps (KF_TOSFHS_x / KF_TOSFRS_x) are not in it and
-are copied from the 330e (--base), marked as such. Everything else (shift
-tables, gear-in, line pressure, globals) is shared with the 330e until Ian
-sends per-gearbox sets. The F11 has no A2L: its names are ported from the
-330e by address [I].
+  python3 tools/gen_cal.py --q030 <330e_Q030_cal_full.json> \
+          --f11 <f11_sas_eds_cal.json> --v095 <cal_v095 dir> [--set normal|el]
 
 --set el uses the "_EL" (electric-drive) copy of a table where one exists
 and falls back to the normal table otherwise (open question Q7 in Ian's
 spec). The default is the Normal programme set.
 """
 import argparse
+import re
 import json
 import os
 import sys
@@ -193,7 +219,14 @@ PSYS_GEARS = ["R", "1", "2", "3", "4", "5", "6", "7", "8"]
 
 
 def value_scale(conv):
-    """Scale factor from the A2L physical unit to the firmware integer unit."""
+    """Scale factor from the A2L physical unit to the firmware integer unit.
+
+    conv is the old export's conversion name or, for the Q030 export, the
+    A2L unit string (see q030_items)."""
+    unit_scale = {"[bar]": 1000.0, "[bar/s]": 1000.0, "[mA]": 10.0,
+                  "[-]%": 100.0}
+    if conv in unit_scale:
+        return unit_scale[conv]
     if conv.startswith("UMR_BAR_SEC"):
         return 1000.0          # bar/s -> mbar/s
     if conv.startswith("UMR_BAR__"):
@@ -300,88 +333,87 @@ def struct_def(name, fields):
     return "\n".join(lines)
 
 
-# F11 per-variant items, in EdsValve order (slot 7 = TCC on the F11).
-F11_EDS_CURVES = ["KL_EDSKVA", "KL_EDSKVB", "KL_EDSKVC", "KL_EDSKVD",
-                  "KL_EDSKVE", "KL_EDSSYS", "KL_EDSTCC"]
-F11_FROM_330E = ["tosfhs", "tosfrs"]
+# ---------------------------------------------------------------------------
+# Sources
 
+def q030_items(path):
+    """Bring the Q030 full export into the format Gen expects.
 
-def f11_items(path):
-    """Bring the F11 export into the 330e export format.
-
-    The F11 export already uses firmware units (mbar, ms, and 0.1 mA in
-    raw_y for the EDS curves), so its conversion name is set to one that
-    value_scale() leaves at 1. Axes are dicts there, lists in the 330e file.
+    conv is set to the A2L unit string (value_scale knows the ones that
+    need scaling; a factor "[-]" on an F_ item is a 1/100 factor, stored
+    as percent like the old export). Axis inputs are cut to the last
+    path element (e.g. zff_atsys._.iSignale._.obj.sig_c_getr -> sig_c_getr).
     """
     out = []
     for x in json.load(open(path)):
-        if x["type"] not in ("CURVE", "MAP"):
-            continue  # the resistance block is not used
-        y = dict(x)
-        y["axes"] = [[a["name"], a["values"]] for a in x["axes"]]
-        if x["conv"] == "mbar_to_0.1mA":
-            y["values"] = x["raw_y"]
-        y["conv"] = "F11_" + x["conv"]
-        y["name"] = x["name"] + "@F11"
-        out.append(y)
+        if x["type"] not in ("VALUE", "CURVE", "MAP"):
+            continue
+        unit = x.get("unit") or ""
+        if unit == "[-]" and x["name"].startswith("F_"):
+            unit = "[-]%"
+        out.append({
+            "name": x["name"], "addr": x["addr"], "type": x["type"],
+            "conv": unit, "desc": x.get("desc", ""),
+            "evidence": x.get("evidence", ""),
+            "axes": [[a["input"].split(".")[-1], a["values"]] for a in x["axes"]],
+            "values": x["values"],
+        })
     return out
 
 
-def main_f11(args):
-    base = json.load(open(args.base))
-    g = Gen(base + f11_items(args.json), False)
-    parts = []
-    for c in CLUTCHES:
-        fields = []
-        for field, a2l, kind in CLUTCH_FIELDS:
-            cname = "f11cl%s_%s" % (c, field)
-            if field in F11_FROM_330E:
-                init = g.map(a2l + c, cname)
-                fields.append("   %s, // %s (330e copy: not in the F11 export)" % (init, field))
+N6_CURVES = [
+    ("k_n6", "D_k_n6"), ("k_nab", "D_k_nab"), ("k_nmot", "D_k_nmot"),
+    ("k_n6_ntopt", "D_k_n6_ntOpt"), ("k_nab_ntopt", "D_k_nab_ntOpt"),
+    ("targetgear_ntopt", "D_k_TargetGear_ntOpt"), ("i_targetgear", "D_i_TargetGear"),
+]
+
+
+def sport_name(a2l, suffix):
+    """OEM Sport label: SPORT goes in front of the pair / clutch suffix."""
+    if a2l.endswith("_"):
+        return a2l[:-1] + "SPORT_" + suffix
+    return a2l + "SPORT" + suffix
+
+
+class SportGen(Gen):
+    """Gen that prefers the OEM Sport label of an item."""
+
+    def __init__(self, items, use_el):
+        Gen.__init__(self, items, use_el)
+        self.sport_hits = []
+        self.sport_miss = []
+
+    def struct_init_sport(self, fields, suffix, prefix_c):
+        parts = []
+        for field, a2l, kind in fields:
+            sp = sport_name(a2l, suffix)
+            name = sp if sp in self.by else a2l + suffix
+            (self.sport_hits if sp in self.by else self.sport_miss).append(name)
+            cname = "%s_%s" % (prefix_c, field)
+            if kind == "V":
+                v, src = self.value(name)
+                parts.append("   %d, // %s %s" % (v, field, src))
             elif kind == "C":
-                fields.append("   %s, // %s" % (g.curve(a2l + c + "@F11", cname), field))
+                parts.append("   %s, // %s" % (self.curve(name, cname), field))
             else:
-                fields.append("   %s, // %s" % (g.map(a2l + c + "@F11", cname), field))
-        parts.append("{\n" + "\n".join(fields) + "\n}")
-    eds = [g.curve(n + "@F11", "f11eds_%s" % n[6:].lower()) for n in F11_EDS_CURVES]
-
-    gen_note = ("/* GENERATED by tools/gen_cal.py --variant f11 from "
-                "f11_sas_eds_cal.json. Do not edit by hand.\n"
-                " * F11 names are ported from the 330e A2L by address [I]. The\n"
-                " * quick-fill pressure maps' second axis is raw torque counts in\n"
-                " * the export (scaling not known yet) and is used as it is [I]. */")
-    lic = open(os.path.join(ROOT, "tools", "license_header.txt")).read().rstrip("\n")
-    hdr = [lic, gen_note, "#ifndef CAL_F11_H", "#define CAL_F11_H", "",
-           '#include "cal_330e.h"', "",
-           "extern const ClutchFillCal calF11Clutch[5]; // A B C D E",
-           "extern const CalCurve calF11Eds[7];         // A B C D E SYS TCC, mbar -> 0.1 mA",
-           "", "#endif // CAL_F11_H", ""]
-    src = [lic, gen_note, '#include "cal_f11.h"', ""] + g.out + [""]
-    src.append("const ClutchFillCal calF11Clutch[5] = {\n" + ",\n".join(parts) + "\n};\n")
-    src.append("const CalCurve calF11Eds[7] = {\n   " + ",\n   ".join(eds) + "\n};\n")
-    src.append("// %d calibration values from %d items.\n" % (g.count, len(g.used)))
-    with open(os.path.join(ROOT, "include", "cal_f11.h"), "w") as f:
-        f.write("\n".join(hdr))
-    with open(os.path.join(ROOT, "src", "cal_f11.cpp"), "w") as f:
-        f.write("\n".join(src))
-    print("wrote %d values from %d items" % (g.count, len(g.used)))
+                parts.append("   %s, // %s" % (self.map(name, cname), field))
+        return "{\n" + "\n".join(parts) + "\n}"
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("json")
-    ap.add_argument("--set", choices=["normal", "el"], default="normal")
-    ap.add_argument("--variant", choices=["330e", "f11"], default="330e")
-    ap.add_argument("--base", help="330e export (needed for --variant f11)")
-    args = ap.parse_args()
-    if args.variant == "f11":
-        if not args.base:
-            sys.exit("--variant f11 needs --base <330e_sas_eds_cal.json>")
-        main_f11(args)
-        return
-    items = json.load(open(args.json))
-    g = Gen(items, args.set == "el")
+def lic_text():
+    return open(os.path.join(ROOT, "tools", "license_header.txt")).read().rstrip("\n")
 
+
+def write(rel, lines):
+    with open(os.path.join(ROOT, rel), "w") as f:
+        f.write("\n".join(lines))
+
+
+# ---------------------------------------------------------------------------
+# cal_330e: Normal + Sport from Q030
+
+def gen_330e(items, args):
+    g = SportGen(items, args.set == "el")
     inits = {}
     inits["up"] = [g.struct_init(UP_FIELDS, p, "up%s" % p) for p in UP_PAIRS]
     inits["down"] = [g.struct_init(DOWN_FIELDS, p, "dn%s" % p) for p in DOWN_PAIRS]
@@ -396,12 +428,31 @@ def main():
     for field, a2l, kind in GLOBAL_TABLES:
         init = g.curve(a2l, "g_" + field) if kind == "C" else g.map(a2l, "g_" + field)
         glob_parts.append("   %s, // %s %s" % (init, field, a2l))
+    # 330e virtual-turbine k-factors (n6): exported, not used for control.
+    n6_parts = []
+    for field, a2l in N6_CURVES:
+        x = g.get(a2l)
+        xs = [int(v) for v in x["axes"][0][1]]
+        ys = [int(round(v * 10000)) for v in x["values"]]
+        cname = "n6_" + field
+        g.out.append("// %s @%s  index axis, x10000 [C values, H index mapping]" % (a2l, x["addr"]))
+        g.arr("int16_t", cname + "_x", xs)
+        g.arr("int32_t", cname + "_y", ys)
+        n6_parts.append("   {%d, %s_x, %s_y}, // %s %s" % (len(xs), cname, cname, field, a2l))
+    # OEM Sport set (same structs, Sport label where Q030 has one)
+    g.out.append("// ---- OEM Sport set (SPORT labels, Normal where none) ----")
+    inits["up_sp"] = [g.struct_init_sport(UP_FIELDS, p, "ups%s" % p) for p in UP_PAIRS]
+    inits["down_sp"] = [g.struct_init_sport(DOWN_FIELDS, p, "dns%s" % p) for p in DOWN_PAIRS]
+    inits["clutch_sp"] = [g.struct_init_sport(CLUTCH_FIELDS, c, "cls%s" % c) for c in CLUTCHES]
+    if not g.sport_hits:
+        sys.exit("no OEM Sport labels found")
 
-    gen_note = ("/* GENERATED by tools/gen_cal.py from 330e_sas_eds_cal.json "
-                "(programme set: %s). Do not edit by hand. */" % args.set)
-
-    lic = open(os.path.join(ROOT, "tools", "license_header.txt")).read().rstrip("\n")
-    hdr = [lic, gen_note, "#ifndef CAL_330E_H", "#define CAL_330E_H", "",
+    gen_note = ("/* GENERATED by tools/gen_cal.py from 330e_Q030_cal_full.json "
+                "(EPK = A2L build, exact labels [C]; programme set: %s).\n"
+                " * Do not edit by hand. Sport set: %d items use their OEM SPORT "
+                "label, %d have none\n * and use the Normal one. */"
+                % (args.set, len(g.sport_hits), len(g.sport_miss)))
+    hdr = [lic_text(), gen_note, "#ifndef CAL_330E_H", "#define CAL_330E_H", "",
            '#include "caltypes.h"', "",
            "// Adjacent shift pairs. Index 0 = 1->2 (or 2->1), index 6 = 7->8 (or 8->7).",
            "#define CAL_NUM_PAIRS 7", "",
@@ -421,10 +472,24 @@ def main():
             "extern const EngageCal calEngage[2];              // 0 = N->1, 1 = N->R",
             "extern const CalCurve calEds[7];                  // A B C D E SYS K0, mbar -> 0.1 mA",
             "extern const CalMap calPsys[9];                   // R 1 2 3 4 5 6 7 8, x=m_t Nm, y=speed rpm",
-            "extern const GlobalCal calGlobal;", "",
-            "#endif // CAL_330E_H", ""]
+            "extern const GlobalCal calGlobal;",
+            "// OEM Sport set (Q030 *SPORT* labels, Normal label where none exists)",
+            "extern const UpShiftCal calUpSport[CAL_NUM_PAIRS];",
+            "extern const DownShiftCal calDownSport[CAL_NUM_PAIRS];",
+            "extern const ClutchFillCal calClutchSport[5];",
+            "#define CAL_SPORT_LABELS %d // items with their own SPORT label" % len(g.sport_hits),
+            "",
+            "/* 330e virtual-turbine k-factors (TurbineSpeedVirtualIn): n_TuVirt =",
+            " * k_n6 n6 + k_nab n_ab (+ k_nmot n_mot) [I]. x10000, on the A2L index axis.",
+            " * The index is a shift / state index whose mapping to gears is NOT",
+            " * resolved [H]: exported for reference, not used for control. The F11",
+            " * has none of these tables and uses its turbine sensor directly [C]. */",
+            "struct CalN6", "{"] + ["   CalCurve %s; // %s" % (f, a) for f, a in N6_CURVES] + [
+            "};",
+            "extern const CalN6 calN6;",
+            "", "#endif // CAL_330E_H", ""]
 
-    src = [lic, gen_note, '#include "cal_330e.h"', ""] + g.out + [""]
+    src = [lic_text(), gen_note, '#include "cal_330e.h"', ""] + g.out + [""]
     src.append("const UpShiftCal calUp[CAL_NUM_PAIRS] = {\n" + ",\n".join(inits["up"]) + "\n};\n")
     src.append("const DownShiftCal calDown[CAL_NUM_PAIRS] = {\n" + ",\n".join(inits["down"]) + "\n};\n")
     src.append("const ClutchFillCal calClutch[5] = {\n" + ",\n".join(inits["clutch"]) + "\n};\n")
@@ -432,13 +497,348 @@ def main():
     src.append("const CalCurve calEds[7] = {\n   " + ",\n   ".join(eds) + "\n};\n")
     src.append("const CalMap calPsys[9] = {\n   " + ",\n   ".join(psys) + "\n};\n")
     src.append("const GlobalCal calGlobal = {\n" + "\n".join(glob_parts) + "\n};\n")
+    src.append("const UpShiftCal calUpSport[CAL_NUM_PAIRS] = {\n" + ",\n".join(inits["up_sp"]) + "\n};\n")
+    src.append("const DownShiftCal calDownSport[CAL_NUM_PAIRS] = {\n" + ",\n".join(inits["down_sp"]) + "\n};\n")
+    src.append("const ClutchFillCal calClutchSport[5] = {\n" + ",\n".join(inits["clutch_sp"]) + "\n};\n")
+    src.append("const CalN6 calN6 = {\n" + "\n".join(n6_parts) + "\n};\n")
     src.append("// %d calibration values from %d items.\n" % (g.count, len(g.used)))
+    write("include/cal_330e.h", hdr)
+    write("src/cal_330e.cpp", src)
+    print("cal_330e: %d values from %d items, %d Sport labels"
+          % (g.count, len(g.used), len(g.sport_hits)))
 
-    with open(os.path.join(ROOT, "include", "cal_330e.h"), "w") as f:
-        f.write("\n".join(hdr))
-    with open(os.path.join(ROOT, "src", "cal_330e.cpp"), "w") as f:
-        f.write("\n".join(src))
-    print("wrote %d values from %d items" % (g.count, len(g.used)))
+
+# ---------------------------------------------------------------------------
+# cal_f11: the v058 solenoid block (0x19FCA8)
+
+F11_EDS_CURVES = ["KL_EDSKVA", "KL_EDSKVB", "KL_EDSKVC", "KL_EDSKVD",
+                  "KL_EDSKVE", "KL_EDSSYS", "KL_EDSTCC"]
+F11_EDS_BLOCK = 0x19FCA8
+
+
+def f11_eds(path):
+    by = {x["name"]: x for x in json.load(open(path))}
+    curves = []
+    for i, n in enumerate(F11_EDS_CURVES):
+        x = by[n]
+        addr = int(x["addr"], 16)
+        if addr != F11_EDS_BLOCK + 0x34 * i:
+            sys.exit("%s not in the 0x19FCA8 block" % n)
+        curves.append((n, x["addr"], [int(v) for v in x["axes"][0]["values"]],
+                       [int(v) for v in x["raw_y"]]))
+    return curves
+
+
+def curve_lines(cname, n, src, xs, ys):
+    return ["// %s %s" % (n, src),
+            "static const int16_t %s_x[] = {%s};" % (cname, ", ".join(map(str, xs))),
+            "static const int32_t %s_y[] = {%s};" % (cname, ", ".join(map(str, ys)))]
+
+
+F11_PSYS = ["KF_PSYS_" + g for g in PSYS_GEARS]
+# Gear-in fields the F11 export has; the rest are the 330e ones [fallback].
+F11_ENGAGE_OWN = ["pkzu", "pgrasyn", "pgrasynv1", "pgrasynv2", "porasyn"]
+
+
+def f11_fw_items(path):
+    """F11 exports in firmware units (dict axes) -> Gen items, names @F11."""
+    out = []
+    for x in json.load(open(path)):
+        if x["type"] not in ("CURVE", "MAP"):
+            continue
+        y = dict(x)
+        y["axes"] = [[a["name"], a["values"]] for a in x["axes"]]
+        if x.get("conv") == "mbar_to_0.1mA":
+            y["values"] = x["raw_y"]
+        y["conv"] = "F11_" + x.get("conv", "fw")
+        y["name"] = x["name"] + "@F11"
+        out.append(y)
+    return out
+
+
+def f11_ported_c(path):
+    """[C] rows of the F11 v058 port only (Q030 format); never I / H."""
+    return [dict(x, name=x["name"] + "@F11C") for x in q030_items(path)
+            if x["evidence"].startswith("C")]
+
+
+def gen_f11(curves, args, q030):
+    g = Gen(q030 + f11_fw_items(args.f11_psys) + f11_ported_c(args.f11_port), False)
+    psys = [g.map(n + "@F11", "f11psys_%s" % n[8:].lower()) for n in F11_PSYS]
+    eng = []
+    for gear in ENGAGE_GEARS:
+        parts = []
+        for field, a2l, kind in ENGAGE_FIELDS:
+            own = field in F11_ENGAGE_OWN
+            name = a2l + gear + ("@F11" if own else "")
+            cname = "f11ge%s_%s" % (gear, field)
+            note = "F11 [I]" if own else "330e Q030 FALLBACK"
+            if kind == "V":
+                v, src = g.value(name)
+                parts.append("   %d, // %s %s (%s)" % (v, field, src, note))
+            elif kind == "C":
+                parts.append("   %s, // %s (%s)" % (g.curve(name, cname), field, note))
+            else:
+                parts.append("   %s, // %s (%s)" % (g.map(name, cname), field, note))
+        eng.append("{\n" + "\n".join(parts) + "\n}")
+    glob = []
+    for field, a2l in GLOBAL_VALUES:
+        v, src = g.value(a2l)
+        glob.append("   %d, // %s %s (330e Q030 FALLBACK)" % (v, field, src))
+    own_tables = {"kieds_rising": "KF_KIEDSCGSTACE@F11", "kieds_falling": "KF_KIEDSCGFAACE@F11",
+                  "psysn": "KF_PSYSN@F11", "tvpsein": "KL_TVPSEIN@F11C"}
+    for field, a2l, kind in GLOBAL_TABLES:
+        name = own_tables[field]
+        note = "F11 port [C]" if name.endswith("@F11C") else "F11 [C structure, I name]"
+        init = g.curve(name, "f11g_" + field) if kind == "C" else g.map(name, "f11g_" + field)
+        glob.append("   %s, // %s %s (%s)" % (init, field, a2l, note))
+    tmax = g.curve("KL_TMAXPSYS@F11", "f11_tmaxpsys")
+
+    gen_note = ("/* GENERATED by tools/gen_cal.py from f11_sas_eds_cal.json, "
+                "f11_psys_gearin_cal.json,\n * the [C] rows of f11_a81v058_cal_ported "
+                "and 330e_Q030_cal_full.json. Do not edit\n * by hand.\n"
+                " * EDS: the F11 v058 solenoid p->I block at 0x19FCA8 (A..E, SYS, TCC), "
+                "mbar -> 0.1 mA.\n * A..E and TCC are byte-identical to the a81 v095 "
+                "8HP90 set [C, checked by the\n * generator]; SYS is not. The next item "
+                "at 0x19FE14 is KF_KIEDSCGFAACE (EDS\n * temperature correction), not POS.\n"
+                " * Line pressure (KF_PSYS_R..8, KF_PSYSN), the EDS temperature "
+                "corrections and the\n * R / 1st gear-in pressures are F11 (Ian's "
+                "f11_psys_gearin_cal, [C structure / I\n * name]); KL_TVPSEIN is a [C] "
+                "port row. Every other field is the 330e Q030 table,\n * marked "
+                "FALLBACK where it is used. */")
+    src = [lic_text(), gen_note, '#include "cal_f11.h"', ""]
+    inits = []
+    for n, addr, xs, ys in curves:
+        cname = "f11eds_%s" % n[6:].lower()
+        src += curve_lines(cname, n, "@" + addr, xs, ys)
+        inits.append("{%d, %s_x, %s_y}" % (len(xs), cname, cname))
+    src += g.out + [""]
+    src += ["const CalCurve calF11Eds[7] = {\n   " + ",\n   ".join(inits) + "\n};", ""]
+    src += ["const CalMap calF11Psys[9] = {\n   " + ",\n   ".join(psys) + "\n};", ""]
+    src += ["const EngageCal calF11Engage[2] = {\n" + ",\n".join(eng) + "\n};", ""]
+    src += ["const GlobalCal calF11Global = {\n" + "\n".join(glob) + "\n};", ""]
+    src += ["// KL_TMAXPSYS: raw axis / values (unit not known), not used.",
+            "const CalCurve calF11TmaxPsys = %s;" % tmax, ""]
+    hdr = [lic_text(), gen_note, "#ifndef CAL_F11_H", "#define CAL_F11_H", "",
+           '#include "cal_330e.h"', "",
+           "extern const CalCurve calF11Eds[7];   // A B C D E SYS TCC, mbar -> 0.1 mA",
+           "extern const CalMap calF11Psys[9];    // R 1..8, x=m_t Nm, y=n_mot rpm [I]",
+           "extern const EngageCal calF11Engage[2]; // N->1, N->R: F11 pressures, 330e timings",
+           "extern const GlobalCal calF11Global;  // 330e scalars, F11 psysn / kieds / tvpsein",
+           "extern const CalCurve calF11TmaxPsys; // raw, not used",
+           "", "#endif // CAL_F11_H", ""]
+    write("include/cal_f11.h", hdr)
+    write("src/cal_f11.cpp", src)
+    print("cal_f11: 7 EDS curves, line pressure, R/1st gear-in, %d values" % g.count)
+
+
+# ---------------------------------------------------------------------------
+# cal_v095: v095 solenoid sets, per-cal size and reference data
+
+V095_CALS = [  # (file key, C name, gearbox)
+    ("F11_N47_8HP45", "F11N47", "8HP45"),
+    ("N57_8HP70", "N57", "8HP70"),
+    ("N63_8HP70", "N63", "8HP70"),
+    ("N74_8HP90", "N74", "8HP90"),
+    ("RR4_N74_8HP90", "RR4N74", "8HP90"),
+]
+V095_EDS = ["KL_EDSKVA", "KL_EDSKVB", "KL_EDSKVC", "KL_EDSKVD",
+            "KL_EDSKVE", "KL_EDSKVSYS", "KL_EDSKVK0"]
+# Per-size reference items Damien asked for (VARIANTS_SUMMARY.md 2 / 5.2).
+REF_RE = re.compile(r"^(TAB_MVG_MT|KL_RGANGLIMIT|KL_MOMOTMAXNDRSS|"
+                    r"KL_HYSB_KPL_.*_HYSKOMP|KF_TOSF|KL_TOSF|KL_TSFCG|KF_PSFCGMT|"
+                    r"KL_PFCG_|KL_PFHYSCG_|KF_FKOLBENPOSKOR|KL_PFCGGA|"
+                    r"KL_TVCGSAEND|TAB_MT_GLSADGR)|FUELLOPT|FUELLRED")
+
+
+def v095_eds(p):
+    out = []
+    for n in V095_EDS:
+        x = p[n]
+        if x["evidence"] not in ("C", "I"):
+            sys.exit("v095 %s evidence %s" % (n, x["evidence"]))
+        out.append((n, x["cal_addr"], [int(round(v)) for v in x["axes"][0]["values"]],
+                    [int(round(v * 10)) for v in x["values"]]))
+    return out
+
+
+def milli(vals):
+    return [int(round(v * 1000)) for v in vals]
+
+
+class RefGen:
+    """Reference tables, arrays shared by content."""
+
+    def __init__(self):
+        self.arrays = {}
+        self.lines = []
+
+    def arr(self, vals):
+        key = tuple(vals)
+        if key not in self.arrays:
+            cname = "ref_a%d" % len(self.arrays)
+            self.arrays[key] = cname
+            self.lines.append("static const int32_t %s[] = {%s};"
+                              % (cname, ", ".join(map(str, vals))))
+        return self.arrays[key]
+
+    def table(self, name, typ, unit, evidence, axes, values):
+        kind = {"VALUE": 0, "CURVE": 1, "MAP": 2}.get(typ)
+        if kind is None:
+            return None
+        nx = len(axes[0]) if len(axes) > 0 else 1
+        ny = len(axes[1]) if len(axes) > 1 else 1
+        if nx * ny != len(values) and kind != 0:
+            return None  # layout does not fit: leave it out
+        xa = self.arr(milli(axes[0])) if len(axes) > 0 else "0"
+        ya = self.arr(milli(axes[1])) if len(axes) > 1 else "0"
+        za = self.arr(milli(values))
+        return '{"%s", "%s", \'%s\', %d, %d, %d, %s, %s, %s}' % (
+            name, unit.replace('"', ""), evidence, kind, nx, ny, xa, ya, za)
+
+
+def first(p, n, which):
+    x = p.get(n)
+    if not x:
+        return None
+    return x["values"][which]
+
+
+def gen_v095(args, q030):
+    cals = {}
+    for key, cname, box in V095_CALS:
+        f = os.path.join(args.v095, "params_%s.json" % key)
+        cals[key] = json.load(open(f))["params"]
+    # Solenoid sets: 8HP45/70 cals share one, the 8HP90 cals another.
+    eds45 = v095_eds(cals["F11_N47_8HP45"])
+    for k in ("N57_8HP70", "N63_8HP70"):
+        if v095_eds(cals[k]) != eds45:
+            sys.exit("v095 %s EDS set differs from the 8HP45 one" % k)
+    eds90 = v095_eds(cals["N74_8HP90"])
+    if v095_eds(cals["RR4_N74_8HP90"]) != eds90:
+        sys.exit("v095 RR4 EDS set differs from N74")
+    f11 = f11_eds(args.f11)
+    same = [i for i in range(7) if (f11[i][2], f11[i][3]) == (eds90[i][2], eds90[i][3])]
+    if same != [0, 1, 2, 3, 4, 6]:
+        sys.exit("F11 v058 vs v095 8HP90 EDS identity changed: %s" % same)
+
+    src = []
+    eds_inits = {}
+    for tag, curves in (("v45", eds45), ("v90", eds90)):
+        inits = []
+        for n, addr, xs, ys in curves:
+            cname = "%seds_%s" % (tag, n[7:].lower())
+            src += curve_lines(cname, n, "cal@" + addr + " [I]", xs, ys)
+            inits.append("{%d, %s_x, %s_y}" % (len(xs), cname, cname))
+        eds_inits[tag] = inits
+
+    # Size scalars and reference tables per row. Rows in calset order.
+    rg = RefGen()
+    q = {x["name"]: x for x in q030}
+    rows = []  # (cname, desc, torque class, reverse start, safety offset, refs)
+    ref_names = set()
+    for key, cname, box in V095_CALS:
+        ref_names |= set(n for n in cals[key] if REF_RE.search(n))
+    # 330e (Q030, exact labels): only the names the v095 sets have, so the
+    # rows compare like for like.
+    refs = []
+    for n in sorted(ref_names):
+        x = q.get(n)
+        if not x:
+            continue
+        t = rg.table(n, x["type"], x["conv"], "C", [a[1] for a in x["axes"]], x["values"])
+        if t:
+            refs.append(t)
+    rows.append(("Q030", "8HP75 330e Q030 (A2L exact)",
+                 q["TAB_MVG_MT"]["values"][-1], q["KL_RGANGLIMIT"]["values"][0],
+                 q["KL_MOMOTMAXNDRSS32"]["values"][0], refs))
+    for key, cname, box in V095_CALS:
+        p = cals[key]
+        refs = []
+        for n in sorted(x for x in p if REF_RE.search(x)):
+            x = p[n]
+            if x["evidence"] not in ("C", "I"):
+                continue  # never [H]
+            t = rg.table(n, x["type"], x.get("unit", ""), x["evidence"],
+                         [a["values"] for a in x["axes"]], x["values"])
+            if t:
+                refs.append(t)
+        rows.append((cname, "%s a81 v095 %s [I]" % (box, key),
+                     first(p, "TAB_MVG_MT", -1), first(p, "KL_RGANGLIMIT", 0),
+                     first(p, "KL_MOMOTMAXNDRSS32", 0), refs))
+
+    gen_note = ("/* GENERATED by tools/gen_cal.py from the a81 v095 params_<cal>.json "
+                "files and\n * 330e_Q030_cal_full.json. Do not edit by hand.\n"
+                " * Solenoid sets: v095 8HP45/70 (shared by F11 N47, N57, N63) and v095 "
+                "8HP90\n * (N74, RR4 N74) [I]. Size data: torque class = TAB_MVG_MT top, "
+                "reverse limit\n * start = KL_RGANGLIMIT first point, safety offset = "
+                "KL_MOMOTMAXNDRSS32 first\n * point; v095 values are [I], the 330e "
+                "ones are exact labels but their per-size\n * meaning is [I] too. "
+                "Reference tables are data only (milli-units of the\n * export unit); "
+                "no output uses them. */")
+    out = [lic_text(), gen_note, '#include "cal_v095.h"', ""] + src + [""] + rg.lines + [""]
+    for tag in ("v45", "v90"):
+        out.append("const CalCurve calV095Eds%s[7] = {\n   %s\n};\n"
+                   % ("45" if tag == "v45" else "90", ",\n   ".join(eds_inits[tag])))
+    size_inits = []
+    for cname, desc, tq, rv, so, refs in rows:
+        out.append("static const CalRef ref%s[] = {\n   %s\n};" % (cname, ",\n   ".join(refs)))
+        size_inits.append('   {"%s", %d, %d, %d, %d, ref%s}, // %s'
+                          % (cname, int(round(tq)), int(round(rv)), int(round(so)),
+                             len(refs), cname, desc))
+    out.append("")
+    out.append("const CalSizeInfo calSizes[CAL_SIZE_COUNT] = {\n%s\n};\n" % "\n".join(size_inits))
+    hdr = [lic_text(), gen_note, "#ifndef CAL_V095_H", "#define CAL_V095_H", "",
+           '#include "caltypes.h"', "",
+           "/// One reference table (data only), values in milli-units of `unit`.",
+           "struct CalRef", "{",
+           "   const char *name;  // A2L label",
+           "   const char *unit;  // export unit",
+           "   char evidence;     // 'C' or 'I'",
+           "   uint8_t kind;      // 0 value, 1 curve, 2 map",
+           "   uint8_t nx, ny;",
+           "   const int32_t *x;  // milli-units, 0 for a value",
+           "   const int32_t *y;  // milli-units, 0 unless a map",
+           "   const int32_t *z;  // milli-units, z[iy * nx + ix]",
+           "};", "",
+           "/// Per-calibration size data [I]: from the exported values only.",
+           "struct CalSizeInfo", "{",
+           "   const char *cal;        // source cal",
+           "   int16_t torqueClassNm;  // TAB_MVG_MT top (550 / 760 / 1100)",
+           "   int16_t revLimitNm;     // KL_RGANGLIMIT first point",
+           "   int16_t safetyOfsNm;    // KL_MOMOTMAXNDRSS32 first point",
+           "   uint16_t nRef;",
+           "   const CalRef *ref;      // fill / piston / hysteresis / limit tables",
+           "};", "",
+           "enum CalSizeIdx",
+           "{",
+           "   CALSIZE_330E_Q030 = 0,"] + [
+           "   CALSIZE_V095_%s = %d," % (c.upper(), i + 1) for i, (k, c, b) in enumerate(V095_CALS)] + [
+           "   CAL_SIZE_COUNT", "};", "",
+           "extern const CalSizeInfo calSizes[CAL_SIZE_COUNT];",
+           "extern const CalCurve calV095Eds45[7]; // 8HP45/70 set: A B C D E SYS ch7 [I]",
+           "extern const CalCurve calV095Eds90[7]; // 8HP90 set: A B C D E SYS ch7 [I]",
+           "", "#endif // CAL_V095_H", ""]
+    write("include/cal_v095.h", hdr)
+    write("src/cal_v095.cpp", out)
+    print("cal_v095: 2 EDS sets, %d size rows, %d shared arrays"
+          % (len(rows), len(rg.arrays)))
+    return f11
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--q030", required=True, help="330e_Q030_cal_full.json")
+    ap.add_argument("--f11", required=True, help="f11_sas_eds_cal.json (v058 EDS block)")
+    ap.add_argument("--f11-psys", required=True, help="f11_psys_gearin_cal.json")
+    ap.add_argument("--f11-port", required=True, help="f11_a81v058_cal_ported.json ([C] rows only)")
+    ap.add_argument("--v095", required=True, help="directory with params_<cal>.json")
+    ap.add_argument("--set", choices=["normal", "el"], default="normal")
+    args = ap.parse_args()
+    items = q030_items(args.q030)
+    gen_330e(items, args)
+    f11 = gen_v095(args, items)
+    gen_f11(f11, args, items)
 
 
 if __name__ == "__main__":

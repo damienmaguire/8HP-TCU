@@ -85,7 +85,7 @@ void Tcu::SetNeutral(const TcuInputs &in) {
   for (int c = 0; c < CL_COUNT; c++)
     out.p[c] = 0;
   // OEM neutral keeps B at fill pressure, ready for 1st or R [C].
-  out.p[CL_B] = Cal::Curve(Cal::Active().clutch[CL_B].pfcg, in.temp);
+  out.p[CL_B] = Cal::Curve(Cal::Clutch()[CL_B].pfcg, in.temp);
 }
 
 void Tcu::HoldGear(int gear) {

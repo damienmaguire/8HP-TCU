@@ -37,7 +37,7 @@
  * K0, POS or PZYL is reported but does not force limp.
  *
  * The V4 board has one MAX22200 (8 channels, OUT0..7 = A, B, C, D, E,
- * LINE, PREL, TCC). The class still handles two chips so a later board
+ * LINE, OUT6 (POS? bench-check), TCC). The class still handles two chips so a later board
  * can add one; stm32_tcu.cpp only attaches chip 0.
  */
 

@@ -115,7 +115,7 @@ bool SasShift::Start(int f, int t, int offClutch, int onClutch,
     EnterKab(KAB_DELAY);
   } else {
     const DownShiftCal &d = Cal::Down()[pair];
-    const ClutchFillCal &cl = Cal::Active().clutch[onCl];
+    const ClutchFillCal &cl = Cal::Clutch()[onCl];
     out.pSysMin = d.p_sysmin;
     tFillEnd = 0;
     // End of the KZU quick fill ("Ende SF"), the reference for the KAB
@@ -281,7 +281,7 @@ int32_t SasShift::GlsUpdate(const SasInputs &in) {
 
 void SasShift::TickUpKzu(const SasInputs &in) {
   const UpShiftCal &u = Cal::Up()[pair];
-  const ClutchFillCal &cl = Cal::Active().clutch[onCl];
+  const ClutchFillCal &cl = Cal::Clutch()[onCl];
   int32_t p = out.pKzu;
 
   switch (out.zKzu) {
@@ -522,7 +522,7 @@ void SasShift::TickDownKab(const SasInputs &in) {
 
 void SasShift::TickDownKzu(const SasInputs &in) {
   const DownShiftCal &d = Cal::Down()[pair];
-  const ClutchFillCal &cl = Cal::Active().clutch[onCl];
+  const ClutchFillCal &cl = Cal::Clutch()[onCl];
   int32_t p = out.pKzu;
 
   switch (out.zKzu) {

@@ -48,7 +48,7 @@ enum EdsValve
    EDS_E,
    EDS_SYS,  // line pressure regulator
    EDS_K0,   // hybrid disconnect clutch (V4 "TCC", OUT7); kept open for an EV
-   EDS_POS,  // position / cooling valve, current command only (V4 "PREL"? see README)
+   EDS_POS,  // position / cooling valve, current command only (V4 OUT6, POS? bench-check)
    EDS_PZYL, // park-lock cylinder valve (MvPZyl), current command only
    EDS_COUNT
    // V4 board: there is no Sol1, and the park-hold magnet is not on the

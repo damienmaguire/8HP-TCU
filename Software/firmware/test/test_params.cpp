@@ -42,8 +42,8 @@ static const Entry entries[] = {PARAM_LIST};
 #undef PARAM_ENTRY
 #undef VALUE_ENTRY
 
-static const int kNextParamId = 214; // keep equal to param_prj.h
-static const int kNextValueId = 2112;
+static const int kNextParamId = 217; // keep equal to param_prj.h
+static const int kNextValueId = 2118;
 
 static const int retired[] = {1, 22, 23, 24, 25, 26, 27, 34, 35, 40, 42, 53, 54, 69, 70, 102, 106, 107, 157, 158, 159, 160, 161, 162, 2037};
 
@@ -95,6 +95,7 @@ static const Frozen frozen[] = {
     {"CanLossTq", 114}, {"CanLossMode", 108}, {"SdoNodeId", 115},
     {"Can1Baud", 116}, {"LogEnable", 117}, {"LogBaseId", 118},
     {"Can2Baud", 119}, {"Can2Enable", 163}, {"F11TqTx", 181},
+    {"TqCeilTx", 215}, {"TqCeilNm", 216}, {"SolCurveSet", 214},
     {"GpOut1Func", 147}, {"GpOut2Func", 148}, {"GpPwmFreq", 150},
     {"GpPwmDuty", 151}, {"LinPumpEnable", 152}, {"LinPumpReq", 153},
     {"LinPumpRpm", 154}, {"LinPumpHyst", 155}, {"LinChecksum", 156},
@@ -143,7 +144,9 @@ static const Frozen frozen[] = {
     {"selGear", 2102}, {"inertia", 2103}, {"drvMode", 2104},
     {"shiftMd", 2105}, {"pSysMeas", 2106}, {"lpBusFlt", 2107},
     {"parkSt", 2108}, {"canLoss", 2109}, {"tq0B0", 2110},
-    {"tqQual", 2111},
+    {"tqQual", 2111}, {"solSetAct", 2112}, {"tqClass", 2113},
+    {"revLimNm", 2114}, {"safeOfsNm", 2115}, {"k0Present", 2116},
+    {"tBoardSrc", 2117},
 };
 
 static const Entry *Find(const char *name) {
@@ -193,7 +196,8 @@ void TestParams() {
       "iPOS", "itA", "itB", "itC", "itD", "itE", "itSYS", "itCh7", "itPOS",
       "itPZYL", "fA", "fB", "fC", "fD", "fE", "fSYS", "fCh7", "fPOS", "fPZYL",
       "tBoard", "ratio", "slip", "selGear", "inertia", "drvMode", "shiftMd",
-      "pSysMeas", "lpBusFlt", "parkSt", "canLoss", "tq0B0", "tqQual"};
+      "pSysMeas", "lpBusFlt", "parkSt", "canLoss", "tq0B0", "tqQual",
+      "solSetAct", "tqClass", "revLimNm", "safeOfsNm", "k0Present", "tBoardSrc"};
   int missing = 0;
   for (const char *s : spot) {
     const Entry *e = Find(s);
@@ -206,6 +210,11 @@ void TestParams() {
     CHECK_EQ(Find(spot[1 + i])->id, 2081 + i);
     CHECK_EQ(Find(spot[10 + i])->id, 2090 + i);
   }
+  // Variant restructure: GearboxType keeps id 9, SolCurveSet is new.
+  const Entry *gt = Find("GearboxType");
+  CHECK(gt && !gt->value && gt->id == 9);
+  const Entry *ss = Find("SolCurveSet");
+  CHECK(ss && !ss->value && ss->id == 214);
   const Entry *dm = Find("DriveMode");
   CHECK(dm && !dm->value && dm->id == 204);
 }
