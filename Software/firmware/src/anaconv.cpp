@@ -90,6 +90,15 @@ int32_t TempInputOhms(int32_t counts, int32_t rPullUp) {
 }
 
 // Resistance to degC through the user's R / T table (interpolated).
+// ATF sensor curve. PROVISIONAL and unmeasured (a generic NTC): replace
+// with the measured 8HP sensor points once they are known.
+static const int32_t kAtfOhms[6] = {70, 190, 450, 1180, 3800, 26000};
+static const int32_t kAtfDegC[6] = {140, 100, 70, 40, 10, -30};
+
+int32_t AtfTempC(int32_t ohms) {
+  return TempFromOhms(ohms, kAtfOhms, kAtfDegC, 6);
+}
+
 int32_t TempFromOhms(int32_t r, const int32_t *rp, const int32_t *tp, int n) {
   if (n <= 0)
     return 0;

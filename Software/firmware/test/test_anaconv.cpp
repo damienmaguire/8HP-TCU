@@ -93,13 +93,19 @@ void TestAnaConv() {
   CHECK_EQ(TempInputOhms(4095, 2600), -1);
   CHECK_EQ(TempInputOhms(0, 2600), 0); // short
 
-  // Generic NTC table (default parameters): falling resistance with T
+  // Generic NTC table (the old AtfR / AtfT defaults): falling resistance with T
   const int32_t rPts[] = {70, 190, 450, 1180, 3800, 26000};
   const int32_t tPts[] = {140, 100, 70, 40, 10, -30};
   CHECK_EQ(TempFromOhms(1180, rPts, tPts, 6), 40);
   CHECK_EQ(TempFromOhms(10, rPts, tPts, 6), 140);      // clamp hot end
   CHECK_EQ(TempFromOhms(90000, rPts, tPts, 6), -30);   // clamp cold end
   CHECK_EQ(TempFromOhms(815, rPts, tPts, 6), 55);      // halfway 450..1180
+  // The fixed ATF curve gives the same as the old default parameters.
+  const int32_t rTry[] = {10, 70, 130, 190, 450, 815, 1180, 3800, 26000, 90000};
+  for (int32_t r : rTry)
+    CHECK_EQ(AtfTempC(r), TempFromOhms(r, rPts, tPts, 6));
+  CHECK_EQ(AtfTempC(70), 140);
+  CHECK_EQ(AtfTempC(26000), -30);
   // Ascending table works as well (PTC-style sensor)
   const int32_t rUp[] = {500, 1000};
   const int32_t tUp[] = {0, 100};

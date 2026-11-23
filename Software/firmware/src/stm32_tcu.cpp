@@ -758,9 +758,14 @@ static int ShowLastBootStage(uint32_t prevStage) {
   return last;
 }
 
+// One of our parameter ids, or one this firmware used before (retired):
+// a page we saved with an older build still counts as ours, and
+// parm_load() simply skips the retired entries.
 static bool OurParamId(uint16_t id) {
   Param::PARAM_NUM i = Param::NumFromId(id);
-  return i != Param::PARAM_INVALID && Param::GetType(i) == Param::TYPE_PARAM;
+  if (i != Param::PARAM_INVALID && Param::GetType(i) == Param::TYPE_PARAM)
+    return true;
+  return FlashGuard::Retired(id);
 }
 
 /* Load the saved parameters, unless the page was written by other firmware
@@ -1317,8 +1322,8 @@ static void Ms100Task() {
     ErrorMessage::Post(ERR_UNDERVOLT);
 
   // ATF temperature: sensor resistance from the selected input, then the
-  // AtfR / AtfT table (generic NTC until the sensor is known). Fixed value
-  // by default (AtfSource = Fixed).
+  // fixed curve in AnaConv::AtfTempC (provisional, a generic NTC until the
+  // 8HP sensor is measured). Fixed value by default (AtfSource = Fixed).
   bool in2 = Param::GetInt(Param::AtfInput) == 1;
   int32_t adc = SlowAdc::Get(in2 ? SlowAdc::ATF2 : SlowAdc::ATF1);
   int32_t ohm = AnaConv::TempInputOhms(adc, in2 ? AnaConv::TEMPIN2_PULLUP
@@ -1330,14 +1335,7 @@ static void Ms100Task() {
       atfTemp = ATF_SUBSTITUTE_C; // open (-1), short or out of range
       ErrorMessage::Post(ERR_ATFSENSOR);
     } else {
-      int32_t r[6], t[6];
-      const Param::PARAM_NUM rp[6] = {Param::AtfR1, Param::AtfR2, Param::AtfR3,
-                                      Param::AtfR4, Param::AtfR5, Param::AtfR6};
-      for (int i = 0; i < 6; i++) {
-        r[i] = Param::GetInt(rp[i]);
-        t[i] = Param::GetInt((Param::PARAM_NUM)(Param::AtfT1 + i));
-      }
-      atfTemp = AnaConv::TempFromOhms(ohm, r, t, 6);
+      atfTemp = AnaConv::AtfTempC(ohm);
     }
   } else {
     atfTemp = Param::GetInt(Param::AtfFixed);

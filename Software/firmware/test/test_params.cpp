@@ -46,7 +46,7 @@ static const Entry entries[] = {PARAM_LIST};
 static const int kNextParamId = 273; // keep equal to param_prj.h
 static const int kNextValueId = 2164;
 
-static const int retired[] = {1, 22, 23, 24, 25, 26, 27, 34, 35, 40, 42, 53, 54, 69, 70, 102, 106, 107, 157, 158, 159, 160, 161, 162, 2037};
+static const int retired[] = {PARAM_RETIRED_IDS};
 
 struct Frozen {
   const char *name;
@@ -61,11 +61,7 @@ static const Frozen frozen[] = {
     {"TeethIn", 10}, {"TeethOut", 11}, {"TeethAux", 12},
     {"SpdTimeout", 13}, {"SpdMinRpm", 14}, {"SpdAdcLo", 135},
     {"SpdAdcHi", 136}, {"AtfSource", 20}, {"AtfFixed", 21},
-    {"AtfInput", 143}, {"AtfR1", 137}, {"AtfR2", 138},
-    {"AtfR3", 139}, {"AtfR4", 140}, {"AtfR5", 141},
-    {"AtfR6", 142}, {"AtfRMin", 144}, {"AtfRMax", 145},
-    {"AtfT1", 28}, {"AtfT2", 29}, {"AtfT3", 30},
-    {"AtfT4", 31}, {"AtfT5", 32}, {"AtfT6", 33},
+    {"AtfInput", 143}, {"AtfRMin", 144}, {"AtfRMax", 145},
     {"MaxIfs", 41}, {"MaxHfsMask", 146}, {"MaxFreq", 43},
     {"MaxFreqDiv", 44}, {"MaxOpenLoad", 45}, {"IMaxCoil", 46},
     {"IMinCoil", 47}, {"SlewRate", 48}, {"DitherAmp", 49},
@@ -190,12 +186,12 @@ static const Entry *Find(const char *name) {
   return 0;
 }
 
-// Our parameter ids, as the firmware's NumFromId check sees them.
+// Our parameter ids or retired ones, as the firmware's check sees them.
 static bool OurParamId(uint16_t id) {
   for (const Entry &e : entries)
     if (!e.value && e.id == id)
       return true;
-  return false;
+  return FlashGuard::Retired(id);
 }
 
 /* A ZombieVerter parameter page must not be taken as ours (it shares the
@@ -227,6 +223,34 @@ static void TestFlashGuard() {
   CHECK_EQ(UnknownKeys(zv, 255, OurParamId), 3);
   CHECK(!OurParamId(5) && !OurParamId(6) && !OurParamId(39));
   CHECK(OurParamId(116)); // the shared id that would break Can1Baud
+
+  // A page saved before the ATF curve was hard-coded: our current ids plus
+  // AtfT1..6 (28-33) and AtfR1..6 (137-142). It must still load.
+  const int oldAtf[] = {28, 29, 30, 31, 32, 33, 137, 138, 139, 140, 141, 142};
+  for (int id : oldAtf)
+    if (k < 255)
+      page[k++] = {(uint16_t)id, 0, 0, 0};
+  CHECK_EQ(UnknownKeys(page, 255, OurParamId), 0);
+  CHECK(Retired(28) && Retired(33) && Retired(137) && Retired(142));
+  CHECK(!Retired(20) && !Retired(143)); // AtfSource, AtfInput stay
+  CHECK(!Retired(5) && !Retired(6));
+
+  // Every parameter id of the ZombieVerter (Stm32-vcu param_prj.h): even
+  // with the retired ids allowed, the page is still seen as foreign.
+  static const uint16_t zvIds[] = {
+      5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17, 18, 19, 20, 21, 22, 23, 24,
+      25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 37, 38, 39, 40, 41, 42, 43, 44,
+      45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 68,
+      70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87,
+      88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104,
+      105, 106, 107, 108, 110, 111, 114, 115, 116, 117, 118, 120, 121, 122,
+      123, 124, 126, 127, 128, 129, 131, 132, 133, 134, 135, 136, 137, 138,
+      139, 140, 141, 142, 143, 144, 145, 146, 147, 149, 150, 151, 152, 155,
+      156};
+  int nz = 0;
+  for (uint16_t id : zvIds)
+    zv[nz++] = {id, 0, 0, 0};
+  CHECK(UnknownKeys(zv, 255, OurParamId) >= 10);
 
   CHECK_EQ(InRange(2, 0, 4, 2), 2);
   CHECK_EQ(InRange(2500, 0, 4, 2), 2);

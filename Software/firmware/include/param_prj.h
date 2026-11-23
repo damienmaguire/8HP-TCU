@@ -29,6 +29,15 @@
  */
 // Next param id (increase when adding a new parameter!): 273
 // Next value id: 2164. Retired ids are never reused (test_params.cpp).
+// Retired parameter ids: once used by this firmware, now removed. A saved
+// parameter page may still hold them, so the start-up flash check
+// (flashguard.h) treats them as ours and parm_load() skips them.
+// 28-33 AtfT1..6 and 137-142 AtfR1..6: the ATF curve is now a fixed table
+// (anaconv.h). 2037 is a retired spot value id.
+#define PARAM_RETIRED_IDS                                                      \
+  1, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 40, 42, 53, 54,   \
+      69, 70, 102, 106, 107, 137, 138, 139, 140, 141, 142, 157, 158, 159, 160, \
+      161, 162, 2037
 // (ids 9, 101, 103-105 and 108 were free slots and are used below; 102,
 // 106 and 107 were used by an unreleased draft and are left free. The V4
 // update dropped 1, 22-27, 34, 35, 40, 42, 53, 54, 69 and 70; they are
@@ -68,20 +77,8 @@
   PARAM_ENTRY(CAT_ATF, AtfSource, ATFSRC, 0, 1, 0, 20)                         \
   PARAM_ENTRY(CAT_ATF, AtfFixed, "C", -40, 150, 40, 21)                        \
   PARAM_ENTRY(CAT_ATF, AtfInput, ATFINPUTS, 0, 1, 0, 143)                      \
-  PARAM_ENTRY(CAT_ATF, AtfR1, "ohm", 0, 200000, 70, 137)                       \
-  PARAM_ENTRY(CAT_ATF, AtfR2, "ohm", 0, 200000, 190, 138)                      \
-  PARAM_ENTRY(CAT_ATF, AtfR3, "ohm", 0, 200000, 450, 139)                      \
-  PARAM_ENTRY(CAT_ATF, AtfR4, "ohm", 0, 200000, 1180, 140)                     \
-  PARAM_ENTRY(CAT_ATF, AtfR5, "ohm", 0, 200000, 3800, 141)                     \
-  PARAM_ENTRY(CAT_ATF, AtfR6, "ohm", 0, 200000, 26000, 142)                    \
   PARAM_ENTRY(CAT_ATF, AtfRMin, "ohm", 0, 200000, 30, 144)                     \
   PARAM_ENTRY(CAT_ATF, AtfRMax, "ohm", 0, 200000, 100000, 145)                 \
-  PARAM_ENTRY(CAT_ATF, AtfT1, "C", -40, 150, 140, 28)                          \
-  PARAM_ENTRY(CAT_ATF, AtfT2, "C", -40, 150, 100, 29)                          \
-  PARAM_ENTRY(CAT_ATF, AtfT3, "C", -40, 150, 70, 30)                           \
-  PARAM_ENTRY(CAT_ATF, AtfT4, "C", -40, 150, 40, 31)                           \
-  PARAM_ENTRY(CAT_ATF, AtfT5, "C", -40, 150, 10, 32)                           \
-  PARAM_ENTRY(CAT_ATF, AtfT6, "C", -40, 150, -30, 33)                          \
   PARAM_ENTRY(CAT_VALVE, MaxIfs, "mA", 150, 1000, 1000, 41)                    \
   PARAM_ENTRY(CAT_VALVE, MaxHfsMask, "bits", 0, 255, 0, 146)                   \
   PARAM_ENTRY(CAT_VALVE, MaxFreq, MAXFREQ, 0, 1, 0, 43)                        \

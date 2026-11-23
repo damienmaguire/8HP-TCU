@@ -731,7 +731,7 @@ parameters to set once the value is known:
 | Speed sensor teeth | `TeethIn`, `TeethOut`, `TeethAux` (no pin) | 60 (OEM firmware value) | Q3 |
 | Speed timeout / minimum | `SpdTimeout`, `SpdMinRpm` | 100 ms, 30 rpm | Q3 |
 | Speed sensor ADC thresholds | `SpdAdcLo`, `SpdAdcHi` (read `spdInLo/Hi`, `spdOutLo/Hi` to set them) | 900 / 1200 mV (for 0.7 / 1.4 V) | bench, REV RC filter |
-| ATF sensor | `AtfSource`, `AtfFixed`, `AtfInput`, `AtfR1..6`, `AtfT1..6`, `AtfRMin/Max` | fixed 40 degC; generic NTC table (70R at 140 degC .. 26k at -30 degC) | Q4, Damien (which input) |
+| ATF sensor | `AtfSource`, `AtfFixed`, `AtfInput`, `AtfRMin/Max` | fixed 40 degC; the curve is hard-coded, not a parameter (`AnaConv::AtfTempC`: 70R = 140, 190R = 100, 450R = 70, 1180R = 40, 3800R = 10, 26k = -30 degC), a provisional generic NTC until the 8HP sensor is measured | Q4, Damien (which input) |
 | Battery voltage scaling | `VbatScale` | 18330 mV full scale (0.18 divider) | Bob |
 | Analog shifter | `ShAnaR`, `ShAnaN`, `ShAnaMin`, `ShAnaMax` | 1500 / 3000 / 200 / 6000 mV | shifter not chosen |
 | Manual mode limits | `ManMaxRpm`, `ManMinRpm` | 6000 / 1000 rpm | bench |
@@ -828,7 +828,10 @@ ZombieVerter. A board that last ran the ZombieVerter still holds its
 parameters and CAN map, with valid CRCs, but those ids mean other things
 here. So at start-up the TCU only loads the parameter page when every key
 in it is one of its own parameter ids, and only then loads the CAN map.
-Otherwise it starts on defaults (`paramSrc` = 2) and the page is left
+Ids this firmware used before and has removed (`PARAM_RETIRED_IDS`,
+for example the old ATF curve parameters 28-33 and 137-142) also count as
+its own, so a page saved by an older build still loads; those entries are
+skipped. Otherwise it starts on defaults (`paramSrc` = 2) and the page is left
 untouched until `save`. Every loaded value is also checked against its
 min / max; one outside goes back to its default.
 
