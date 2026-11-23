@@ -54,6 +54,7 @@
 #include <libopencm3/stm32/can.h>
 #include <libopencm3/stm32/dma.h>
 #include <libopencm3/stm32/gpio.h>
+#include <libopencm3/stm32/iwdg.h>
 #include <libopencm3/stm32/timer.h>
 #include <libopencm3/stm32/usart.h>
 #include <new>
@@ -1193,6 +1194,11 @@ static void Ms10Task() {
 // 100 ms task: battery, temperatures, faults, diagnosis, slow spot values.
 static void Ms100Task() {
   DigIo::led_out.Toggle();
+  // Feed the watchdog. The openinverter bootloader starts the hardware
+  // watchdog before jumping to this firmware, and once started it cannot be
+  // stopped. If it is not reset regularly the processor restarts (about once
+  // a second), so this must run every 100 ms, as on the ZombieVerter.
+  iwdg_reset();
   {
     const TcuOutputs &ao = tcu.Out();
     if (adapt.Dirty() && Param::GetBool(Param::AdaptEnable) && spdOut.Rpm() == 0 &&
