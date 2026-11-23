@@ -821,6 +821,24 @@ retired ids stay free and no id changes its name).
 | Drivers / load | `drvFlags0` / `drvFlags1` (IC2 / IC4 status), `gpFault` (GP outputs), `cpuload` (scheduler), `spdLoad` (speed ISR, 0.1 %) |
 | Lever | `lvMove` (raw move / code), `lvPBtn`, `lvState` (P R N D M), `lvCrcErr`, `lvCntErr`, `lvTmo` |
 | Variant | `solSetAct` (SolCurveSet in use), `tqClass`, `revLimNm`, `safeOfsNm` (size data [I]), `k0Present` |
+| Start-up | `paramSrc` (0 Defaults: blank page or bad CRC, 1 Flash: our saved parameters, 2 Foreign: another firmware's page, for example the ZombieVerter's, ignored), `bootStage` (stage the last start reached when the watchdog restarted the board, 0 = normal start) |
+
+**Start-up and flash checks.** The TCU uses the same flash pages as the
+ZombieVerter. A board that last ran the ZombieVerter still holds its
+parameters and CAN map, with valid CRCs, but those ids mean other things
+here. So at start-up the TCU only loads the parameter page when every key
+in it is one of its own parameter ids, and only then loads the CAN map.
+Otherwise it starts on defaults (`paramSrc` = 2) and the page is left
+untouched until `save`. Every loaded value is also checked against its
+min / max; one outside goes back to its default.
+
+If the hardware watchdog restarts the board, the next start blinks the
+LED once per start-up stage the last start reached (200 ms on, 300 ms
+off, then 1 s dark) before going on: 1 clocks / RTC, 2 pins, 3 speed ADC,
+4 slow ADC, 5 parameter load, 6 adaptation load, 7 SPI / LIN UART,
+8 applying parameters, 9 interrupts, 10 terminal / CAN1, 11 CAN2,
+12 CAN map, 13 valve drivers, 14 scheduler, 15 running. The same number
+is shown as `bootStage`.
 
 Not available, so not added: **measured coil current** (the MAX22200 has
 no current read-back, only the fault flags above) and the **pump
