@@ -19,8 +19,7 @@
 #ifndef HWDEFS_H_INCLUDED
 #define HWDEFS_H_INCLUDED
 
-/* One board: Bob's Stm32_TCU_V4, rev C (PROVISIONAL: still being routed,
- * Bob's full firmware answers to follow). STM32F107VCT6, 256 KiB flash in
+/* One board: Bob's Stm32_TCU_V4, rev C (final). STM32F107VCT6, 256 KiB flash in
  * 2 KiB pages, 64 KiB RAM. Clock: 8 MHz HSE -> 72 MHz SYSCLK, APB1
  * 36 MHz, APB2 72 MHz (RCC_CLOCK_HSE8_72MHZ, same as the ZombieVerter).
  * Pin map: Bob's Stm32_TCU_V4/pinmap/firmware_answers.md, approved by
@@ -37,9 +36,11 @@
  *    (IN1), n6 PA2 (IN2), scanned continuously by ADC1 into a circular
  *    DMA buffer (DMA1 channel 1); the slow analogue inputs are on ADC2
  *    (no DMA on F1 ADC2: software started, read every 10 ms).
- *  - 12 V inputs (ZV1.3 circuit, active high): T15 PD0, BRAKE_IN PD1
- *    (J1.46), SHIFT_UP PD2, SHIFT_DN PD3 (J1.49), D1 / D2 / PARK /
- *    NOT_PARK PD4..PD7.
+ *  - MAX22200 outputs: fault flags only, no coil current read-back.
+ *  - 12 V inputs (ZV1.3 circuit: SMF16A TVS, 4.7k series, 1.5k to GND,
+ *    1 uF; active high): T15 PD0, BRAKE_IN PD1 (J1.46, pin 82, EXTI1),
+ *    SHIFT_UP PD2, SHIFT_DN PD3 (J1.49), D1 / D2 / PARK / NOT_PARK
+ *    PD4..PD7.
  *  - CAN1 PA11 / PA12 = vehicle PT-CAN, CAN2 PB5 / PB6 (CAN2_REMAP) =
  *    ZombieVerter link, both 500 kbit/s.
  *  - LIN transceiver TJA1021 on UART4 PC10 / PC11, SLP_N PD11.

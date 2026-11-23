@@ -18,7 +18,7 @@
  */
 /* Main file of the 8HP TCU firmware.
  *
- * Board: Bob's Stm32_TCU_V4 rev C, provisional (pin map in hwdefs.h,
+ * Board: Bob's Stm32_TCU_V4 rev C (pin map in hwdefs.h,
  * digio_prj.h and README "Pin map").
  *
  * Tasks (Stm32Scheduler on TIM4):

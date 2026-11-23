@@ -7,7 +7,7 @@ SDO on top of libopencm3.
 
 > **Status: first cut, not run on hardware.** It builds and the host unit
 > tests pass, but nothing has been tried on Bob's board or a gearbox yet.
-> The pins follow Bob's **Stm32_TCU_V4** rev C map (provisional, see "Pin map"), and several values
+> The pins follow Bob's **Stm32_TCU_V4** rev C map (final, see "Pin map"), and several values
 > that need a bench measurement are parameters with placeholder defaults
 > (see "Parameters for unmeasured items" below). Do not connect this to a
 > car until those are resolved.
@@ -190,12 +190,15 @@ negative as in the ROM (-30 = 30 ms before sync).
   voltage. Interrupts: speed sensors (DMA half / full buffer at
   2.4 kHz), UART4 for LIN.
 
-### Pin map (Stm32_TCU_V4, rev C, provisional)
+### Pin map (Stm32_TCU_V4, rev C)
 
-There is one board: Bob's **Stm32_TCU_V4, rev C**. Rev C is still being
-routed and Bob's full firmware answers are to follow, so this map is
-**provisional**. It is the earlier rev B layout plus the 12 V brake
-input on PD1 (PD1 was unused on rev B).
+There is one board: Bob's **Stm32_TCU_V4, rev C**, which Bob reports is
+final. It is the rev B layout plus the 12 V brake input on PD1 (PD1 was
+unused on rev B). No other MCU or J1 pin moved. Other rev C changes with
+no firmware effect: J1.10 / 11 / 12 are now named OUT1_DRV / OUT2_DRV /
+OUT3_DRV (IC4 OUT1..3), D1 / D2 / PARK / NOT_PARK use the ZV1.3 input
+circuit (same scaling), the analogue inputs gained TVS diodes, and the
+crystal is still 8 MHz.
 Source: Bob's `Stm32_TCU_V4/pinmap/firmware_answers.md` and the pin map
 CSVs; Damien approved the header mapping.
 
@@ -217,7 +220,7 @@ CSVs; Damien approved the header mapping.
 | atf_temp1 / atf_temp2 | PC1 (IN11) / PC2 (IN12) | 2.7k / 2.7k pull-up to 5 V, then /2; `AtfInput` picks one |
 | ana_in | PC3 (IN13) | /2, 0-6.6 V (analog shifter placeholder) |
 | Board NTC TH1 | PB0 (ADC12_IN8) | 10k at 25 C, B 3950, 10k pull-up to 3V3, NTC to GND; table in `anaconv.h`; `tBoard` from it when valid |
-| 12 V inputs | T15 PD0 (J1.15), BRAKE_IN PD1 (J1.46), SHIFT_UP PD2 (J1.50), SHIFT_DN PD3 (J1.49), D1 / D2 / PARK / NOT_PARK PD4..PD7 (J1.54..51) | ZV1.3 circuit (SMF16A TVS, 4.7k / 1.5k, 1 uF; 12 V -> 2.9 V), active high, `INPUT_FLT` |
+| 12 V inputs | T15 PD0 (J1.15), BRAKE_IN PD1 (J1.46, LQFP pin 82, EXTI1), SHIFT_UP PD2 (J1.50), SHIFT_DN PD3 (J1.49), D1 / D2 / PARK / NOT_PARK PD4..PD7 (J1.54..51) | ZV1.3 circuit (SMF16A TVS, 4.7k series, 1.5k to GND, 1 uF; 12 V -> 2.9 V, RC about 1.14 ms), active high, `INPUT_FLT`; BRAKE_IN is debounced over 3 samples (30 ms) |
 | LED | PE2 | active low |
 | Terminal | USART3 PB10 / PB11 | 115200 |
 | CAN1 | PA11 RX / PA12 TX | vehicle PT-CAN, 500k |
@@ -1055,10 +1058,10 @@ Resolved by the pin map (RREF, chips and CS, pins, channel map, park
 magnet off the MAX22200, no Sol1 / high-side switch, dividers, crystal,
 terminal, speed sensor interface). Still open:
 
-* **Rev C** is provisional: still being routed, full firmware answers to
-  follow. Only the brake input (J1.46 -> PD1, ZV1.3 circuit, active
-  high) is in the firmware; please confirm it and anything else that
-  moves.
+* **Rev C** is final (Bob). BRAKE_IN confirmed: J1.46 -> SMF16A TVS,
+  4.7k series, 1.5k to GND, 1 uF -> PD1 (pin 82, EXTI1), active high.
+  The firmware pin table matches Bob's rev C digio / anain CSVs.
+* **S1** (total +12 V current) is closed: F1 5 A accepted.
 
 * **OUT6 (was "PREL")**: which hydraulic valve is on OUT6 / J1.3? The
   firmware maps POS there (`ChanPOS = 6`) pending the bench check; Ian
@@ -1067,12 +1070,14 @@ terminal, speed sensor interface). Still open:
 * **TCC on OUT7**: on the 330e this is K0 (held open), on the F11 the
   converter lock-up. Same channel for both variants? IFS is 1 A on both
   chips; whether TCC / K0 need more is not verified.
-* **Open items** from Bob's list (S1, S5, S6, S7, S8): S8, OSS
+* **Open items** from Bob's list (S5, S6, S7, S8): S8, OSS
   signals above 10 kHz, would need the RC re-sized; the scan rate
   itself has margin. The speed thresholds (`SpdAdcLo` / `SpdAdcHi`)
   need a re-check with the RC fitted (Bob: about 1.05 V = 1300 counts).
 * The speed pins are only ever converted by ADC1, so one channel is never
   converted by both ADCs at once.
+* `GpOutCurrent` default 400 mA [I] for the GP outputs (IC4 OUT1..3):
+  is that the right hold current for what will be connected?
 * Starter lock on GpOut1 / GpOut2: which polarity does the vehicle want? The
   firmware drives the output *on* in P/N.
 * Which temperature input (TempIn1 or TempIn2, both 2.7k now) the 8HP ATF
