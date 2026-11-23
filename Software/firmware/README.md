@@ -1009,7 +1009,8 @@ Still open:
 8. Warm-up (b1 0x08: below 16 degC, ends at 60 degC, < 8 km/h, <= 8 bar,
    pump SW >= 0x0705) and limp (0x04) requests are not generated yet.
 9. LIN hardware: TJA1021 on UART4 (SLP_N PD11); untested. Wake-up
-   (`LinWake`, at start-up and whenever the bus starts): SLP_N high,
+   (`LinWake`, 330e selection only, `GearboxType` = 0; at start-up and
+   whenever the bus starts): SLP_N high,
    100 us wait, 5 us low pulse to clear the local wake flag the chip holds
    on TXD, high again, 100 us wait, and only then the first break (data
    sheet Rev. 9: tgotonorm 10 us max, tinit(norm) 20 us max, tgotosleep
