@@ -10,19 +10,16 @@ Connector housing, header, plug and pins are the same as ZombieVerter VCU.
 
 ## Gearboxes
 
-`GearboxType` picks the row. None of these has been run on a gearbox.
+8HP45 / 8HP70 / 8HP75 / 8HP90. None has been run on a gearbox.
 
-| Setting | Gearbox | Where it stands |
+| Model | Came from | Where it stands |
 |---|---|---|
-| 0 `8HP75_330e` | BMW 330e. ZF GA8P75HZ (8HP75), hybrid, with a K0 clutch and an electric LIN oil pump. Calibration Q030. | Target. Untried. |
-| 1 `8HP45_F11` | BMW F11, N47 engine. ZF 8HP45. No LIN pump; start-stop uses a pressure accumulator. Calibration F11 v058, with its own shift and line-pressure maps. | Target. Untried. |
-| 2 `8HP45_F11N47_v095` | Same F11 8HP45 / N47. Older a81 software v095, id 2768. | Calibration data only. Untried. |
-| 3 `8HP70_N57_v095` | ZF 8HP70, BMW N57 engine. a81 v095, id 1367. | Calibration data only. Untried. |
-| 4 `8HP70_N63_v095` | ZF 8HP70, BMW N63 engine. a81 v095, id 317e. | Calibration data only. Untried. |
-| 5 `8HP90_N74_v095` | ZF 8HP90, BMW N74 engine. a81 v095, id 0a8b. | Calibration data only. Untried. |
-| 6 `8HP90_RR4N74_v095` | ZF 8HP90, RR4 with the N74 engine. a81 v095, id 0a92. | Calibration data only. Untried. |
+| 8HP45 | BMW F11, N47 engine. No LIN pump; start-stop uses a pressure accumulator. The F11 v058 calibration is the target and has its own shift maps. An older a81 v095 calibration for the same box is data only. | Target, plus one extra calibration. Untried. |
+| 8HP70 | BMW N57 and N63 engines. a81 v095 calibrations. Shift maps stay the 330e ones. | Calibration data only. Untried. |
+| 8HP75 | BMW 330e, GA8P75HZ. Hybrid, with a K0 clutch and an electric LIN oil pump. Calibration Q030. | Target. Untried. |
+| 8HP90 | BMW N74, and the RR4 with the N74. a81 v095 calibrations. Shift maps stay the 330e ones. | Calibration data only. Untried. |
 
-Rows 2 to 6 keep the 330e shift maps. Their own content is solenoid curves and size figures, and the size figures are not used by the control yet.
+`GearboxType` names, in order: `8HP75_330e`, `8HP45_F11`, `8HP45_F11N47_v095`, `8HP70_N57_v095`, `8HP70_N63_v095`, `8HP90_N74_v095`, `8HP90_RR4N74_v095`. On the data-only rows the size figures are not used by the control yet.
 
 ## Shifters
 
