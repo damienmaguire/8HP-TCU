@@ -1,0 +1,6 @@
+[submodule "Software/firmware/libopeninv"]
+	path = Software/firmware/libopeninv
+	url = https://github.com/damienmaguire/libopeninv.git
+[submodule "Software/firmware/libopencm3"]
+	path = Software/firmware/libopencm3
+	url = https://github.com/jsphuebner/libopencm3

@@ -1,0 +1,54 @@
+# GitHub Actions workflow for the firmware.
+# To enable it, move this file to .github/workflows/CI-build.yml at the
+# repository root (it could not be pushed there by the tool that opened
+# this PR, which lacks GitHub's "workflow" permission).
+name: CI
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    name: build-linux
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Software/firmware
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build package dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi g++
+
+      - name: Build dependencies
+        run: |
+          echo "Number of processors:" `nproc`
+          make get-deps -j `nproc`
+
+      - name: Build TCU firmware (STM32F107)
+        run: |
+          make
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 8HP TCU firmware binary
+          path: Software/firmware/stm32_tcu.bin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 8HP TCU firmware hex
+          path: Software/firmware/stm32_tcu.hex
+
+      - name: Build unit tests on host
+        run: |
+          make Test
+
+      - name: Run unit tests on host
+        run: |
+          test/test_tcu

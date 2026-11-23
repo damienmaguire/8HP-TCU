@@ -15,3 +15,9 @@ Prewired plug (recommended) : https://www.aliexpress.com/item/1005004818455812.h
 Work is in progress as of 01/25.
 
 ![TCU_Adapter_Board](https://github.com/user-attachments/assets/58b4c9c0-83e0-4c65-beef-87e31b3bbbc8)
+
+## Firmware
+
+STM32F107 firmware (openinverter / ZombieVerter based) is in
+[Software/firmware](Software/firmware/README.md): build steps,
+architecture, parameters and open questions.

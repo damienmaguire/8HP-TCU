@@ -1,0 +1,13 @@
+# Build output (never commit firmware images)
+obj/
+stm32_tcu
+stm32_tcu.bin
+stm32_tcu.hex
+linker.map
+*.o
+*.d
+# Host tests
+test/test_tcu
+# Code::Blocks user files
+*.layout
+*.depend
