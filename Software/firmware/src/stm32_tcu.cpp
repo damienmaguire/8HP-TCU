@@ -221,6 +221,26 @@ static const int LIN_COLD_MS = 5000;    // for at most 5 s
 // Motor speed asked of the VCU when PumpFaultAct = MotorSpeed.
 static const int LIN_FAULT_RPM = 600;
 
+// Clutch adaptation. Only AdaptEnable, AdaStep and AdaMax are parameters;
+// the rest are fixed here at the values the parameters used to default to.
+// A learning shift only counts when all of these hold at its start and end:
+static const int ADA_TQ_MIN_NM = 55;    // engine torque 55 ..
+static const int ADA_TQ_MAX_NM = 180;   // .. 180 Nm
+static const int ADA_RPM_MIN = 1600;    // engine speed 1600 ..
+static const int ADA_RPM_MAX = 3200;    // .. 3200 rpm
+static const int ADA_OIL_MIN_C = 55;    // oil 55 ..
+static const int ADA_OIL_MAX_C = 80;    // .. 80 degC (and inside a class)
+static const int ADA_GEAR_MIN = 3;      // shifts between 3rd ..
+static const int ADA_GEAR_MAX = 7;      // .. and 7th
+static const int ADA_PEDAL_MIN_PCT = 2; // pedal above 2 %
+static const int ADA_DRIVE_MIN_S = 180; // driven at least 180 s since power-up
+// Learning rule: a shift longer than 500 + 100 ms, or an input-speed flare
+// above 100 rpm, means the clutch filled late; shorter than 500 - 100 ms
+// means harsh. Target time and band are placeholders.
+static const int ADA_SHIFT_MS = 500;
+static const int ADA_BAND_MS = 100;
+static const int ADA_FLARE_RPM = 100;
+
 // Copy the parameters into the TCU, shift and adaptation settings.
 static void ConfigureTcu() {
   TcuConfig c = {};
@@ -300,19 +320,19 @@ static void ConfigureTcu() {
   c.sas.fillOfs = Param::GetBool(Param::AdaptEnable) ? fillOfsNow : nullptr;
   AdaConfig ac;
   ac.enable = Param::GetBool(Param::AdaptEnable);
-  ac.tqMin = Param::GetInt(Param::AdaTqMin);
-  ac.tqMax = Param::GetInt(Param::AdaTqMax);
-  ac.rpmMin = Param::GetInt(Param::AdaRpmMin);
-  ac.rpmMax = Param::GetInt(Param::AdaRpmMax);
-  ac.oilMin = Param::GetInt(Param::AdaOilMin);
-  ac.oilMax = Param::GetInt(Param::AdaOilMax);
-  ac.gearMin = Param::GetInt(Param::AdaGearMin);
-  ac.gearMax = Param::GetInt(Param::AdaGearMax);
-  ac.pedalMin = Param::GetInt(Param::AdaPedalMin);
-  ac.driveMinS = Param::GetInt(Param::AdaDriveMin);
-  ac.shiftMs = Param::GetInt(Param::AdaShiftMs);
-  ac.bandMs = Param::GetInt(Param::AdaBandMs);
-  ac.flareRpm = Param::GetInt(Param::AdaFlareRpm);
+  ac.tqMin = ADA_TQ_MIN_NM;
+  ac.tqMax = ADA_TQ_MAX_NM;
+  ac.rpmMin = ADA_RPM_MIN;
+  ac.rpmMax = ADA_RPM_MAX;
+  ac.oilMin = ADA_OIL_MIN_C;
+  ac.oilMax = ADA_OIL_MAX_C;
+  ac.gearMin = ADA_GEAR_MIN;
+  ac.gearMax = ADA_GEAR_MAX;
+  ac.pedalMin = ADA_PEDAL_MIN_PCT;
+  ac.driveMinS = ADA_DRIVE_MIN_S;
+  ac.shiftMs = ADA_SHIFT_MS;
+  ac.bandMs = ADA_BAND_MS;
+  ac.flareRpm = ADA_FLARE_RPM;
   ac.step = Param::GetInt(Param::AdaStep);
   ac.maxOfs = Param::GetInt(Param::AdaMax);
   adapt.Configure(ac);

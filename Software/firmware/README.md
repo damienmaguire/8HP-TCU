@@ -524,21 +524,20 @@ is the on-coming clutch, up- and downshifts.
   (cold below 40 degC).
 * Learning shifts: 3->4 learns D, 4->5 C, 5->6 E, 6->7 A, and the
   downshift 6->5 learns B (B is never the on-coming clutch of an upshift).
-* Every entry condition is a parameter and must hold at the start and
-  the end of the shift: torque `AdaTqMin`..`AdaTqMax` (55-180 Nm),
-  engine speed `AdaRpmMin`..`AdaRpmMax` (1600-3200), oil
-  `AdaOilMin`..`AdaOilMax` (55-80 degC) and inside a class, gears
-  `AdaGearMin`..`AdaGearMax` (3-7), pedal above `AdaPedalMin` (2 %),
-  driven at least `AdaDriveMin` (180 s) since power-up, `DriveMode`
-  Normal without `ShiftMode` Manual, no TCU fault, torque from CAN.
+* Every entry condition must hold at the start and the end of the
+  shift: torque 55-180 Nm, engine speed 1600-3200 rpm, oil 55-80 degC
+  and inside a class, gears 3-7, pedal above 2 %, driven at least 180 s
+  since power-up, `DriveMode` Normal without `ShiftMode` Manual, no TCU
+  fault, torque from CAN. These limits are fixed values in the code
+  (`ADA_*` in stm32_tcu.cpp), not parameters.
   `adaStat` shows which conditions block (bit 0 disabled, 1 torque,
   2 rpm, 3 oil, 4 gear, 5 pedal, 6 drive time, 7 mode, 8 fault,
   9 outside a class).
-* Rule (slow on purpose): input-speed flare above `AdaFlareRpm` or a
-  shift longer than `AdaShiftMs + AdaBandMs` = filled late, +`AdaStep`
-  (5 mbar); shorter than `AdaShiftMs - AdaBandMs` = harsh, -`AdaStep`.
-  Limited to +-`AdaMax` (300 mbar). Target time and band are
-  placeholders.
+* Rule (slow on purpose): input-speed flare above 100 rpm or a shift
+  longer than 500 + 100 ms = filled late, +`AdaStep` (5 mbar); shorter
+  than 500 - 100 ms = harsh, -`AdaStep`. Limited to +-`AdaMax`
+  (300 mbar). Target time, band and flare are fixed placeholders. The
+  only adaptation parameters are `AdaptEnable`, `AdaStep` and `AdaMax`.
 * Storage: its own flash page (`ADAPT_BLKNUM`, 0x0803E800), with magic,
   version and CRC-32. `save`, `load`, `defaults` and a parameter upload
   never touch it. Saved automatically when something changed and the
@@ -832,8 +831,9 @@ parameters and CAN map, with valid CRCs, but those ids mean other things
 here. So at start-up the TCU only loads the parameter page when every key
 in it is one of its own parameter ids, and only then loads the CAN map.
 Ids this firmware used before and has removed (`PARAM_RETIRED_IDS`,
-for example the old ATF curve parameters 28-33 and 137-142) also count as
-its own, so a page saved by an older build still loads; those entries are
+for example the old ATF curve parameters 28-33 and 137-142, and the
+LIN and adaptation settings that became fixed values) also count as its
+own, so a page saved by an older build still loads; those entries are
 skipped. Otherwise it starts on defaults (`paramSrc` = 2) and the page is left
 untouched until `save`. Every loaded value is also checked against its
 min / max; one outside goes back to its default.

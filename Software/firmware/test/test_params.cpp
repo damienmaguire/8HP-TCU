@@ -144,11 +144,7 @@ static const Frozen frozen[] = {
     {"lvState", 2120}, {"lvCrcErr", 2121}, {"lvCntErr", 2122}, {"lvTmo", 2123},
     {"TqModel", 223}, {"TqModelScale", 224}, {"TqBoostPct", 225},
     {"MapKpa", 226}, {"TqNoRedVal", 227}, {"PedalPct", 228},
-    {"AdaptEnable", 229}, {"AdaTqMin", 230}, {"AdaTqMax", 231},
-    {"AdaRpmMin", 232}, {"AdaRpmMax", 233}, {"AdaOilMin", 234},
-    {"AdaOilMax", 235}, {"AdaGearMin", 236}, {"AdaGearMax", 237},
-    {"AdaPedalMin", 238}, {"AdaDriveMin", 239}, {"AdaShiftMs", 240},
-    {"AdaBandMs", 241}, {"AdaFlareRpm", 242}, {"AdaStep", 243},
+    {"AdaptEnable", 229}, {"AdaStep", 243},
     {"AdaMax", 244}, {"DiagRBand", 245}, {"DiagRWire", 246},
     {"TccSlipMax", 247}, {"TccSlipMs", 248}, {"FrzTime", 249},
     {"FrzRpm", 250}, {"CalSigExp", 251}, {"TccMode", 252},
@@ -239,6 +235,16 @@ static void TestFlashGuard() {
   CHECK_EQ(UnknownKeys(page, 255, OurParamId), 0);
   const int keptLin[] = {152, 153, 154, 167, 194};
   for (int id : keptLin)
+    CHECK(!Retired((uint16_t)id) && OurParamId((uint16_t)id));
+  // The adaptation settings that became fixed values, the same way.
+  for (int id = 230; id <= 242; id++) {
+    CHECK(Retired((uint16_t)id));
+    if (k < 255)
+      page[k++] = {(uint16_t)id, 0, 0, 0};
+  }
+  CHECK_EQ(UnknownKeys(page, 255, OurParamId), 0);
+  const int keptAda[] = {229, 243, 244}; // AdaptEnable, AdaStep, AdaMax
+  for (int id : keptAda)
     CHECK(!Retired((uint16_t)id) && OurParamId((uint16_t)id));
   CHECK(!Retired(5) && !Retired(6));
 

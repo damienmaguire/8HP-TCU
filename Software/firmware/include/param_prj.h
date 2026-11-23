@@ -34,12 +34,15 @@
 // (flashguard.h) treats them as ours and parm_load() skips them.
 // 28-33 AtfT1..6 and 137-142 AtfR1..6: the ATF curve is now a fixed table
 // (anaconv.h). 155, 156, 164-166, 168-170, 195-203: LIN pump settings now
-// fixed in stm32_tcu.cpp (ConfigureLin). 2037 is a retired spot value id.
+// fixed in stm32_tcu.cpp (ConfigureLin). 230-242: adaptation entry
+// conditions and rule, now fixed in stm32_tcu.cpp (ConfigureTcu). 2037 is a
+// retired spot value id.
 #define PARAM_RETIRED_IDS                                                      \
   1, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 40, 42, 53, 54,   \
       69, 70, 102, 106, 107, 137, 138, 139, 140, 141, 142, 155, 156, 157, 158, \
       159, 160, 161, 162, 164, 165, 166, 168, 169, 170, 195, 196, 197, 198,    \
-      199, 200, 201, 202, 203, 2037
+      199, 200, 201, 202, 203, 230, 231, 232, 233, 234, 235, 236, 237, 238,    \
+      239, 240, 241, 242, 2037
 // (ids 9, 101, 103-105 and 108 were free slots and are used below; 102,
 // 106 and 107 were used by an unreleased draft and are left free. The V4
 // update dropped 1, 22-27, 34, 35, 40, 42, 53, 54, 69 and 70; they are
@@ -215,19 +218,6 @@
   PARAM_ENTRY(CAT_LIN, LinPumpP, "mbar", 0, 10000, 4000, 167)                  \
   PARAM_ENTRY(CAT_LIN, PumpFaultAct, PUMPFAULTS, 0, 2, 0, 194)                 \
   PARAM_ENTRY(CAT_ADAPT, AdaptEnable, ONOFF, 0, 1, 0, 229)                     \
-  PARAM_ENTRY(CAT_ADAPT, AdaTqMin, "Nm", 0, 1000, 55, 230)                     \
-  PARAM_ENTRY(CAT_ADAPT, AdaTqMax, "Nm", 0, 1000, 180, 231)                    \
-  PARAM_ENTRY(CAT_ADAPT, AdaRpmMin, "rpm", 0, 8000, 1600, 232)                 \
-  PARAM_ENTRY(CAT_ADAPT, AdaRpmMax, "rpm", 0, 8000, 3200, 233)                 \
-  PARAM_ENTRY(CAT_ADAPT, AdaOilMin, "C", -40, 150, 55, 234)                    \
-  PARAM_ENTRY(CAT_ADAPT, AdaOilMax, "C", -40, 150, 80, 235)                    \
-  PARAM_ENTRY(CAT_ADAPT, AdaGearMin, "", 1, 8, 3, 236)                         \
-  PARAM_ENTRY(CAT_ADAPT, AdaGearMax, "", 1, 8, 7, 237)                         \
-  PARAM_ENTRY(CAT_ADAPT, AdaPedalMin, "%", 0, 100, 2, 238)                     \
-  PARAM_ENTRY(CAT_ADAPT, AdaDriveMin, "s", 0, 3600, 180, 239)                  \
-  PARAM_ENTRY(CAT_ADAPT, AdaShiftMs, "ms", 100, 3000, 500, 240)                \
-  PARAM_ENTRY(CAT_ADAPT, AdaBandMs, "ms", 0, 1000, 100, 241)                   \
-  PARAM_ENTRY(CAT_ADAPT, AdaFlareRpm, "rpm", 10, 1000, 100, 242)               \
   PARAM_ENTRY(CAT_ADAPT, AdaStep, "mbar", 0, 50, 5, 243)                       \
   PARAM_ENTRY(CAT_ADAPT, AdaMax, "mbar", 0, 1000, 300, 244)                    \
   PARAM_ENTRY(CAT_DIAG, DiagRBand, "%", 5, 100, 25, 245)                       \
