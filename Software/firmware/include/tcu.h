@@ -267,13 +267,13 @@ enum ParkBrakeSrc
    PARKBRAKE_CAN = 0,    // VCU frame byte 6 bit 2 (lost with CAN)
    PARKBRAKE_PARAM = 1,  // the BrakeIn parameter
    PARKBRAKE_BYPASS = 2, // not asked for at all
-   PARKBRAKE_INPUT = 3   // the 12 V brake switch input (rev C, PD1)
+   PARKBRAKE_INPUT = 3   // the 12 V brake switch input (PD1, J1.46)
 };
 
 /// Footbrake state for the TCU from the selected source. canOk: the VCU
-/// frame is arriving. pinFitted: this board has the brake input; on a
-/// board without it the Input source always reads "not pressed", so P
-/// stays in rather than coming out without a brake signal.
+/// frame is arriving. pinFitted: the brake input exists; without it the
+/// Input source always reads "not pressed", so P stays in rather than
+/// coming out without a brake signal.
 bool FootbrakeFrom(int src, bool canOk, bool canBrake, bool paramBrake,
                    bool pinFitted, bool pinBrake);
 

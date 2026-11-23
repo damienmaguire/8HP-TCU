@@ -95,7 +95,7 @@ void Shifter::Update(const ShifterRaw &r) {
   bool dn = cfg.type == SHIFTER_CAN ? r.canTipDown : r.din2;
   tipUp = Debounce(up, &upRaw, &upStable, &upCount);
   tipDown = Debounce(dn, &downRaw, &downStable, &downCount);
-  // 12 V shift up / down inputs (rev B): separate debounce, one tip
+  // 12 V shift up / down inputs: separate debounce, one tip
   // per press on the rising edge, same as a shifter tip.
   uint8_t n = cfg.tip12Samples < 1 ? 1 : cfg.tip12Samples;
   if (Debounce(r.up12, &up12.last, &up12.stable, &up12.count, n))

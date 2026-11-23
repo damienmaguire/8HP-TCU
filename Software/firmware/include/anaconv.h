@@ -21,18 +21,17 @@
 
 #include <stdint.h>
 
-/* Analogue front ends on the V4 board (Bob's firmware_answers.md, 5),
+/* Analogue front ends on the board (Bob's firmware_answers.md, 5),
  * as plain integer maths so it runs in the host tests. The ADC reference
  * is the 3.3 V supply (VDDA through L2), not a precision reference.
  */
 
-/* Speed sensors on PA0 (ISS) / PA1 (OSS), rev B also PA2 (n6): two-wire
- * current sensors into 100 ohm, 7 mA / 14 mA = about 0.7 V / 1.4 V. That
- * is below the digital VIH, so the pins are sampled by the ADC (Damien's
- * choice; V4 ADC2, rev B ADC1 + DMA) and an edge is a crossing of the high
- * threshold after the signal has been below the low one (hysteresis).
- * Thresholds are parameters until the rev B RC filter (10k / 1 nF) is
- * fitted and measured (Bob: about 1.05 V).
+/* Speed sensors on PA0 (ISS), PA1 (OSS) and PA2 (n6): two-wire current
+ * sensors into 100 ohm, 7 mA / 14 mA = about 0.7 V / 1.4 V. That is below
+ * the digital VIH, so the pins are sampled by ADC1 + DMA (Damien's choice)
+ * and an edge is a crossing of the high threshold after the signal has
+ * been below the low one (hysteresis). Thresholds are parameters until
+ * the 10k / 1 nF RC filter is measured on the board (Bob: about 1.05 V).
  */
 class AdcEdge
 {
@@ -67,16 +66,10 @@ namespace AnaConv
 {
 const int32_t ADC_FS = 4095;
 const int32_t VREF_MV = 3300;
-/// Pull-ups to 5 V on the temperature inputs (R22, R23), ohm. V4: 2.6k
-/// and 470R; rev B: 2.7k on both (Bob, rev B BOM). HW_REV comes from the
-/// Makefile (hwdefs.h).
-#if defined(HW_REV) && HW_REV >= 5
+/// Pull-ups to 5 V on the temperature inputs (R22, R23), ohm: 2.7k on
+/// both (Bob's BOM).
 const int32_t TEMPIN1_PULLUP = 2700;
 const int32_t TEMPIN2_PULLUP = 2700;
-#else
-const int32_t TEMPIN1_PULLUP = 2600;
-const int32_t TEMPIN2_PULLUP = 470;
-#endif
 
 /// ADC counts -> mV at the pin.
 int32_t ToMv(int32_t counts);
@@ -87,8 +80,7 @@ int32_t ToCounts(int32_t mv);
 int32_t VbatMv(int32_t counts, int32_t fsMv);
 
 /** Sensor resistance on a temperature input, ohm. The input has a pull-up
- * rPullUp to 5 V at the connector (V4: 2.6k on TempIn1, 470R on TempIn2;
- * rev B: 2.7k on both), then
+ * rPullUp to 5 V at the connector (2.7k on both inputs), then
  * a 10k/10k divider to the ADC, so the sensor sees Rs || 20k and
  *   Vadc = 1/2 x 5 V x (Rs || 20k) / (rPullUp + Rs || 20k).
  * Returns -1 if the reading means open circuit (Rs not finite).
@@ -103,12 +95,12 @@ int32_t TempFromOhms(int32_t ohms, const int32_t *rPts, const int32_t *tPts, int
  * typical values: V25 = 1.43 V, slope 4.3 mV/degC, T = (V25 - V) / slope
  * + 25. Not calibrated per part: V25 spreads 1.34..1.52 V, so the reading
  * can be some 20 degC off. A die temperature, used as the board
- * temperature (V4 has no board sensor). */
+ * temperature when the board NTC reads invalid. */
 int32_t McuTempC(int32_t counts);
 
-/* Board NTC TH1 (rev B, HW_REV 5), in the libopeninv / ZombieVerter
- * TempMeas style: a table of ADC counts at fixed temperature steps,
- * interpolated. Rev B circuit (Bob): 10k NTC at 25 degC, B 3950 K, to GND,
+/* Board NTC TH1 on PB0, in the libopeninv / ZombieVerter TempMeas
+ * style: a table of ADC counts at fixed temperature steps, interpolated.
+ * Circuit (Bob): 10k NTC at 25 degC, B 3950 K, to GND,
  * 10k pull-up to 3V3, so counts = 4095 x R / (R + 10k) with
  * R = 10k x exp(3950 x (1/T - 1/298.15)), -40..125 degC in 5 degC steps.
  */

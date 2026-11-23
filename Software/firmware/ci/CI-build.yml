@@ -35,14 +35,6 @@ jobs:
         run: |
           make
 
-      - name: Build TCU firmware for the V4 rev B board
-        run: |
-          make HW_REV=5
-
-      - name: Build TCU firmware for the V4 rev C board (provisional)
-        run: |
-          make HW_REV=6
-
       - uses: actions/upload-artifact@v4
         with:
           name: 8HP TCU firmware binary
@@ -52,11 +44,6 @@ jobs:
         with:
           name: 8HP TCU firmware hex
           path: Software/firmware/stm32_tcu.hex
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: 8HP TCU firmware rev B binary
-          path: Software/firmware/stm32_tcu_revb.bin
 
       - name: Build unit tests on host
         run: |

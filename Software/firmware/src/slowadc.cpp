@@ -21,8 +21,7 @@
 #include <libopencm3/stm32/adc.h>
 #include <libopencm3/stm32/gpio.h>
 
-#if HW_SPEED_DMA
-/* Rev B: ADC2 for the slow inputs, ADC1 injected for the die sensor. */
+/* ADC2 for the slow inputs, ADC1 injected for the die sensor. */
 static uint16_t avg[SlowAdc::COUNT]; // x 4 (sum of the last 4, running)
 static uint8_t seeded = 0; // bit per channel: first reading taken
 static uint8_t tick = 0;
@@ -96,31 +95,3 @@ uint16_t SlowAdc::Get(Ch ch) {
   return (uint16_t)(avg[ch] / 4);
 }
 
-#else
-/* V4: libopeninv AnaIn (ADC1 scan + DMA1 channel 1). */
-#include "anain.h"
-
-void SlowAdc::Start() {
-  ANA_IN_CONFIGURE(ANA_IN_LIST);
-  AnaIn::Start();
-}
-
-void SlowAdc::Tick10ms() {}
-
-uint16_t SlowAdc::Get(Ch ch) {
-  switch (ch) {
-  case VBAT:
-    return AnaIn::vbat.Get();
-  case ATF1:
-    return AnaIn::atf_temp1.Get();
-  case ATF2:
-    return AnaIn::atf_temp2.Get();
-  case ANA:
-    return AnaIn::ana_in.Get();
-  case MCU_TEMP:
-    return AnaIn::mcu_temp.Get();
-  default:
-    return 0; // no board NTC on V4
-  }
-}
-#endif

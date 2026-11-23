@@ -49,7 +49,6 @@
 				</MakeCommands>
 			</Target>
 		</Build>
-		<Unit filename="include/anain_prj.h" />
 		<Unit filename="include/anaconv.h" />
 		<Unit filename="include/cal_330e.h" />
 		<Unit filename="include/cal_f11.h" />

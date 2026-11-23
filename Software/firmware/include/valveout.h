@@ -36,14 +36,14 @@
  * safe state (all coils off = 6th gear, full line pressure). A fault on
  * K0, POS or PZYL is reported but does not force limp.
  *
- * The V4 board has one MAX22200 (8 channels, OUT0..7 = A, B, C, D, E,
- * LINE, OUT6 (POS? bench-check), TCC). The class still handles two chips so a later board
- * can add one; stm32_tcu.cpp only attaches chip 0.
+ * The board has two MAX22200 (8 channels each). IC2 OUT0..7 = A, B, C, D,
+ * E, LINE, OUT6 (POS? bench-check), TCC / K0; IC4 OUT0 = PZYL, OUT1..3 =
+ * the general-purpose outputs below, OUT4..7 spare.
  */
 
 #define VALVE_MAX_CHIPS 2
-/// General-purpose low-side outputs on spare driver channels (rev B: IC4
-/// OUT1..OUT3 = J1.10 / J1.11 / J1.12, which were discrete drivers on V4).
+/// General-purpose low-side outputs on spare driver channels (IC4
+/// OUT1..OUT3 = J1.10 / J1.11 / J1.12, nets OUT1_DRV..OUT3_DRV).
 /// They are not valves: never part of the interlock, a fault on them is
 /// only reported.
 #define VALVE_AUX_MAX 3

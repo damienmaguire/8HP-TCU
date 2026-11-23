@@ -21,16 +21,14 @@
 
 #include <stdint.h>
 
-/** The slow analogue inputs (battery, temperature inputs, spare input,
- * board temperature), behind one interface for both boards:
- *  - V4: libopeninv AnaIn, ADC1 scan with DMA (anain_prj.h).
- *  - rev B: ADC1 and its DMA belong to the speed inputs, so these move to
- *    ADC2, which has no DMA on the F1. Tick10ms() reads the last results
- *    and starts the next conversions (injected group of 4 + one regular
- *    conversion for the board NTC); values are averaged over 4 readings.
- *    The die sensor exists on ADC1 only and is read with one injected
- *    conversion every 100 ms between the speed scans.
- * Values are raw 12 bit counts, like AnaIn::Get().
+/** The slow analogue inputs: battery, temperature inputs, spare input,
+ * board NTC and die temperature. ADC1 and its DMA belong to the speed
+ * inputs, so these are on ADC2, which has no DMA on the F1 (libopeninv
+ * AnaIn is not used). Tick10ms() reads the last results and starts the
+ * next conversions (injected group of 4 + one regular conversion for the
+ * board NTC); values are averaged over about 4 readings. The die sensor
+ * exists on ADC1 only and is read with one injected conversion every
+ * 100 ms between the speed scans. Values are raw 12 bit counts.
  */
 namespace SlowAdc
 {
@@ -41,12 +39,12 @@ enum Ch
    ATF2,      // PC2, ADC12_IN12, TempIn2
    ANA,       // PC3, ADC12_IN13, spare J1.47
    MCU_TEMP,  // ADC1_IN16, die sensor
-   BOARD_NTC, // PB0, ADC12_IN8, rev B only (reads 0 on V4)
+   BOARD_NTC, // PB0, ADC12_IN8, TH1
    COUNT
 };
 /// Pins and ADC set-up, first conversions started.
 void Start();
-/// 10 ms task: collect results, start the next round (rev B; V4: nothing).
+/// 10 ms task: collect results, start the next round.
 void Tick10ms();
 uint16_t Get(Ch ch);
 } // namespace SlowAdc

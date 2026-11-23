@@ -109,7 +109,7 @@ void TestValveOut() {
   bus.reg[1][0] &= ~MAX22200_ST_OVT;
   v.PollFaults();
 
-  // Rev B general-purpose outputs on chip 1 OUT1..OUT3 (global 9..11).
+  // General-purpose outputs on chip 1 OUT1..OUT3 (global 9..11).
   v.SetAuxMap(0, 8); // on PZYL's channel: refused
   CHECK(!v.Validate());
   v.SetAuxMap(0, 9);

@@ -1371,7 +1371,7 @@ static void TestSteadyStateThree() {
 
 /* TIS park rules: engage only stopped, release needs the footbrake, the
  * magnet is never on for more than 1 s. */
-// ParkBrake sources, the rev C 12 V brake input included.
+// ParkBrake sources, the 12 V brake input included.
 static void TestFootbrakeSrc() {
   // VcuCan (default): the frame bit, only while CAN is alive
   CHECK(FootbrakeFrom(PARKBRAKE_CAN, true, true, false, true, false));
