@@ -54,6 +54,7 @@ static int JlrToState(uint8_t code) {
 #define PKP_KEY_R (1 << 2)
 #define PKP_KEY_P (1 << 3)
 
+// PKP2300 LED bits for a lever state.
 static uint8_t PkpMask(uint8_t st) {
   switch (st) {
   case GWS_P: return PKP_KEY_P;
@@ -68,6 +69,7 @@ static uint8_t PkpMask(uint8_t st) {
 static const uint16_t rxId[LEVER_COUNT] = {GWS_RX_ID, 0, 0x192, 0x312, 0x0E0, PKP_TPDO1, 0};
 static const uint16_t defTimeout[LEVER_COUNT] = {90, 0, 500, 500, 500, 300, 0};
 
+// Start with no lever seen and the selector in P.
 CanLever::CanLever()
     : cfg{LEVER_BMW_GWS, 0, 2, 1, GWS_B34_OEM}, seen(false), msSinceRx(0xFFFF),
       state(GWS_P), rawCode(0), lastCode(0xFF), pendCode(0xFF), pendCount(0),
@@ -75,6 +77,7 @@ CanLever::CanLever()
       rejected(0), prevKeys(0), cntErr(0), txDiv(0), txCnt(0), offCount(0),
       knobLock(0) {}
 
+// Pick the lever type, bus and timing settings.
 void CanLever::Configure(const LeverConfig &c) {
   cfg = c;
   if (cfg.type >= LEVER_COUNT)
@@ -83,10 +86,12 @@ void CanLever::Configure(const LeverConfig &c) {
   gws.Configure(g);
 }
 
+// Lever timeout in use (the type's default when LeverTimeout = 0).
 uint16_t CanLever::TimeoutMs() const {
   return cfg.timeoutMs ? cfg.timeoutMs : defTimeout[cfg.type];
 }
 
+// CAN ids this lever type sends.
 int CanLever::RxIds(uint32_t ids[2]) const {
   if (!rxId[cfg.type])
     return 0;
@@ -94,14 +99,17 @@ int CanLever::RxIds(uint32_t ids[2]) const {
   return 1;
 }
 
+// Lever frames seen and still arriving (no timeout).
 bool CanLever::Valid() const {
   if (cfg.type == LEVER_BMW_GWS)
     return gws.Valid();
   return seen && msSinceRx <= TimeoutMs();
 }
 
+// Common lever state P / R / N / D / M.
 uint8_t CanLever::State() const { return cfg.type == LEVER_BMW_GWS ? gws.State() : state; }
 
+// Lever state as a TCU selector (M counts as D).
 uint8_t CanLever::Selector() const {
   switch (State()) {
   case GWS_P: return SEL_P;
@@ -111,10 +119,15 @@ uint8_t CanLever::Selector() const {
   }
 }
 
+// One-shot tip up (GWS M+).
 bool CanLever::TipUp() const { return cfg.type == LEVER_BMW_GWS && gws.TipUp(); }
+// One-shot tip down (GWS M-).
 bool CanLever::TipDown() const { return cfg.type == LEVER_BMW_GWS && gws.TipDown(); }
+// Display should flash (a request was refused).
 bool CanLever::Flash() const { return cfg.type == LEVER_BMW_GWS ? gws.Flash() : flashMs > 0; }
+// Raw lever code of the last frame, for diagnosis.
 uint8_t CanLever::RawMove() const { return cfg.type == LEVER_BMW_GWS ? gws.RawMove() : rawCode; }
+// P button pressed (where the lever has one).
 bool CanLever::PButton() const {
   if (cfg.type == LEVER_BMW_GWS)
     return gws.PButton();
@@ -122,7 +135,9 @@ bool CanLever::PButton() const {
     return (prevKeys & PKP_KEY_P) != 0;
   return false;
 }
+// Frames dropped for a bad CRC.
 uint16_t CanLever::CrcErrors() const { return cfg.type == LEVER_BMW_GWS ? gws.CrcErrors() : 0; }
+// Frames dropped for a bad or repeated counter.
 uint16_t CanLever::CounterErrors() const {
   return cfg.type == LEVER_BMW_GWS ? gws.CounterErrors() : cntErr;
 }
@@ -140,6 +155,7 @@ void CanLever::Request(uint8_t want, bool engageOk) {
   state = want;
 }
 
+// Decode one received lever frame; false if it is not this lever's.
 bool CanLever::OnFrame(uint32_t id, const uint8_t *d, uint8_t dlc) {
   if (cfg.type == LEVER_BMW_GWS)
     return id == GWS_RX_ID && gws.OnFrame(d, dlc);
@@ -195,6 +211,7 @@ bool CanLever::OnFrame(uint32_t id, const uint8_t *d, uint8_t dlc) {
   return true;
 }
 
+// Timeout, debounce and the engage gate, every 10 ms.
 void CanLever::Tick10ms(bool engageOk) {
   if (cfg.type == LEVER_BMW_GWS) {
     gws.Tick10ms(engageOk);
@@ -247,6 +264,7 @@ void CanLever::Tick10ms(bool engageOk) {
   }
 }
 
+// Display / LED frames due this cycle (only sent with LeverTxEnable).
 int CanLever::Tx10ms(const LeverTxIn &in, CanFrame out[LEVER_MAX_TX]) {
   int n = 0;
   uint8_t st = State();

@@ -16,9 +16,14 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+/*
+ * Wired shifters: decodes the selector switches of the chosen
+ * ShifterType into P / R / N / D, with debounce and tip inputs.
+ */
 #include "shifter.h"
 #include "tcu.h" // SEL_P .. SEL_D
 
+// Start in N with no tips (the inputs decide from the first read).
 Shifter::Shifter()
     : cfg(), selector(SEL_N), candSel(SEL_N), candBad(false), selCount(0),
       upRaw(false), downRaw(false), upStable(false), downStable(false),
@@ -32,6 +37,7 @@ Shifter::Shifter()
   cfg.tip12Samples = 3;
 }
 
+// Selector from the raw inputs of the chosen ShifterType.
 uint8_t Shifter::Decode(const ShifterRaw &r, bool *bad) const {
   *bad = false;
   if (cfg.type == SHIFTER_CAN)
@@ -69,6 +75,7 @@ static bool Debounce(bool raw, bool *last, bool *stable, uint8_t *count,
   return false;
 }
 
+// Read the inputs, debounce, and make one-shot tips.
 void Shifter::Update(const ShifterRaw &r) {
   bool bad;
   uint8_t s = Decode(r, &bad);

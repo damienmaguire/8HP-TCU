@@ -16,10 +16,15 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+/*
+ * LIN auxiliary oil pump: LIN ids and checksums, the frame schedule,
+ * the pump's command / status frames, and when the pump should run.
+ */
 #include "linpump.h"
 
 namespace Lin {
 
+// LIN protected id: frame id plus its two parity bits.
 uint8_t Pid(uint8_t id) {
   id &= 0x3F;
   uint8_t b = id;
@@ -28,6 +33,7 @@ uint8_t Pid(uint8_t id) {
   return (uint8_t)(id | (p0 << 6) | (p1 << 7));
 }
 
+// LIN checksum core: add with carry, then invert.
 static uint8_t Sum(uint16_t s, const uint8_t *d, int n) {
   for (int i = 0; i < n; i++) {
     s += d[i];
@@ -37,16 +43,20 @@ static uint8_t Sum(uint16_t s, const uint8_t *d, int n) {
   return (uint8_t)~s;
 }
 
+// LIN 1.x checksum over the data only.
 uint8_t ChecksumClassic(const uint8_t *d, int n) { return Sum(0, d, n); }
 
+// LIN 2.x checksum over the protected id and the data.
 uint8_t ChecksumEnhanced(uint8_t pid, const uint8_t *d, int n) {
   return Sum(pid, d, n);
 }
 
+// Checksum of the selected type.
 uint8_t Checksum(bool enhanced, uint8_t pid, const uint8_t *d, int n) {
   return enhanced ? ChecksumEnhanced(pid, d, n) : ChecksumClassic(d, n);
 }
 
+// CRC-8 SAE J1850 style (poly 0x1D, init 0) used in the pump frames.
 uint8_t Crc8(const uint8_t *d, int n) {
   uint8_t crc = 0x00;
   for (int i = 0; i < n; i++) {
@@ -57,6 +67,7 @@ uint8_t Crc8(const uint8_t *d, int n) {
   return crc;
 }
 
+// Find a frame's data in the UART read-back after its header.
 int FindData(const uint8_t *buf, int n, uint8_t pid) {
   for (int i = 0; i + 1 < n; i++) {
     if (buf[i] == 0x55 && buf[i + 1] == pid)
@@ -73,6 +84,7 @@ static const uint8_t schedule[6] = {LINPUMP_ID_CMD, LINPUMP_ID_STATUS,
                                     LINPUMP_ID_CMD, LINPUMP_ID_AUX1,
                                     LINPUMP_ID_CMD, LINPUMP_ID_AUX2};
 
+// Pump off, no frames seen, error counters at 0.
 LinPump::LinPump()
     : cfg(), state(LP_OFF), st(), tSlot(0), slotIdx(0), txAlive(0),
       oilRaw(0), extraFlags(0), clearPending(false), tDiagBlock(0),
@@ -95,6 +107,7 @@ LinPump::LinPump()
   }
 }
 
+// Ask the pump to clear its error memory with the next command.
 void LinPump::ClearErrors() {
   clearPending = true;
   ownBits = 0;
@@ -106,6 +119,7 @@ void LinPump::ClearErrors() {
   }
 }
 
+// Build the 0x30 command frame (run request, speed, temperature).
 void LinPump::Command(uint8_t d[8]) const {
   d[0] = state == LP_RUN ? LINPUMP_OP_RUN : LINPUMP_OP_OFF;
   d[1] = (uint8_t)(extraFlags | (clearPending ? LINPUMP_FLAG_CLEAR : 0));
@@ -117,6 +131,7 @@ void LinPump::Command(uint8_t d[8]) const {
   d[7] = txAlive & 0x0F;
 }
 
+// LIN schedule: which slot is due now, every 1 ms.
 bool LinPump::Tick1ms(bool active, bool run, int32_t oilTempC, LinSlot *slot) {
   if (!active) {
     if (state != LP_OFF) {
@@ -192,6 +207,7 @@ bool LinPump::Tick1ms(bool active, bool run, int32_t oilTempC, LinSlot *slot) {
   return due;
 }
 
+// Alive counter check of a pump frame (OEM receive rules).
 bool LinPump::CheckAlive(int idx, uint8_t alive) {
   alive &= 0x0F;
   int8_t last = lastAlive[idx];
@@ -217,6 +233,7 @@ bool LinPump::CheckAlive(int idx, uint8_t alive) {
   return true;
 }
 
+// Decode a pump response frame (0x32 / 0x33 / 0x34).
 bool LinPump::OnResponse(uint8_t id, const uint8_t *b, int n) {
   if (n < 9 || id < LINPUMP_ID_STATUS || id > LINPUMP_ID_AUX2)
     return false;
@@ -268,10 +285,12 @@ bool LinPump::OnResponse(uint8_t id, const uint8_t *b, int n) {
   return true;
 }
 
+// Pump status bits for logging.
 uint32_t LinPump::StatusWord() const {
   return ((uint32_t)st.eb0 << 16) | ((uint32_t)st.eb1 << 24) | ownBits;
 }
 
+// Pump fault classes (communication, electrical, mechanical...).
 uint8_t LinPump::Classes() const {
   if (state == LP_OFF || tDiagBlock || tStartBlank || !cfg.processRx)
     return 0;
@@ -290,6 +309,7 @@ uint8_t LinPump::Classes() const {
   return c;
 }
 
+// Should the pump run: request, input speed, oil temperature, line pressure.
 bool LinPumpRule::Update(uint8_t req, int32_t n_t, int32_t sumpC,
                          int32_t pSys) {
   if (req == LINREQ_OFF) {

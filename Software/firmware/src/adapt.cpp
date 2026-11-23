@@ -16,10 +16,16 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+/*
+ * Clutch fill adaptation: learns a small fill-pressure offset per clutch
+ * and oil-temperature class from shift time and flare, within tight limits.
+ * Stored on its own flash page (see stm32_tcu.cpp AdaptSave).
+ */
 #include "adapt.h"
 #include "gears.h"
 #include "tcu.h"
 
+// Start with no learned offsets and learning blocked until configured.
 Adapt::Adapt()
     : cfg(), shifts(0), status(ADA_BLK_DISABLED), dirty(false), inShift(false),
       startOk(false), from(0), to(0), shiftMs(0), flare(0) {
@@ -27,6 +33,7 @@ Adapt::Adapt()
   dirty = false;
 }
 
+// Explicit reset: every offset back to 0 (marked for saving).
 void Adapt::Reset() {
   for (int c = 0; c < ADA_CLUTCHES; c++)
     for (int k = 0; k < ADA_CLASSES; k++)
@@ -35,6 +42,7 @@ void Adapt::Reset() {
   dirty = true;
 }
 
+// Oil-temperature class a learning shift belongs to (-1 = none).
 int Adapt::Class(int32_t t) {
   if (t >= 10 && t <= 30)
     return ADA_COLD;
@@ -43,6 +51,7 @@ int Adapt::Class(int32_t t) {
   return -1;
 }
 
+// Which clutch a shift teaches us about: the one that comes on.
 int Adapt::LearnClutch(int f, int t) {
   if (f == 3 && t == 4) return CL_D;
   if (f == 4 && t == 5) return CL_C;
@@ -52,6 +61,7 @@ int Adapt::LearnClutch(int f, int t) {
   return -1;
 }
 
+// Learned offset to add for a clutch at the present oil temperature, mbar.
 int32_t Adapt::Offset(int clutch, int32_t temp) const {
   if (clutch < 0 || clutch >= ADA_CLUTCHES)
     return 0;
@@ -59,6 +69,7 @@ int32_t Adapt::Offset(int clutch, int32_t temp) const {
   return ofs[clutch][temp < 40 ? ADA_COLD : ADA_WARM];
 }
 
+// Check every entry condition; each failed one sets its ADA_BLK_* bit.
 uint32_t Adapt::Gate(const AdaInputs &in) const {
   uint32_t b = 0;
   if (!cfg.enable) b |= ADA_BLK_DISABLED;
@@ -78,6 +89,7 @@ uint32_t Adapt::Gate(const AdaInputs &in) const {
   return b;
 }
 
+// One small step on one offset after a finished learning shift.
 void Adapt::Learn(int clutch, int cls, int32_t ms, int32_t fl) {
   if (shifts < 0xFFFF)
     shifts++; // every valid learning shift counts, changed or not
@@ -96,6 +108,7 @@ void Adapt::Learn(int clutch, int cls, int32_t ms, int32_t fl) {
   }
 }
 
+// Follow a shift from start to end and learn from it if it qualified.
 void Adapt::Tick10ms(const AdaInputs &in) {
   status = Gate(in);
   if (in.mode == TCU_SHIFT) {
@@ -128,6 +141,7 @@ void Adapt::Tick10ms(const AdaInputs &in) {
   }
 }
 
+// Checksum of the stored image so a blank or damaged page is rejected.
 uint32_t Adapt::Crc(const AdaImage &img) {
   // CRC-32 (poly 0xEDB88320) over everything before the crc field.
   const uint8_t *p = (const uint8_t *)&img;
@@ -141,6 +155,7 @@ uint32_t Adapt::Crc(const AdaImage &img) {
   return ~c;
 }
 
+// Build the image written to the adaptation flash page.
 void Adapt::Pack(AdaImage *img) {
   *img = AdaImage();
   img->magic = ADA_MAGIC;
@@ -153,6 +168,7 @@ void Adapt::Pack(AdaImage *img) {
   dirty = false;
 }
 
+// Load a stored image; anything wrong with it means start from zero.
 bool Adapt::Unpack(const AdaImage &img) {
   if (img.magic != ADA_MAGIC || img.version != ADA_VERSION || img.crc != Crc(img)) {
     Reset();

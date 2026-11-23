@@ -20,8 +20,10 @@
 
 namespace AnaConv {
 
+// ADC counts to millivolts at the pin (12-bit, 3.3 V reference).
 int32_t ToMv(int32_t c) { return (c * VREF_MV + ADC_FS / 2) / ADC_FS; }
 
+// STM32 internal temperature sensor counts to degC (data sheet typical values).
 int32_t McuTempC(int32_t counts) {
   // (1430 mV - V) / 4.3 mV + 25, rounded
   int32_t num = (1430 - ToMv(counts)) * 10;
@@ -30,6 +32,7 @@ int32_t McuTempC(int32_t counts) {
 
 static const uint16_t boardNtc[] = {BOARD_NTC_TABLE};
 
+// Board NTC counts to degC; false if the reading is open or shorted.
 bool BoardNtcC(int32_t c, int32_t *degC) {
   if (c >= BOARD_NTC_OPEN || c <= BOARD_NTC_SHORT)
     return false;
@@ -51,6 +54,7 @@ bool BoardNtcC(int32_t c, int32_t *degC) {
   return true;
 }
 
+// Board temperature from the NTC if fitted and sane, else the chip's own sensor.
 int BoardTempC(bool ntcFitted, int32_t ntcCounts, int32_t dieCounts, int32_t *degC) {
   if (ntcFitted && BoardNtcC(ntcCounts, degC))
     return 1;
@@ -58,15 +62,18 @@ int BoardTempC(bool ntcFitted, int32_t ntcCounts, int32_t dieCounts, int32_t *de
   return 0;
 }
 
+// Millivolts at the pin to ADC counts (inverse of ToMv).
 int32_t ToCounts(int32_t mv) {
   int32_t c = (mv * ADC_FS + VREF_MV / 2) / VREF_MV;
   return c < 0 ? 0 : (c > ADC_FS ? ADC_FS : c);
 }
 
+// Battery voltage from its divider: fsMv = volts at full ADC scale.
 int32_t VbatMv(int32_t c, int32_t fsMv) {
   return (int32_t)(((int64_t)c * fsMv) / ADC_FS);
 }
 
+// Sensor resistance on a temperature input from the pull-up divider, ohm.
 int32_t TempInputOhms(int32_t counts, int32_t rPullUp) {
   // Voltage at the connector, before the /2 divider, in mV.
   int32_t vin = 2 * ToMv(counts);
@@ -82,6 +89,7 @@ int32_t TempInputOhms(int32_t counts, int32_t rPullUp) {
   return (int32_t)((rp * 20000) / (20000 - rp));
 }
 
+// Resistance to degC through the user's R / T table (interpolated).
 int32_t TempFromOhms(int32_t r, const int32_t *rp, const int32_t *tp, int n) {
   if (n <= 0)
     return 0;

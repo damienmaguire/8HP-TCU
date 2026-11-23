@@ -16,23 +16,31 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+/*
+ * Status stream: our own four-frame CAN layout with the TCU state for
+ * loggers and dashboards (rates and byte layout in statstream.h).
+ */
 #include "statstream.h"
 
+// 16-bit value, little-endian.
 static void Put16(uint8_t *b, int32_t v) {
   b[0] = (uint8_t)(v & 0xFF);
   b[1] = (uint8_t)((v >> 8) & 0xFF);
 }
 
+// Limit v to lo..hi.
 static int32_t Clamp(int32_t v, int32_t lo, int32_t hi) {
   return v < lo ? lo : (v > hi ? hi : v);
 }
 
+// Torque reduction asked for, as % of the input torque (0 = none).
 int32_t StatStream::ReductPct(int32_t inputNm, int32_t deltaNm) {
   if (deltaNm >= 0 || inputNm <= 0)
     return 0;
   return Clamp(-deltaNm * 100 / inputNm, 0, 100);
 }
 
+// Frames due this 10 ms tick (rates in statstream.h).
 int StatStream::Tick10ms(uint32_t base, const StreamIn &in, CanFrame out[STREAM_MAX_TX]) {
   int n = 0;
   CanFrame *f = &out[n++];

@@ -20,7 +20,7 @@
 #include "calset.h"
 #include "caltypes.h"
 
-#define SAS_TICK_MS 10
+#define SAS_TICK_MS 10 // ms, Tick period
 
 /* Gradient (mbar/s) times a duration (ms), in mbar. */
 static int32_t GradMs(int32_t mbarPerS, int32_t ms) {
@@ -36,10 +36,12 @@ static int32_t Ramp(int32_t a, int32_t b, int32_t t, int32_t total) {
   return a + (int32_t)(((int64_t)(b - a) * t) / total);
 }
 
+// Limit v to lo..hi.
 static int32_t Clamp(int32_t v, int32_t lo, int32_t hi) {
   return v < lo ? lo : (v > hi ? hi : v);
 }
 
+// Absolute value.
 static int32_t Abs(int32_t v) { return v < 0 ? -v : v; }
 
 /* OEM "time before sync" cals are stored as negative ms ("-30 = 30 ms
@@ -63,6 +65,7 @@ static int32_t TScale(const SasConfig &c, int32_t ms) {
   return (int32_t)(((int64_t)ms * c.timePct) / 100);
 }
 
+// Idle until a shift is started.
 SasShift::SasShift()
     : cfg(), out(), active(false), up(false), from(0), to(0), offCl(0),
       onCl(0), pair(0), tShift(0), tKzu(0), tKab(0), fillStart(0),
@@ -71,6 +74,7 @@ SasShift::SasShift()
       glsOnKab(false), glsWaitDone(false), glsPhase(false), glsRa1(false),
       coast(false), syncPhase(0), tSfEnd(0) {}
 
+// Start a one-clutch-swap shift with its calibration set.
 bool SasShift::Start(int f, int t, int offClutch, int onClutch,
                      const SasConfig &c, const SasInputs &in) {
   if (f < 1 || f > 8 || t < 1 || t > 8)
@@ -130,6 +134,7 @@ bool SasShift::Start(int f, int t, int offClutch, int onClutch,
   return true;
 }
 
+// Stop the shift; both clutch outputs go idle, the caller decides what next.
 void SasShift::Abort() {
   active = false;
   out.zKzu = KZU_IDLE;
@@ -138,12 +143,14 @@ void SasShift::Abort() {
   out.tqDelta = 0;
 }
 
+// On-coming clutch to a new state (timer restarts).
 void SasShift::EnterKzu(uint8_t s) {
   out.zKzu = s;
   tKzu = 0;
   pKzuStart = out.pKzu;
 }
 
+// Off-going clutch to a new state (timer restarts).
 void SasShift::EnterKab(uint8_t s) {
   out.zKab = s;
   tKab = 0;
@@ -174,10 +181,12 @@ void SasShift::GlsArm(const CalMap &wtsgls, const SasInputs &in) {
 
 #define GLS_SHIFT 4096 // (64 x 3200) / 50
 
+// OEM GLS scaling of a gain times an error, mbar.
 int32_t SasShift::GlsScale(int32_t kp, int32_t err, int64_t acc) {
   return (int32_t)(((int64_t)kp * err * 64 + acc) / GLS_SHIFT);
 }
 
+// One PI step of the GLS speed-change controller.
 int32_t SasShift::GlsStep(const SasInputs &in, int32_t kp, int32_t ki) {
   if (cfg.glsGainPct <= 0)
     return 0;
@@ -279,6 +288,7 @@ int32_t SasShift::GlsUpdate(const SasInputs &in) {
   return phase ? GlsStep(in, kp, ki) : 0;
 }
 
+// Upshift, on-coming clutch: wait, quick fill, fill, ramps to full.
 void SasShift::TickUpKzu(const SasInputs &in) {
   const UpShiftCal &u = Cal::Up()[pair];
   const ClutchFillCal &cl = Cal::Clutch()[onCl];
@@ -371,6 +381,7 @@ void SasShift::TickUpKzu(const SasInputs &in) {
   out.pKzu = Clamp(p, 0, cfg.pMax);
 }
 
+// Upshift, off-going clutch: hold, ramp down, open at sync.
 void SasShift::TickUpKab(const SasInputs &in) {
   const UpShiftCal &u = Cal::Up()[pair];
   int32_t p = out.pKab;
@@ -445,6 +456,7 @@ void SasShift::TickUpKab(const SasInputs &in) {
   out.pKab = Clamp(p, 0, cfg.pMax);
 }
 
+// Downshift, off-going clutch: drop to hold, let the speed rise, open.
 void SasShift::TickDownKab(const SasInputs &in) {
   const DownShiftCal &d = Cal::Down()[pair];
   int32_t p = out.pKab;
@@ -520,6 +532,7 @@ void SasShift::TickDownKab(const SasInputs &in) {
   out.pKab = Clamp(p, 0, cfg.pMax);
 }
 
+// Downshift, on-coming clutch: fill, wait for sync, close.
 void SasShift::TickDownKzu(const SasInputs &in) {
   const DownShiftCal &d = Cal::Down()[pair];
   const ClutchFillCal &cl = Cal::Clutch()[onCl];
@@ -583,6 +596,7 @@ void SasShift::TickDownKzu(const SasInputs &in) {
   out.pKzu = Clamp(p, 0, cfg.pMax);
 }
 
+// Run both clutch state machines one 10 ms step.
 void SasShift::Tick(const SasInputs &in) {
   if (!active)
     return;

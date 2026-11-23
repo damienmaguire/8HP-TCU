@@ -67,9 +67,9 @@ enum SpeedDiag
 /* Coil resistance reference [C, 330e A2L]: OutMRstn_resActr20_C = 5.15 ohm
  * at 20 degC, OutMRstn_resRmn_C about 0.15 ohm wiring / contacts. Copper
  * coil: +0.393 % per degC. */
-#define DIAG_R20_MOHM 5150
-#define DIAG_TC_PPM 3930
-#define DIAG_RSHORT_MOHM 1000
+#define DIAG_R20_MOHM 5150 // milliohm, coil at 20 degC
+#define DIAG_TC_PPM 3930 // ppm per degC (copper)
+#define DIAG_RSHORT_MOHM 1000 // milliohm: below this = short to ground
 
 namespace Diag
 {

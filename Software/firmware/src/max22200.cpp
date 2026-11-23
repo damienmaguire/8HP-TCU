@@ -18,6 +18,7 @@
  */
 #include "max22200.h"
 
+// One chip on the shared SPI bus, all channels off.
 Max22200::Max22200(Max22200Bus &b, uint8_t d)
     : bus(b), dev(d), cfg(), maxCode(), onMask(0), lastFlags(0),
       echoError(false) {
@@ -28,12 +29,14 @@ Max22200::Max22200(Max22200Bus &b, uint8_t d)
   }
 }
 
+// SPI command byte: register, read / write, 8 or 32 bit.
 uint8_t Max22200::CommandByte(uint8_t reg, bool write, bool eightBit) {
   // Table 9: [7] RB/W, [6:5] reserved (0), [4:1] A_BNK, [0] 8bit/n32bits
   return (uint8_t)((write ? MAX22200_CMD_WRITE : 0) | ((reg & 0x0F) << 1) |
                    (eightBit ? MAX22200_CMD_8BIT : 0));
 }
 
+// Coil current to the 7-bit HOLD code (never 127 = unregulated).
 uint8_t Max22200::CurrentToCode(int32_t current_0p1mA, uint16_t ifsmA,
                                 bool halfScale, uint8_t maxCode) {
   // Table 4: I_HOLD = HOLD / 127 x IFS, and HFS = 1 halves IFS.
@@ -52,6 +55,7 @@ uint8_t Max22200::CurrentToCode(int32_t current_0p1mA, uint16_t ifsmA,
   return (uint8_t)code;
 }
 
+// HOLD code back to current, 0.1 mA.
 int32_t Max22200::CodeToCurrent(uint8_t code, uint16_t ifsmA, bool halfScale) {
   int32_t fs = (int32_t)ifsmA * 10;
   if (halfScale)
@@ -61,6 +65,7 @@ int32_t Max22200::CodeToCurrent(uint8_t code, uint16_t ifsmA, bool halfScale) {
   return (code * fs + 63) / 127;
 }
 
+// CFG_CHx register word for one channel.
 uint32_t Max22200::CfgWord(const Max22200Config &c, bool hfs, uint8_t hold, uint8_t hit,
                            uint8_t hitT) {
   if (hold > MAX22200_CODE_MAX)
@@ -140,6 +145,7 @@ uint32_t Max22200::Read32(uint8_t reg, uint32_t sdiMask) {
   return v;
 }
 
+// Bring the chip up (data sheet Figure 6); false on a fault.
 bool Max22200::Init(const Max22200Config &c) {
   cfg = c;
   for (int h = 0; h < 2; h++)
@@ -171,6 +177,7 @@ bool Max22200::Init(const Max22200Config &c) {
          !echoError;
 }
 
+// Hit (pull-in) current and time of a channel.
 void Max22200::SetHit(uint8_t ch, const Max22200Hit &hit) {
   ch &= 7;
   hitCode[ch] = CurrentToCode((int32_t)hit.hitmA * 10, cfg.ifsmA,
@@ -180,6 +187,7 @@ void Max22200::SetHit(uint8_t ch, const Max22200Hit &hit) {
           CfgWord(cfg, Hfs(ch), holdCode[ch], hitCode[ch], hitTime[ch]));
 }
 
+// Hold current of a channel.
 void Max22200::SetCurrent(uint8_t ch, int32_t current_0p1mA) {
   ch &= 7;
   uint8_t code =
@@ -192,6 +200,7 @@ void Max22200::SetCurrent(uint8_t ch, int32_t current_0p1mA) {
          (uint8_t)((Hfs(ch) ? 0x80 : 0) | (code & 0x7F)));
 }
 
+// Which channels are switched on.
 void Max22200::SetOnMask(uint8_t mask) {
   if (mask == onMask)
     return;
@@ -199,6 +208,7 @@ void Max22200::SetOnMask(uint8_t mask) {
   Write8(MAX22200_REG_STATUS, mask); // STATUS[31:24] = ONCH[7:0]
 }
 
+// Read and clear the fault registers.
 Max22200Faults Max22200::ReadFaults() {
   Max22200Faults f;
   uint32_t st = Read32(MAX22200_REG_STATUS, 0);

@@ -71,8 +71,8 @@
 #define HW_HAS_BOARD_NTC 0
 #endif
 
-#define USART_BAUDRATE 115200
-#define PERIPH_CLK ((uint32_t)36000000)
+#define USART_BAUDRATE 115200 // baud, terminal
+#define PERIPH_CLK ((uint32_t)36000000) // Hz, APB1 clock
 
 /* Terminal on USART3, PB10 TX / PB11 RX (no remap), as on the ZombieVerter. */
 #define TERM_USART USART3
@@ -81,13 +81,14 @@
 #define TERM_USART_DR USART3_DR
 #define TERM_USART_DMARX DMA_CHANNEL3
 #define TERM_USART_DMATX DMA_CHANNEL2
-#define TERM_BUFSIZE 128
+#define TERM_BUFSIZE 128 // bytes, terminal line buffer
 
 /* Parameter and CAN map storage at the top of flash (libopeninv F1
- * layout): parameters in the last 2 KiB page, the CAN map in the two
- * pages below it. The linker script keeps the image clear of them.
+ * layout): block numbers count 2 KiB pages down from the top of flash.
+ * Parameters in the last page (1), the CAN1 map in page 2, the CAN2 map in
+ * page 4. The linker script keeps the image clear of them.
  */
-#define FLASH_PAGE_SIZE 2048
+#define FLASH_PAGE_SIZE 2048 // bytes
 #define PARAM_BLKNUM 1
 #define PARAM_BLKSIZE FLASH_PAGE_SIZE
 #define CAN1_BLKNUM 2
@@ -139,6 +140,6 @@
 #define LIN_USART UART4
 #define LIN_USART_RCC RCC_UART4
 #define LIN_USART_IRQ NVIC_UART4_IRQ
-#define LIN_BAUD 19200
+#define LIN_BAUD 19200 // baud
 
 #endif // HWDEFS_H_INCLUDED

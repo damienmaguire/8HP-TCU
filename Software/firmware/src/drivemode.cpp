@@ -20,11 +20,13 @@
 
 namespace DriveModes {
 
+// Modifiers that change nothing (Normal).
 DriveModeMod Neutral() {
   DriveModeMod m = {0, 0, 100, 0, false, 0, 0};
   return m;
 }
 
+// Apply a DriveMode's modifiers to the Normal settings, within the safety limits.
 TcuConfig Apply(const TcuConfig &n, const DriveModeMod &m) {
   TcuConfig c = n;
   // Shift speeds, kept below the over-rev limit and with the down point

@@ -21,8 +21,9 @@
 #include "caltypes.h"
 #include "eds.h"
 
-#define TCU_TICK_MS 10
+#define TCU_TICK_MS 10 // ms, Tick10ms period
 
+// Absolute value.
 static int32_t Abs(int32_t v) { return v < 0 ? -v : v; }
 
 /* First-order low pass, k = tau / tick + 1. Steps smaller than one count
@@ -32,8 +33,10 @@ static int32_t Pt1(int32_t filt, int32_t in, int32_t k) {
   int32_t step = diff / k;
   return filt + (step != 0 ? step : diff);
 }
+// Larger of two values.
 static int32_t Max(int32_t a, int32_t b) { return a > b ? a : b; }
 
+// Power-up: INIT mode, neutral, outputs off until Ready().
 Tcu::Tcu()
     : cfg(), out(), dntFilt(0), lastNt(0), ndSynFilt(0), lastNdSyn(0),
       tqRamp(0), tqRampStep(0), gearErrMs(0), firstTick(true),
@@ -47,11 +50,14 @@ Tcu::Tcu()
   out.parkState = PARK_UNHELD;
 }
 
+// Current the driver will get for a clutch pressure (for the interlock).
 int32_t Tcu::CommandCurrent(int cl, int32_t p, int32_t temp) const {
   // Clutch A..E map straight onto EDS_A..EDS_E.
   return Eds::CommandCurrent((EdsValve)cl, p, temp, cfg.tempCorrection, cfg.iMax);
 }
 
+// Go to the safe state: all coils off. The hydraulics then hold the limp gear
+// (6th with full line pressure when moving). Only the first fault is kept.
 void Tcu::ForceSafe(TcuFault f) {
   sas.Abort();
   engage.Abort();
@@ -83,6 +89,7 @@ void Tcu::ForceSafe(TcuFault f) {
   out.target = GEAR_LIMP;
 }
 
+// Neutral: every clutch open except B kept filled, ready for 1st or R.
 void Tcu::SetNeutral(const TcuInputs &in) {
   for (int c = 0; c < CL_COUNT; c++)
     out.p[c] = 0;
@@ -90,12 +97,14 @@ void Tcu::SetNeutral(const TcuInputs &in) {
   out.p[CL_B] = Cal::Curve(Cal::Clutch()[CL_B].pfcg, in.temp);
 }
 
+// Full apply pressure on the gear's clutches, the others open.
 void Tcu::HoldGear(int gear) {
   uint8_t m = Gears::ClutchMask(gear);
   for (int c = 0; c < CL_COUNT; c++)
     out.p[c] = (m & CLUTCH_BIT(c)) ? cfg.applyP : 0;
 }
 
+// Line pressure from the gear's map (torque and motor speed), with limits.
 int32_t Tcu::LinePressure(const TcuInputs &in, int32_t minP) const {
   int32_t p;
   int g = out.gear;
@@ -111,6 +120,7 @@ int32_t Tcu::LinePressure(const TcuInputs &in, int32_t minP) const {
   return p;
 }
 
+// Does the measured speed ratio match the gear? (wrong ratio = slipping or bad sensor)
 bool Tcu::GearPlausible(const TcuInputs &in, int gear) const {
   if (!Gears::IsDriveGear(gear) || in.n_ab < cfg.gearCheckMinNab)
     return true;
@@ -119,6 +129,7 @@ bool Tcu::GearPlausible(const TcuInputs &in, int gear) const {
   return Abs(ratio - want) * 100 <= want * cfg.gearCheckPct;
 }
 
+// Gear to aim for: Auto, Manual or VCU request, CAN-loss and over-rev rules.
 int Tcu::ChooseTarget(const TcuInputs &in, bool manual) const {
   int g = out.gear;
   int top = cfg.topGear < 1 ? 1 : (cfg.topGear > 8 ? 8 : cfg.topGear);
@@ -178,6 +189,7 @@ int Tcu::ChooseTarget(const TcuInputs &in, bool manual) const {
   return g;
 }
 
+// Inputs for the shift code: slip to the target gear and time to sync.
 SasInputs Tcu::MakeSasInputs(const TcuInputs &in) {
   SasInputs s;
   s.m_t = in.m_t;
@@ -221,6 +233,7 @@ static const int32_t npMsTab[4] = {1000, 500, 300, 150};
 static const int32_t pzT[4] = {-30, -20, 0, 20};
 static const int32_t pzOfs[4] = {1900, 1700, 500, 0};
 
+// Gear-in only once something makes oil pressure (pump running or motor turning).
 bool Tcu::PressureSource(const TcuInputs &in) const {
   if (cfg.gearInPumpMs <= 0 && cfg.gearInMotRpm <= 0)
     return true;
@@ -229,6 +242,7 @@ bool Tcu::PressureSource(const TcuInputs &in) const {
   return cfg.gearInMotRpm > 0 && in.n_mot >= cfg.gearInMotRpm;
 }
 
+// Park release help: motor speed request, park cylinder valve and hold magnet.
 void Tcu::ParkOutputs(const TcuInputs &in) {
   if (relMs >= 0 && relMs < 0x7FFFFFF)
     relMs += TCU_TICK_MS;
@@ -254,6 +268,7 @@ void Tcu::ParkOutputs(const TcuInputs &in) {
                    (out.mode != TCU_PARK || relMs < cfg.parkMagMinMs);
 }
 
+// Park lock state for display from the mode and selector.
 static uint8_t ParkStateOf(uint8_t mode, uint8_t selector) {
   switch (mode) {
   case TCU_PARK:
@@ -269,6 +284,7 @@ static uint8_t ParkStateOf(uint8_t mode, uint8_t selector) {
   }
 }
 
+// Channel 7: K0 pressure, or the torque converter lock-up clutch (TCC).
 void Tcu::Ch7(const TcuInputs &in) {
   int32_t p = 0;
   if (cfg.ch7Mode == CH7_K0) {
@@ -306,6 +322,7 @@ void Tcu::Ch7(const TcuInputs &in) {
   out.tccLocked = tccLocked;
 }
 
+// Start a shift to the next gear, or hold if the pair has no calibration.
 void Tcu::StartShift(const TcuInputs &in, int next) {
   int off, on;
   if (!Gears::SingleSwap(out.gear, next, off, on))
@@ -318,6 +335,7 @@ void Tcu::StartShift(const TcuInputs &in, int next) {
     out.mode = TCU_SHIFT;
 }
 
+// The TCU mode machine, every 10 ms (safety checks first, outputs last).
 void Tcu::Tick10ms(const TcuInputs &in) {
   // Input speed gradient, PT1 filtered (OEM T_FNGTGLS = 70 ms).
   if (firstTick) {
@@ -329,6 +347,11 @@ void Tcu::Tick10ms(const TcuInputs &in) {
   lastNt = in.n_t;
 
   // ---- Faults -------------------------------------------------------
+  // In plain words: a bad configuration, a valve driver fault, low battery
+  // voltage or a gear ratio that does not match the selected gear (clutch
+  // slipping or a speed sensor lying) all switch every valve off. With no
+  // current the hydraulics fall back to their built-in limp gear, so the car
+  // still has drive and cannot be put into two gears at once by software.
   if (out.mode != TCU_SAFE && out.mode != TCU_INIT) {
     if (in.configError)
       ForceSafe(TF_CONFIG);
@@ -345,6 +368,8 @@ void Tcu::Tick10ms(const TcuInputs &in) {
     gearErrMs = 0;
   }
 
+  // Safe state is only left on request (fault clear), with the causes gone,
+  // the car (almost) stopped and the lever in N or P: never while driving.
   if (out.mode == TCU_SAFE) {
     ForceSafe((TcuFault)out.fault);
     out.parkState = PARK_UNHELD;
@@ -374,6 +399,11 @@ void Tcu::Tick10ms(const TcuInputs &in) {
   out.safeOutputs = false;
   out.tqHold = false;
   int32_t shiftTq = 0;
+  // CAN loss: without the VCU frames we do not know the torque or the
+  // driver's intent, so no gear-in and no upshifts. With CanLossMode = hold
+  // (default) the gear is kept and only steps down as the car slows, so it
+  // can pull away again; with CanLossMode = neutral stm32_tcu.cpp turns the
+  // selector to N and the clutches open.
   bool canHold = !in.canOk && cfg.canLossMode == CANLOSS_HOLD;
 
   // Manual shifting: always in Manual; in Auto for tipOverrideMs after a
@@ -408,6 +438,10 @@ void Tcu::Tick10ms(const TcuInputs &in) {
       pnMs = 0;
       break;
     }
+    // In plain words: the park pawl is pushed out by oil pressure, so the
+    // TCU asks for line pressure and waits until the motor turns (pump
+    // running) or the pressure is measured before it counts as released.
+    // Until then the driver sees "waiting" and the car stays in P.
     // Leaving P: the lock comes out only with the motor turning or enough
     // measured pressure (11 Q9d), then T_VPARKSPPN to N.
     minLine = cfg.parkRelP;

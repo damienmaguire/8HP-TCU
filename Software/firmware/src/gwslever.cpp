@@ -16,24 +16,32 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+/*
+ * BMW GWS gear lever on CAN: checks and decodes 0x197 (lever moves),
+ * turns moves into P / R / N / D / M, and builds the 0x3FD display frame.
+ */
 #include "gwslever.h"
 #include "linpump.h" // Lin::Crc8: poly 0x1D, init 0
 #include "tcu.h"     // Selector
 
+// Start in P with no frame seen.
 GwsLever::GwsLever()
     : cfg{90, 2}, seen(false), msSinceRx(0xFFFF), lastAlive(-1), stuck(0),
       rawMove(0), pendMove(0), pendCount(0), takenMove(0), pRaw(false),
       pStable(false), pEdge(false), pCount(0), state(GWS_P), tipUp(false), tipDown(false),
       flashMs(0), crcErr(0), cntErr(0), dlcErr(0) {}
 
+// CRC of a received 0x197 frame (E2E CRC-8, final XOR 0x53).
 uint8_t GwsLever::RxCrc(const uint8_t *d) {
   return (uint8_t)(Lin::Crc8(d + 1, 3) ^ GWS_RX_XOR);
 }
 
+// CRC of a sent 0x3FD frame (E2E CRC-8, final XOR 0x70).
 uint8_t GwsLever::TxCrc(const uint8_t *d) {
   return (uint8_t)(Lin::Crc8(d + 1, 4) ^ GWS_TX_XOR);
 }
 
+// Check and decode one 0x197 frame; drop it on a bad CRC or counter.
 bool GwsLever::OnFrame(const uint8_t *d, uint8_t dlc) {
   if (dlc != 4) {
     dlcErr++;
@@ -88,6 +96,7 @@ bool GwsLever::OnFrame(const uint8_t *d, uint8_t dlc) {
   return true;
 }
 
+// Turn a debounced lever move into the next position (the OEM table).
 void GwsLever::Take(uint8_t move, bool engageOk) {
   uint8_t want = state;
   bool gated = false;
@@ -140,6 +149,7 @@ void GwsLever::Take(uint8_t move, bool engageOk) {
   state = want;
 }
 
+// Timeout and debounce, every 10 ms.
 void GwsLever::Tick10ms(bool engageOk) {
   tipUp = tipDown = false;
   if (flashMs >= 10)
@@ -172,6 +182,7 @@ void GwsLever::Tick10ms(bool engageOk) {
   }
 }
 
+// Position as a TCU selector (M counts as D).
 uint8_t GwsLever::Selector() const {
   switch (state) {
   case GWS_P: return SEL_P;
@@ -181,6 +192,7 @@ uint8_t GwsLever::Selector() const {
   }
 }
 
+// Build one 0x3FD display frame.
 void GwsDisplay::Pack(uint8_t pos, uint8_t counter, uint8_t b3, uint8_t b4,
                       uint8_t d[5]) {
   d[1] = counter % 15;
@@ -190,6 +202,7 @@ void GwsDisplay::Pack(uint8_t pos, uint8_t counter, uint8_t b3, uint8_t b4,
   d[0] = GwsLever::TxCrc(d);
 }
 
+// Display frame every 100 ms; off before KL15 and 30 s after OFF.
 void GwsDisplay::Tick100ms(bool t15, uint8_t st, bool flash, uint8_t mSub,
                            uint8_t b34, uint8_t gear, uint8_t d[5]) {
   static const uint8_t posCode[5] = {0x20, 0x40, 0x60, 0x80, 0x80};

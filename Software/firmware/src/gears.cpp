@@ -39,20 +39,24 @@ static const int32_t gearRatio[GEAR_COUNT] = {
 
 namespace Gears {
 
+// 1st..8th or R.
 bool IsDriveGear(int gear) { return gear >= GEAR_1 && gear <= GEAR_R; }
 
+// Clutches applied in a gear (bit per clutch).
 uint8_t ClutchMask(int gear) {
   if (gear < 0 || gear >= GEAR_COUNT)
     return 0;
   return gearMask[gear];
 }
 
+// Gear ratio x 1000 (0 for N).
 int32_t RatioX1000(int gear) {
   if (gear < 0 || gear >= GEAR_COUNT)
     return 0;
   return gearRatio[gear];
 }
 
+// Number of applied clutches in a mask.
 int CountClutches(uint8_t mask) {
   int n = 0;
   for (int c = 0; c < CL_COUNT; c++)
@@ -61,6 +65,7 @@ int CountClutches(uint8_t mask) {
   return n;
 }
 
+// Index of the single bit set in a mask, -1 if not exactly one.
 static int OnlyBit(uint8_t mask) {
   for (int c = 0; c < CL_COUNT; c++)
     if (mask == CLUTCH_BIT(c))
@@ -68,6 +73,7 @@ static int OnlyBit(uint8_t mask) {
   return -1;
 }
 
+// Off-going and on-coming clutch of a one-clutch swap; false if not one.
 bool SingleSwap(int from, int to, int &offGoing, int &onComing) {
   offGoing = onComing = -1;
   if (!IsDriveGear(from) || !IsDriveGear(to) || from == to)
@@ -82,6 +88,7 @@ bool SingleSwap(int from, int to, int &offGoing, int &onComing) {
   return true;
 }
 
+// Next gear on the way from one gear to another (adjacent steps only).
 int NextStep(int from, int to) {
   int off, on;
   if (from == to)
@@ -98,22 +105,26 @@ int NextStep(int from, int to) {
   return to > from ? from + 1 : from - 1;
 }
 
+// Input speed the gear would give at this output speed.
 int32_t SyncSpeed(int gear, int32_t outputRpm) {
   return (int32_t)(((int64_t)outputRpm * RatioX1000(gear)) / 1000);
 }
 
+// Input / output speed ratio x 1000 (0 at standstill).
 int32_t MeasuredRatioX1000(int32_t inputRpm, int32_t outputRpm) {
   if (outputRpm < 100 && outputRpm > -100)
     return 0;
   return (int32_t)(((int64_t)inputRpm * 1000) / outputRpm);
 }
 
+// Input speed minus the gear's sync speed (0 outside a gear).
 int32_t SlipRpm(int gear, int32_t inputRpm, int32_t outputRpm) {
   if (!IsDriveGear(gear))
     return 0;
   return inputRpm - SyncSpeed(gear, outputRpm);
 }
 
+// Clutch letter A..E for logs.
 char ClutchName(int clutch) {
   return clutch >= 0 && clutch < CL_COUNT ? (char)('A' + clutch) : '-';
 }

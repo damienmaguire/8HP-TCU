@@ -35,16 +35,19 @@ static const int32_t tccOn[40] = {
 };
 static const CalMap tccOnMap = {5, 8, tccPedal, tccGear, tccOn};
 
+// Lock-up speed from the schedule for this gear and pedal.
 int32_t Tcc::OnRpm(int gear, int32_t pedalPct) {
   return Cal::Map(tccOnMap, pedalPct, gear);
 }
 
+// Slip to aim for: controlled slip in low gears at low speed, else 0.
 int32_t Tcc::Target(const TccConfig &c, int gear, int32_t nT) const {
   if (c.slipTgt > 0 && gear <= c.slipGear && nT < c.slipRpm)
     return c.slipTgt;
   return 0;
 }
 
+// Decide closed / open, then run the slip PI and return the pressure.
 int32_t Tcc::Tick10ms(const TccConfig &c, bool allowed, int gear, int32_t pedal,
                       int32_t nT, int32_t nMot) {
   int32_t on = OnRpm(gear, pedal);

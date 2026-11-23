@@ -99,15 +99,15 @@ int32_t McuTempC(int32_t counts);
  * (SDNT2012X103F3450) to GND, 10k pull-up to 3V3, counts =
  * 4095 x R / (R + 10k), -40..125 degC in 5 degC steps. The real board's
  * NTC and pull-up are TBD (Bob): change BOARD_NTC_* and the table. */
-#define BOARD_NTC_TMIN -40
-#define BOARD_NTC_STEP 5
+#define BOARD_NTC_TMIN -40 // degC, first table entry
+#define BOARD_NTC_STEP 5 // degC between table entries
 #define BOARD_NTC_TABLE                                                        \
   3939, 3885, 3816, 3732, 3631, 3511, 3372, 3214, 3041, 2853, 2656, 2453,      \
       2249, 2048, 1853, 1668, 1494, 1334, 1188, 1055, 937, 831, 736, 653, 580, \
       515, 458, 408, 365, 326, 292, 262, 236, 212
 /// Counts outside this window mean open (pulled up) or shorted: not valid.
-#define BOARD_NTC_OPEN 4050
-#define BOARD_NTC_SHORT 40
+#define BOARD_NTC_OPEN 4050 // ADC counts (12 bit)
+#define BOARD_NTC_SHORT 40 // ADC counts (12 bit)
 /** Board NTC temperature, degC, clamped to the table ends. Returns false
  * (and leaves *degC alone) for an open or shorted sensor. */
 bool BoardNtcC(int32_t counts, int32_t *degC);

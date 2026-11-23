@@ -79,50 +79,62 @@ static int activeMode = DM_NORMAL;
 
 namespace Cal {
 
+// Table row for a GearboxType id (the 330e row for an unknown id).
 const VariantCal &Variant(int id) {
   if (id < 0 || id >= CALVAR_COUNT)
     id = CALVAR_330E;
   return variants[id];
 }
 
+// Make a row and solenoid curve set the active ones.
 void Select(int id, int solSet) {
   active = &Variant(id);
   activeSol = solSet > SOLSET_AUTO && solSet < SOLSET_COUNT ? solSet : active->solSet;
 }
 
+// Solenoid curve set by id (the 330e set for an unknown id).
 const SolCurveSetInfo &SolSet(int set) {
   if (set <= SOLSET_AUTO || set >= SOLSET_COUNT)
     set = SOLSET_330E_Q030;
   return solSets[set];
 }
 
+// Solenoid curve set in use.
 int ActiveSolSet() { return activeSol; }
 
+// Pressure-to-current curves in use (A..E, SYS, ch7).
 const CalCurve *Eds() { return solSets[activeSol].eds; }
 
+// The active gearbox row.
 const VariantCal &Active() { return *active; }
 
+// Switch the shift tables to a DriveMode's set.
 void SelectMode(int mode) {
   activeMode = mode >= 0 && mode < DM_COUNT ? mode : DM_NORMAL;
 }
 
+// DriveMode whose tables are in use.
 int ActiveMode() { return activeMode; }
 
+// Upshift tables of the active row and DriveMode.
 const UpShiftCal *Up() {
   const UpShiftCal *t = active->upMode[activeMode];
   return t ? t : active->up;
 }
 
+// Downshift tables of the active row and DriveMode.
 const DownShiftCal *Down() {
   const DownShiftCal *t = active->downMode[activeMode];
   return t ? t : active->down;
 }
 
+// Clutch fill tables of the active row and DriveMode.
 const ClutchFillCal *Clutch() {
   const ClutchFillCal *t = active->clutchMode[activeMode];
   return t ? t : active->clutch;
 }
 
+// Find a reference table of a size row by its A2L name.
 const CalRef *Ref(const CalSizeInfo &s, const char *name) {
   for (int i = 0; i < s.nRef; i++)
     if (strcmp(s.ref[i].name, name) == 0)
@@ -130,6 +142,7 @@ const CalRef *Ref(const CalSizeInfo &s, const char *name) {
   return 0;
 }
 
+// Channel 7 mode actually used: K0 on a gearbox without K0 is held open.
 uint8_t Ch7Effective(uint8_t mode, int variant) {
   const VariantCal &v = Variant(variant);
   if (mode == CH7_VARIANT || mode > CH7_OPEN)

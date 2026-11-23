@@ -27,6 +27,7 @@ static int VcuRxIds(uint32_t cmdId, uint32_t ids[CANIF_MAX_RX_IDS]) {
   return 1;
 }
 
+// Decode the VCU command frame (layout below).
 static bool VcuRx(uint32_t cmdId, uint32_t id, const uint8_t *b, uint8_t dlc,
                   CanRx *rx) {
   if (id != cmdId || dlc < 6)
@@ -47,6 +48,7 @@ static bool VcuRx(uint32_t cmdId, uint32_t id, const uint8_t *b, uint8_t dlc,
   return true;
 }
 
+// Build the two TCU status frames for the VCU (layout below).
 static int VcuTx(const CanTxIn &in, CanFrame out[CANIF_MAX_TX]) {
   const TcuOutputs &o = *in.o;
   /* Status frame CanStatId (little endian):
@@ -116,27 +118,33 @@ static const EcuHandler handlers[ECU_COUNT] = {
     // OEM engine ECUs will be added here later.
 };
 
+// Handler row for an EcuType (the VCU row for an unknown type).
 static const EcuHandler &H(uint8_t t) {
   return handlers[t < ECU_COUNT ? t : (uint8_t)ECU_NONE_VCU];
 }
 
 namespace CanIf {
 
+// CAN ids to listen to for an EcuType.
 int RxIds(uint8_t t, uint32_t cmdId, uint32_t ids[CANIF_MAX_RX_IDS]) {
   return H(t).rxIds(cmdId, ids);
 }
 
+// Decode a received frame for an EcuType; false if it is not ours.
 bool Rx(uint8_t t, uint32_t cmdId, uint32_t id, const uint8_t *d, uint8_t dlc,
         CanRx *rx) {
   return H(t).rx(cmdId, id, d, dlc, rx);
 }
 
+// Frames to send for an EcuType this cycle.
 int Tx(uint8_t t, const CanTxIn &in, CanFrame out[CANIF_MAX_TX]) {
   return H(t).tx(in, out);
 }
 
+// Display name of an EcuType.
 const char *Name(uint8_t t) { return H(t).name; }
 
+// BMW end-to-end CRC-8 (poly 0x1D, init 0) over the Data ID and bytes 1..7.
 uint8_t E2eCrc(const uint8_t d[8], uint16_t dataId) {
   uint8_t buf[9];
   buf[0] = dataId & 0xFF;
@@ -146,6 +154,7 @@ uint8_t E2eCrc(const uint8_t d[8], uint16_t dataId) {
   return Lin::Crc8(buf, 9); // same CRC-8 as the LIN pump: 0x1D, init 0
 }
 
+// Nm to the 0x0B0 12-bit torque field (0.5 Nm steps, offset -1023.5 Nm).
 uint16_t TqRaw(int32_t nm) {
   // raw = (Nm + 1023.5) / 0.5 = 2 Nm + 2047
   int32_t raw = 2 * nm + 2047;
@@ -156,6 +165,7 @@ uint16_t TqRaw(int32_t nm) {
   return (uint16_t)raw;
 }
 
+// Build the 0x0B0 engine torque intervention frame.
 void PackF11Torque(uint8_t qual, int32_t targetNm, uint8_t counter, uint8_t d[8]) {
   if (qual != TQ_QUAL_RAISE && qual != TQ_QUAL_REDUCE)
     qual = TQ_QUAL_NONE;
@@ -173,6 +183,7 @@ void PackF11Torque(uint8_t qual, int32_t targetNm, uint8_t counter, uint8_t d[8]
   d[0] = E2eCrc(d, CANIF_F11_TQ_DATAID);
 }
 
+// Build the optional 0x0A0 maximum-torque frame.
 void PackTqCeiling(int32_t maxNm, uint8_t counter, uint8_t d[8]) {
   uint16_t raw = TqRaw(maxNm);
   d[1] = (uint8_t)((counter % 15) | 0xF0);
@@ -185,6 +196,7 @@ void PackTqCeiling(int32_t maxNm, uint8_t counter, uint8_t d[8]) {
   d[0] = E2eCrc(d, CANIF_TQ_CEIL_DATAID);
 }
 
+// Turn our torque change request into the 0x0B0 qualifier and target.
 uint8_t F11TqTarget(int32_t inputNm, int32_t deltaNm, int32_t *targetNm) {
   if (deltaNm == 0) {
     *targetNm = 0;

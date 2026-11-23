@@ -71,6 +71,7 @@ void afio_setup(void) {
                      AFIO_MAPR_TIM3_REMAP_FULL_REMAP | AFIO_MAPR_CAN2_REMAP);
 }
 
+// Interrupt priorities and enables (CAN, LIN UART, speed ADC, scheduler timer).
 void nvic_setup(void) {
   nvic_enable_irq(NVIC_TIM4_IRQ); // scheduler, highest priority
   nvic_set_priority(NVIC_TIM4_IRQ, 0);
@@ -85,6 +86,7 @@ void nvic_setup(void) {
   nvic_set_priority(LIN_USART_IRQ, 2 << 4);
 }
 
+// SPI1 for the MAX22200 valve drivers (mode 0, MSB first).
 void max_spi_setup(void) {
   gpio_set_mode(MAX_SPI_PORT, GPIO_MODE_OUTPUT_50_MHZ,
                 GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, MAX_SPI_SCK | MAX_SPI_MOSI);
@@ -104,6 +106,7 @@ void max_spi_setup(void) {
   spi_enable(MAX_SPI);
 }
 
+// Send and receive one SPI byte (blocking, a few microseconds).
 uint8_t max_spi_transfer(uint8_t tx) {
   return (uint8_t)spi_xfer(MAX_SPI, tx);
 }
@@ -164,6 +167,7 @@ void gp_pwm_setup(uint32_t freqHz) {
   timer_enable_counter(GP_PWM_TIMER);
 }
 
+// Duty of the spare PWM output, %.
 void gp_pwm_set(uint32_t dutyPct) {
   if (dutyPct > 100)
     dutyPct = 100;

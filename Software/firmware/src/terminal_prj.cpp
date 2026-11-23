@@ -16,6 +16,11 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+/*
+ * Project terminal commands: the libopeninv set (set, get, save, can ...)
+ * plus our own list / atr / all / errors / serial and the two adaptation
+ * commands. Reached over the USART terminal and the web interface.
+ */
 #include "errormessage.h"
 #include "hwdefs.h"
 #include "my_fp.h"
@@ -60,6 +65,7 @@ extern const TERM_CMD TermCmds[] = {{"set", TerminalCommands::ParamSet},
                                     {"adaptreset", AdaptResetCmd},
                                     {NULL, NULL}};
 
+// Terminal "list": name and unit of every visible parameter and value.
 static void PrintList(Terminal *t, char *arg) {
   (void)arg;
   fprintf(t, "Available parameters and values\r\n");
@@ -70,6 +76,7 @@ static void PrintList(Terminal *t, char *arg) {
   }
 }
 
+// Terminal "atr": min, max and default of every visible parameter.
 static void PrintAtr(Terminal *t, char *arg) {
   (void)arg;
   fprintf(t, "Parameter attributes\r\n");
@@ -85,12 +92,15 @@ static void PrintAtr(Terminal *t, char *arg) {
   }
 }
 
+// Terminal "defaults": all parameters back to default (RAM only until "save";
+// the adaptation page is not touched).
 static void LoadDefaults(Terminal *t, char *arg) {
   (void)arg;
   Param::LoadDefaults();
   fprintf(t, "Defaults loaded\r\n");
 }
 
+// Terminal "all": name and present value of everything.
 static void GetAll(Terminal *t, char *arg) {
   (void)arg;
   for (uint32_t idx = 0; idx < Param::PARAM_LAST; idx++) {
@@ -99,12 +109,14 @@ static void GetAll(Terminal *t, char *arg) {
   }
 }
 
+// Terminal "errors": the error log.
 static void PrintErrors(Terminal *t, char *arg) {
   (void)t;
   (void)arg;
   ErrorMessage::PrintAllErrors();
 }
 
+// Terminal "serial": the STM32 unique id.
 static void PrintSerial(Terminal *t, char *arg) {
   (void)arg;
   fprintf(t, "%X%X%X\r\n", DESIG_UNIQUE_ID2, DESIG_UNIQUE_ID1,
@@ -113,12 +125,14 @@ static void PrintSerial(Terminal *t, char *arg) {
 
 // Clutch adaptation: its own flash page, never touched by save / load /
 // defaults. "adaptreset" is the only way to clear the learned offsets.
+// Terminal "adaptsave": store the learned offsets now.
 static void AdaptSaveCmd(Terminal *t, char *arg) {
   (void)arg;
   AdaptSave();
   fprintf(t, "Adaptation saved\r\n");
 }
 
+// Terminal "adaptreset": clear the learned offsets and store the cleared page.
 static void AdaptResetCmd(Terminal *t, char *arg) {
   (void)arg;
   AdaptReset();

@@ -16,12 +16,18 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+/*
+ * Speed sensors: edge periods from the timer capture to rpm, with a
+ * timeout so a dead sensor reads 0 and not valid.
+ */
 #include "speedsens.h"
 
+// No edges yet: speed 0, not valid.
 SpeedSensor::SpeedSensor()
     : timerHz(1000000), teeth(60), timeoutMs(100), minRpm(30), sumTicks(0),
       count(0), edgeSeen(false), msSinceEdge(0xFFFF), rpm(0), valid(false) {}
 
+// Timer rate, teeth per turn, timeout and minimum speed.
 void SpeedSensor::Configure(uint32_t hz, uint16_t t, uint16_t timeout,
                             uint16_t minR) {
   timerHz = hz;
@@ -30,6 +36,7 @@ void SpeedSensor::Configure(uint32_t hz, uint16_t t, uint16_t timeout,
   minRpm = minR;
 }
 
+// One edge with the time since the last one, in timer ticks.
 void SpeedSensor::Edge(uint32_t periodTicks) {
   edgeSeen = true;
   // After a timeout the period may span a timer wrap: drop it. The next
@@ -40,12 +47,14 @@ void SpeedSensor::Edge(uint32_t periodTicks) {
   count++;
 }
 
+// Edge period to rpm for a tooth count.
 int32_t SpeedSensor::PeriodToRpm(uint32_t hz, uint32_t period, uint16_t t) {
   if (period == 0 || t == 0)
     return 0;
   return (int32_t)(((uint64_t)hz * 60u) / ((uint64_t)period * t));
 }
 
+// Speed 0 and not valid once edges stop for the timeout.
 void SpeedSensor::Tick10ms() {
   uint32_t s = sumTicks, n = count;
   bool seen = edgeSeen;

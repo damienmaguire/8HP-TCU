@@ -35,8 +35,10 @@ static const CalMap tqModelMap = {6, 5, tqRpm, tqMap, tqNm};
 
 namespace TorqueIn {
 
+// 0x8000 and 0x7FFF are "signal not available" codes, never a torque.
 bool RawValid(int16_t raw) { return raw != (int16_t)0x8000 && raw != 0x7FFF; }
 
+// Placeholder torque estimate from engine speed and manifold pressure.
 int32_t Model(const TorqueModelIn &m) {
   int32_t map = m.mapKpa;
   int32_t base = Cal::Map(tqModelMap, m.rpm, map > 100 ? 100 : map);
@@ -46,6 +48,7 @@ int32_t Model(const TorqueModelIn &m) {
   return (int32_t)nm;
 }
 
+// Torque to use: CAN if usable, else the model if on, else the substitute.
 uint8_t Select(int32_t canNm, bool canUsable, bool modelOn,
                const TorqueModelIn &m, int32_t substituteNm, int32_t *nm) {
   if (canUsable) {
@@ -62,6 +65,7 @@ uint8_t Select(int32_t canNm, bool canUsable, bool modelOn,
 
 } // namespace TorqueIn
 
+// True once the value has stood still while the engine speed moved.
 bool FrozenCheck::Tick(int32_t value, int32_t rpm, int32_t timeMs, int32_t rpmDelta) {
   if (timeMs <= 0) {
     frozen = false;

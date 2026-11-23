@@ -21,7 +21,7 @@
 
 #include "hwdefs.h"
 
-#define NUM_SAMPLES 12
+#define NUM_SAMPLES 12 // ADC samples kept per input
 /* 239.5 cycles: the internal temperature sensor needs >= 17.1 us of
  * sampling (12 MHz ADC clock: 20 us). The other inputs are resistive
  * dividers and read better with the longer time too. Scan of 5 channels

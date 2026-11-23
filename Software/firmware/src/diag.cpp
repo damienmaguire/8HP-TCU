@@ -21,12 +21,14 @@
 
 namespace Diag {
 
+// Coil + wiring resistance expected at this temperature.
 int32_t ExpectedMilliOhm(int32_t tempC, int32_t wire) {
   // R(T) = R20 x (1 + tc x (T - 20)) + wiring
   int64_t r = (int64_t)DIAG_R20_MOHM * (1000000 + (int64_t)DIAG_TC_PPM * (tempC - 20)) / 1000000;
   return (int32_t)r + wire;
 }
 
+// Compare a measured V / I resistance with the expected band.
 uint8_t Resistance(int32_t mV, int32_t mA, int32_t tempC, int32_t bandPct, int32_t wire) {
   if (mA < 50)
     return DIAG_OK; // too little current to judge (coil off or just switched)
@@ -42,6 +44,7 @@ uint8_t Resistance(int32_t mV, int32_t mA, int32_t tempC, int32_t bandPct, int32
   return DIAG_OK;
 }
 
+// Fault code of one valve channel: driver flags first, then the resistance check.
 uint8_t Channel(uint16_t f, uint8_t rCheck) {
   if (f & VALVE_F_OCP)
     return DIAG_SHORT_BAT;
@@ -52,6 +55,7 @@ uint8_t Channel(uint16_t f, uint8_t rCheck) {
   return rCheck;
 }
 
+// Pairs of chip channels that are both faulted (shared wiring suspected).
 uint8_t Pairs(const uint8_t *codes, int n) {
   uint8_t m = 0;
   for (int k = 0; 2 * k + 1 < n && k < 8; k++)
@@ -60,6 +64,7 @@ uint8_t Pairs(const uint8_t *codes, int n) {
   return m;
 }
 
+// Speed sensor state from its signal levels and edges.
 uint8_t Speed(int32_t minMv, int32_t maxMv, bool edges, bool otherMoving,
               int32_t openMv, int32_t shortMv) {
   bool flat = !edges;
@@ -72,10 +77,12 @@ uint8_t Speed(int32_t minMv, int32_t maxMv, bool edges, bool otherMoving,
   return SPD_OK;
 }
 
+// Calibration signature check (0 expected = not checked).
 bool CalOk(uint32_t expected, uint32_t actual) { return expected == 0 || expected == actual; }
 
 } // namespace Diag
 
+// Watch engine vs turbine speed while the lock-up clutch should be closed.
 bool SlipMonitor::Tick10ms(bool locked, int32_t nMot, int32_t nT, int32_t maxRpm, int32_t ms) {
   if (maxRpm <= 0 || !locked) {
     t = 0;

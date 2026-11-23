@@ -184,6 +184,7 @@ static void ConfigureEds() {
   eds.Configure(c);
 }
 
+// Copy the parameters into the TCU, shift and adaptation settings.
 static void ConfigureTcu() {
   TcuConfig c = {};
   c.sas.pMax = Param::GetInt(Param::ShiftPMax);
@@ -295,6 +296,7 @@ static void ConfigureTcu() {
   tcu.Configure(DriveModes::Apply(c, m));
 }
 
+// Speed sensor teeth, timeouts and ADC edge thresholds.
 static void ConfigureSpeed() {
   uint16_t to = Param::GetInt(Param::SpdTimeout);
   uint16_t mn = Param::GetInt(Param::SpdMinRpm);
@@ -307,6 +309,7 @@ static void ConfigureSpeed() {
     spdEdge[i].Configure(lo, hi);
 }
 
+// Shifter type and the CAN lever settings.
 static void ConfigureShifter() {
   ShifterConfig c;
   // Every CAN lever type falls back to the VCU-frame selector fields
@@ -327,6 +330,7 @@ static void ConfigureShifter() {
   lever.Configure(l);
 }
 
+// LIN oil pump settings.
 static void ConfigureLin() {
   LinPumpConfig c;
   c.enhanced = Param::GetInt(Param::LinChecksum) == 1;
@@ -351,6 +355,7 @@ static void ConfigureLin() {
   linRule.Configure(r);
 }
 
+// Valve-to-driver-channel map from the Chx parameters.
 static void ConfigureValveMap() {
   for (int v = 0; v < EDS_COUNT; v++) {
     int ch = Param::GetInt(chanParams[v]);
@@ -442,7 +447,7 @@ extern "C" void adc1_2_isr(void) {
 
 // Read-back is evaluated 9 ms after the header starts: the OEM worst-case
 // 8-byte frame time is 9.1 ms [C], and the next slot starts at 10 ms.
-#define LIN_FRAME_MS 9
+#define LIN_FRAME_MS 9 // ms
 
 static uint8_t linTx[11];
 static volatile uint8_t linTxN = 0, linTxPos = 0;
@@ -455,6 +460,7 @@ static bool linActive = false; // bus on: enabled and the gearbox has a pump
 static bool linWanted = false; // operating point 55
 static int32_t linOilC = 40;
 
+// LIN UART interrupt: collect the bytes of the running slot.
 extern "C" void uart4_isr(void) {
   uint32_t sr = USART_SR(LIN_USART);
   if (sr & USART_SR_LBD)
@@ -472,6 +478,7 @@ extern "C" void uart4_isr(void) {
   }
 }
 
+// Start one LIN slot: break, header and (for our frames) data.
 static void LinStart(const LinSlot &s) {
   uint8_t pid = Lin::Pid(s.id);
   uint8_t n = 0;
@@ -493,6 +500,7 @@ static void LinStart(const LinSlot &s) {
   usart_enable_tx_interrupt(LIN_USART);
 }
 
+// End of a LIN slot: hand the read-back to the pump decoder.
 static void LinFinish() {
   usart_disable_tx_interrupt(LIN_USART);
   const uint8_t *rx = (const uint8_t *)linRx;
@@ -512,6 +520,7 @@ static void LinFinish() {
   // No response: the pump state machine times out on its own.
 }
 
+// LIN schedule step, every 1 ms.
 static void LinTick1ms() {
   if (linBusyMs) {
     if (++linBusyMs > LIN_FRAME_MS) {
@@ -555,10 +564,12 @@ static bool LeverRx(int bus, uint32_t id, const uint32_t data[2], uint8_t dlc) {
   return false;
 }
 
+// CAN2 receive: only lever frames are taken here.
 static bool Can2Callback(uint32_t id, uint32_t data[2], uint8_t dlc) {
   return LeverRx(1, id, data, dlc);
 }
 
+// CAN2 receive filters (the lever ids when it is on CAN2).
 static void SetCan2Filters() {
   uint32_t ids[2];
   int n = lever.IsCan() && Param::GetInt(Param::LeverBus) == 1 ? lever.RxIds(ids) : 0;
@@ -566,6 +577,7 @@ static void SetCan2Filters() {
     can2->RegisterUserMessage(ids[i]);
 }
 
+// CAN1 receive: lever frames, then the VCU / ECU command frames.
 static bool CanCallback(uint32_t id, uint32_t data[2], uint8_t dlc) {
   if (LeverRx(0, id, data, dlc))
     return true;
@@ -582,6 +594,7 @@ static bool CanCallback(uint32_t id, uint32_t data[2], uint8_t dlc) {
   return true;
 }
 
+// CAN1 receive filters for the EcuType and the lever.
 static void SetCanFilters() {
   uint32_t ids[CANIF_MAX_RX_IDS];
   int n = CanIf::RxIds(Param::GetInt(Param::EcuType),
@@ -623,6 +636,7 @@ static void SendStatus(const TcuOutputs &o, int32_t temp) {
   }
 }
 
+// Put a 16-bit value at word i of a log frame, little-endian.
 static void Put16(uint8_t *b, int i, int32_t v) {
   b[2 * i] = v & 0xFF;
   b[2 * i + 1] = (v >> 8) & 0xFF;
@@ -661,6 +675,7 @@ static uint32_t AdaptAddr() {
   return FLASH_BASE + desig_get_flash_size() * 1024 - ADAPT_BLKNUM * FLASH_PAGE_SIZE;
 }
 
+// Read the adaptation page at start-up (all zero if blank or bad).
 static void AdaptLoad() {
   AdaImage img;
   const uint32_t *src = (const uint32_t *)AdaptAddr();
@@ -670,6 +685,7 @@ static void AdaptLoad() {
   adapt.Unpack(img); // blank or corrupt page: all offsets 0
 }
 
+// Write the adaptation page (erase + program, ~20 ms with the CPU stalled).
 void AdaptSave() {
   AdaImage img;
   adapt.Pack(&img);
@@ -682,6 +698,7 @@ void AdaptSave() {
   flash_lock();
 }
 
+// Clear the learned offsets and store the cleared page.
 void AdaptReset() {
   adapt.Reset();
   AdaptSave();
@@ -702,6 +719,7 @@ static void Ms1Task() {
 static int32_t atfTemp = 40;
 static int32_t vbatmV = 12000;
 
+// Main 10 ms task: inputs, TCU, outputs, CAN and spot values.
 static void Ms10Task() {
   spdIn.Tick10ms();
   spdOut.Tick10ms();
@@ -798,6 +816,8 @@ static void Ms10Task() {
     in.tipUp = in.tipDown = false;
   }
   if (!fromParam && !canOk) {
+    // In plain words: assume high torque so line pressure stays high and
+    // the clutches cannot slip whatever the engine does.
     // No VCU. CanLossMode 1 (default, Damien 2026-11-23): keep the last
     // selector so the TCU holds the gear (no upshifts, LineMax, step down
     // as the car slows). CanLossMode 0: go to neutral. Either way assume
@@ -1138,6 +1158,7 @@ static void Ms10Task() {
   Param::SetInt(Param::calSig, CAL_SIG16);
 }
 
+// 100 ms task: battery, temperatures, faults, diagnosis, slow spot values.
 static void Ms100Task() {
   DigIo::led_out.Toggle();
   {
@@ -1321,6 +1342,7 @@ void Param::Change(Param::PARAM_NUM paramNum) {
   ConfigureLin();
 }
 
+// Start-up: hardware, parameters, CAN, drivers, then the scheduler.
 extern "C" int main(void) {
   extern const TERM_CMD TermCmds[];
 

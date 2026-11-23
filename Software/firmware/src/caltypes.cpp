@@ -22,6 +22,7 @@
  * plus the fraction inside it, as a numerator over den (0..den).
  */
 template <typename T>
+// Find the axis interval holding x and how far along it x is (for interpolation).
 static int Segment(const T *axis, int n, int32_t x, int32_t &num,
                    int32_t &den) {
   if (n <= 1 || x <= axis[0]) {
@@ -53,6 +54,7 @@ static int32_t Lerp(int32_t a, int32_t b, int32_t num, int32_t den) {
 
 namespace Cal {
 
+// Linear interpolation on a curve, clamped at both ends.
 int32_t Curve(const CalCurve &c, int32_t x) {
   if (c.n == 0)
     return 0;
@@ -63,6 +65,7 @@ int32_t Curve(const CalCurve &c, int32_t x) {
   return Lerp(c.y[i], c.y[i + 1], num, den);
 }
 
+// Bilinear interpolation on a map, clamped at the edges.
 int32_t Map(const CalMap &m, int32_t x, int32_t y) {
   if (m.nx == 0 || m.ny == 0)
     return 0;
@@ -80,6 +83,7 @@ int32_t Map(const CalMap &m, int32_t x, int32_t y) {
   return Lerp(r0, r1, nyn, dyn);
 }
 
+// Linear interpolation on plain arrays (small fixed tables in code).
 int32_t Interp(const int32_t *xs, const int32_t *ys, int n, int32_t x) {
   if (n <= 0)
     return 0;

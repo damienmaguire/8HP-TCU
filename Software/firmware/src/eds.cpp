@@ -16,14 +16,21 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+/*
+ * Pressure valve (EDS) layer: pressure to coil current through the
+ * calibration curves, oil-temperature correction, slew limit and dither.
+ * Currents are in 0.1 mA, pressures in mbar.
+ */
 #include "eds.h"
 #include "calset.h"
 #include "caltypes.h"
 
+// Valves whose current rises with pressure use the rising correction map.
 static bool IsRising(EdsValve v) {
   return v == EDS_A || v == EDS_B || v == EDS_K0;
 }
 
+// Default settings (overwritten by Configure); every valve at 0.
 Eds::Eds() : ms(0), safe(false) {
   cfg.iMin = 500;
   cfg.iMax = 8500;
@@ -38,6 +45,7 @@ Eds::Eds() : ms(0), safe(false) {
   }
 }
 
+// Pressure to coil current from the valve's curve, 0.1 mA.
 int32_t Eds::PressureToCurrent(EdsValve v, int32_t p_mbar) {
   if (v >= EDS_NUM_PRESSURE)
     return 0;
@@ -46,6 +54,7 @@ int32_t Eds::PressureToCurrent(EdsValve v, int32_t p_mbar) {
   return Cal::Curve(Cal::Eds()[v], p_mbar);
 }
 
+// Correct a coil current for oil temperature (OEM KF_KIEDSCG* maps).
 int32_t Eds::TempCorrection(EdsValve v, int32_t i_0p1mA, int32_t atfTemp) {
   if (v >= EDS_NUM_PRESSURE)
     return 0;
@@ -55,6 +64,7 @@ int32_t Eds::TempCorrection(EdsValve v, int32_t i_0p1mA, int32_t atfTemp) {
   return Cal::Map(m, i_0p1mA / 10, atfTemp);
 }
 
+// Pressure to the current actually commanded: curve, temperature, ceiling.
 int32_t Eds::CommandCurrent(EdsValve v, int32_t p_mbar, int32_t atfTemp,
                             bool tempCorrection, int32_t iMax) {
   if (v >= EDS_NUM_PRESSURE)
@@ -69,12 +79,14 @@ int32_t Eds::CommandCurrent(EdsValve v, int32_t p_mbar, int32_t atfTemp,
   return i;
 }
 
+// Ask for a pressure on a valve; the current follows at the slew rate.
 void Eds::SetPressure(EdsValve v, int32_t p_mbar, int32_t atfTemp) {
   if (v >= EDS_NUM_PRESSURE)
     return;
   SetCurrent(v, CommandCurrent(v, p_mbar, atfTemp, cfg.tempCorrection, cfg.iMax));
 }
 
+// Ask for a current directly (POS, PZYL, bench test).
 void Eds::SetCurrent(EdsValve v, int32_t i) {
   if (v >= EDS_COUNT)
     return;
@@ -85,6 +97,7 @@ void Eds::SetCurrent(EdsValve v, int32_t i) {
   target[v] = i;
 }
 
+// Move each setpoint towards its target, limited by the slew rate.
 void Eds::Tick10ms() {
   for (int v = 0; v < EDS_COUNT; v++) {
     if (safe) {
@@ -105,6 +118,7 @@ void Eds::Tick10ms() {
   }
 }
 
+// Dither added at time t (square or triangle, period in ms).
 int32_t Eds::DitherValue(uint32_t t, int32_t amp, uint8_t periodMs,
                          uint8_t shape) {
   if (amp <= 0 || periodMs < 2)
@@ -118,6 +132,7 @@ int32_t Eds::DitherValue(uint32_t t, int32_t amp, uint8_t periodMs,
   return -amp + (2 * amp * up) / half;
 }
 
+// Output = setpoint + dither, every 1 ms.
 void Eds::Tick1ms() {
   ms++;
   int32_t d = DitherValue(ms, cfg.ditherAmp, cfg.ditherPeriodMs, cfg.ditherShape);
@@ -132,6 +147,7 @@ void Eds::Tick1ms() {
   }
 }
 
+// Every valve to 0 at once (all coils off = mechanical limp gear).
 void Eds::SafeState() {
   safe = true;
   for (int v = 0; v < EDS_COUNT; v++) {

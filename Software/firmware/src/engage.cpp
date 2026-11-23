@@ -21,7 +21,7 @@
 #include "caltypes.h"
 #include "gears.h"
 
-#define ENG_TICK_MS 10
+#define ENG_TICK_MS 10 // ms, Tick period
 
 /* Gear-in roles per variant, from the byte tables Ian read out (QA2
  * answer 1) [C]. Each entry is {last (power-flow), V1, V2} for 1st and R.
@@ -34,17 +34,20 @@ static const int8_t roles[2][2][3] = {
     {{CL_C, CL_A, CL_B}, {CL_D, CL_A, CL_B}}, // ENG_VAR_F11
 };
 
+// Clutch roles for gear-in into a gear on this gearbox variant.
 static const int8_t *Roles(int g, int variant) {
   if ((g != GEAR_1 && g != GEAR_R) || variant < 0 || variant > 1)
     return 0;
   return roles[variant][g == GEAR_1 ? 0 : 1];
 }
 
+// The clutch that closes last on gear-in (it takes the drive).
 int Engage::PowerFlowClutch(int g, int variant) {
   const int8_t *r = Roles(g, variant);
   return r ? r[0] : -1;
 }
 
+// Idle until a gear-in is started.
 Engage::Engage()
     : cfg(), phase(ENG_IDLE), gear(0), idx(0), clV1(CL_A), clV2(CL_B),
       clPower(-1), t(0), tPower(0), tNoSlip(0), tAtMax(0), tMaxRamp(-1),
@@ -54,6 +57,7 @@ Engage::Engage()
     p[i] = 0;
 }
 
+// Start a gear-in from N into 1st or R; false for another gear.
 bool Engage::Start(int g, const EngageConfig &c) {
   const int8_t *r = Roles(g, c.variant);
   if (!r)
@@ -87,6 +91,7 @@ int32_t Engage::FillPressure(int cl, int32_t tIn, int32_t fillTotal,
   return Cal::Curve(c.pfcg, in.temp);
 }
 
+// Run the gear-in one 10 ms step (fill, power, close).
 void Engage::Tick(const EngageInputs &in) {
   if (!Active())
     return;

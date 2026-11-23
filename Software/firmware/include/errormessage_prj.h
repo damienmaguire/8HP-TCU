@@ -16,10 +16,14 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+/*
+ * Project error list for the libopeninv error log: each entry is a name
+ * and how it is shown (STOP = TCU goes safe, WARN / DISPLAY = logged only).
+ */
 #ifndef ERRORMESSAGE_PRJ_H_INCLUDED
 #define ERRORMESSAGE_PRJ_H_INCLUDED
 
-#define ERROR_BUF_SIZE 16
+#define ERROR_BUF_SIZE 16 // entries in the error log
 
 #define ERROR_MESSAGE_LIST                                                     \
   ERROR_MESSAGE_ENTRY(CANTIMEOUT, ERROR_DISPLAY)                               \

@@ -16,8 +16,13 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+/*
+ * Valve outputs: maps the logical valves (A..E, SYS, ch7, PZYL ...) onto
+ * MAX22200 chip channels, sends the currents and collects the faults.
+ */
 #include "valveout.h"
 
+// No chips attached, every valve unmapped.
 ValveOut::ValveOut() : ok(false), lost(false) {
   for (int i = 0; i < VALVE_MAX_CHIPS; i++) {
     chips[i] = 0;
@@ -29,16 +34,19 @@ ValveOut::ValveOut() : ok(false), lost(false) {
   }
 }
 
+// Attach a driver chip (0 = not fitted).
 void ValveOut::AttachChip(uint8_t idx, Max22200 *chip) {
   if (idx < VALVE_MAX_CHIPS)
     chips[idx] = chip;
 }
 
+// Valves whose fault means loss of pressure control: A..E and SYS.
 uint16_t ValveOut::CriticalMask() {
   return (1u << EDS_A) | (1u << EDS_B) | (1u << EDS_C) | (1u << EDS_D) |
          (1u << EDS_E) | (1u << EDS_SYS);
 }
 
+// Check the valve map before anything is driven.
 bool ValveOut::Validate() const {
   uint16_t used = 0;
   for (int v = 0; v < EDS_COUNT; v++) {
@@ -57,6 +65,7 @@ bool ValveOut::Validate() const {
   return true;
 }
 
+// Bring the chips up with every channel off.
 bool ValveOut::Init(const Max22200Config &cfg, uint16_t halfScaleMask) {
   ok = false;
   lost = false;
@@ -73,6 +82,7 @@ bool ValveOut::Init(const Max22200Config &cfg, uint16_t halfScaleMask) {
   return good;
 }
 
+// Send the present currents to the chips, every 1 ms.
 void ValveOut::Update(const Eds &eds) {
   if (!ok)
     return;
@@ -92,12 +102,14 @@ void ValveOut::Update(const Eds &eds) {
   }
 }
 
+// Switch every channel off at once (safe state).
 void ValveOut::AllOff() {
   for (int c = 0; c < VALVE_MAX_CHIPS; c++)
     if (chips[c])
       chips[c]->SetOnMask(0);
 }
 
+// Read the chip faults and map them to valves (bit per valve).
 uint16_t ValveOut::PollFaults() {
   uint16_t valves = 0;
   for (int v = 0; v < EDS_COUNT; v++)
