@@ -169,6 +169,7 @@ public:
 
 private:
    /// Learned fill offset of the on-coming clutch, mbar (0 if none).
+   int32_t OverlapFloor(const SasInputs &in, int32_t p) const;
    int32_t FillOfs() const { return cfg.fillOfs ? cfg.fillOfs[onCl] : 0; }
    void TickUpKzu(const SasInputs &in);
    void TickUpKab(const SasInputs &in);

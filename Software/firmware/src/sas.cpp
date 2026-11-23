@@ -381,6 +381,22 @@ void SasShift::TickUpKzu(const SasInputs &in) {
   out.pKzu = Clamp(p, 0, cfg.pMax);
 }
 
+// Overlap rule (BMW TIS: "all shifts overlap"): while the on-coming clutch
+// is still filling it carries no torque yet, so the off-going one must not
+// let go. Its pressure is kept at least at its own fill (kiss-point)
+// pressure until the on-coming clutch is past its fill; after that the
+// normal ramp down applies. Without this the KL_PGOMTKAB gradient could
+// bring it to 0 first and the drive would drop out for a moment (flare).
+int32_t SasShift::OverlapFloor(const SasInputs &in, int32_t p) const {
+  uint8_t z = out.zKzu;
+  bool filling = z == KZU_WAIT || z == KZU_QUICK_FILL || z == KZU_FILL_EQ_UP ||
+                 z == KZU_FILL_EQ_DOWN;
+  if (!filling)
+    return p;
+  int32_t floor = Cal::Curve(Cal::Clutch()[offCl].pfcg, in.temp);
+  return p < floor ? floor : p;
+}
+
 // Upshift, off-going clutch: hold, ramp down, open at sync.
 void SasShift::TickUpKab(const SasInputs &in) {
   const UpShiftCal &u = Cal::Up()[pair];
@@ -407,6 +423,7 @@ void SasShift::TickUpKab(const SasInputs &in) {
   case KAB_RAMP_UP:
     p = Ramp(pKabStart, Cal::Map(u.pkab, in.n_t, in.m_t), tKab,
              tKabRampEnd - (tShift - tKab));
+    p = OverlapFloor(in, p);
     if (tShift >= tKabRampEnd) {
       out.pKab = p;
       EnterKab(KAB_SHIFT_P_UP);
@@ -426,6 +443,7 @@ void SasShift::TickUpKab(const SasInputs &in) {
     // Coast: the GLS sits on KAB (see GlsUpdate).
     if (glsOnKab)
       p -= out.gls;
+    p = OverlapFloor(in, p);
     // Inertia phase starts once the input speed has left the old gear's
     // sync by NS_SYNISTE (350 rpm), or the on-coming clutch is closing.
     if (Abs(in.ndSynIst) > u.ns_synist || out.zKzu == KZU_RAMP3 ||
@@ -443,6 +461,7 @@ void SasShift::TickUpKab(const SasInputs &in) {
     p = pKabBase;
     if (glsOnKab)
       p -= out.gls;
+    p = OverlapFloor(in, p);
     if (BeforeSync(in.tSyn, u.t_synkabe) || out.zKzu == KZU_RAMP3 ||
         out.zKzu == KZU_IDLE)
       EnterKab(KAB_END);

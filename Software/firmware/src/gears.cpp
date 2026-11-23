@@ -18,7 +18,10 @@
  */
 #include "gears.h"
 
-/* Applied elements per gear, indexed by enum Gear. [C] */
+/* Applied elements per gear, indexed by enum Gear. [C]
+ * BMW TIS names the same elements B1 = A, B2 = B, K1 = C, K2 = D, K3 = E;
+ * its shift-element table matches this one cell for cell [C-TIS]. Exactly
+ * three elements are closed in every gear. */
 static const uint8_t gearMask[GEAR_COUNT] = {
     0,                                                // N (B is only pre-filled)
     CLUTCH_BIT(CL_A) | CLUTCH_BIT(CL_B) | CLUTCH_BIT(CL_C), // 1 = A B C
@@ -32,7 +35,15 @@ static const uint8_t gearMask[GEAR_COUNT] = {
     CLUTCH_BIT(CL_A) | CLUTCH_BIT(CL_B) | CLUTCH_BIT(CL_D), // R = A B D
 };
 
-/* Ratios from D_i_TargetGear @0x201FBC in the 330e image [C]. */
+/* Ratios from D_i_TargetGear @0x201FBC in the 330e image [C]; the F11
+ * 8HP45 constant @0x4C7DC has the same values. Used for both gearboxes.
+ *
+ * Reference only, NOT used: BMW TIS, G30 520e 8HPCC (the later 8HP
+ * gearset) [C-TIS]:
+ *   1 5.000  2 3.200  3 2.143  4 1.720  5 1.314  6 1.000  7 0.822
+ *   8 0.640  R 3.456
+ * Starting point for a future G-series variant; check it against that
+ * unit's own calibration first. Do not put it in the F11 / 330e rows. */
 static const int32_t gearRatio[GEAR_COUNT] = {
     0, 4714, 3143, 2106, 1667, 1285, 1000, 839, 667, 3306,
 };

@@ -1340,6 +1340,160 @@ static void TestDriveMode() {
   CHECK_EQ(Cal::ActiveMode(), DM_NORMAL);
 }
 
+/* TIS cross-check: in a steady gear exactly 3 elements are applied, and
+ * the interlock does not tighten the 4-in-a-shift rule. */
+static void TestSteadyStateThree() {
+  Tcu t;
+  t.Configure(Cfg());
+  TcuInputs in = In();
+  t.Ready();
+  CHECK(RunTicks(t, in, 2));
+  CHECK(EngageTo(t, in, SEL_D));
+  in.n_ab = 1000;
+  in.n_t = Gears::SyncSpeed(1, 1000);
+  bool saw4 = false;
+  for (int g = 1; g <= 8; g++) {
+    in.gearReq = (uint8_t)g;
+    for (int i = 0; i < 600 && !(t.Out().gear == g && t.Out().mode == TCU_DRIVE); i++) {
+      CHECK(RunTicks(t, in, 1));
+      if (t.Out().mode == TCU_SHIFT && Gears::CountClutches(t.Out().applied) == 4)
+        saw4 = true;
+      CHECK(Gears::CountClutches(t.Out().applied) <= 4); // never 5
+    }
+    CHECK(RunTicks(t, in, 5));
+    CHECK_EQ(t.Out().gear, g);
+    CHECK_EQ(t.Out().mode, TCU_DRIVE);
+    CHECK_EQ(Gears::CountClutches(t.Out().applied), 3);
+    CHECK_EQ(t.Out().applied, Gears::ClutchMask(g));
+  }
+  CHECK(saw4); // overlap shifts do use the fourth element
+}
+
+/* TIS park rules: engage only stopped, release needs the footbrake, the
+ * magnet is never on for more than 1 s. */
+static void TestParkTis() {
+  TcuConfig c = Cfg();
+  c.parkCtrl = true;
+  c.parkEngKmh = 5;
+  c.nabPerKmh = 25;
+  c.parkEngNab = 5;
+  c.parkNeedBrake = true;
+  c.parkMagMaxMs = 5000; // asks for more than the hard 1 s limit
+  Tcu t;
+  t.Configure(c);
+  TcuInputs in = In();
+  in.temp = 40;
+  t.Ready();
+  CHECK(RunTicks(t, in, 2));
+  // P asked while rolling at 4 km/h (100 rpm output): held in N, PZYL on
+  in.selector = SEL_P;
+  in.n_ab = 100;
+  for (int i = 0; i < 100; i++)
+    t.Tick10ms(in);
+  CHECK_EQ(t.Out().mode, TCU_NEUTRAL);
+  CHECK(t.Out().parkInhibit);
+  CHECK(t.Out().pzylI > 0);
+  // Still creeping at 5 rpm (well under 1 km/h): still held
+  in.n_ab = 5;
+  for (int i = 0; i < 50; i++)
+    t.Tick10ms(in);
+  CHECK_EQ(t.Out().mode, TCU_NEUTRAL);
+  CHECK(t.Out().parkInhibit);
+  // km/h rule on its own: 6 km/h is too fast even with the rpm check off
+  {
+    TcuConfig k = c;
+    k.parkEngNab = 0;
+    Tcu u;
+    u.Configure(k);
+    TcuInputs ui = In();
+    ui.temp = 40;
+    u.Ready();
+    u.Tick10ms(ui);
+    ui.selector = SEL_P;
+    ui.n_ab = 6 * 25;
+    for (int i = 0; i < 50; i++)
+      u.Tick10ms(ui);
+    CHECK_EQ(u.Out().mode, TCU_NEUTRAL);
+    ui.n_ab = 4 * 25;
+    for (int i = 0; i < 20; i++)
+      u.Tick10ms(ui);
+    CHECK_EQ(u.Out().mode, TCU_PARK);
+  }
+  // Stopped: the 150 ms delay runs, then P with PZYL and magnet off
+  in.n_ab = 0;
+  for (int i = 0; i < 16; i++)
+    t.Tick10ms(in);
+  CHECK_EQ(t.Out().mode, TCU_PARK);
+  CHECK(!t.Out().parkInhibit);
+  CHECK_EQ(t.Out().pzylI, 0);
+  CHECK(!t.Out().parkMagnet);
+  // Release with pressure but no footbrake: waits
+  in.selector = SEL_D;
+  in.pMeas = 17500;
+  for (int i = 0; i < 50; i++)
+    t.Tick10ms(in);
+  CHECK_EQ(t.Out().mode, TCU_PARK);
+  CHECK(t.Out().parkBrakeWait);
+  CHECK(!t.Out().parkWait);
+  // Brake pressed: 150 ms of brake + 17 bar, then out of P
+  in.brake = true;
+  for (int i = 0; i < 10; i++)
+    t.Tick10ms(in);
+  in.brake = false; // let go half way: the delay starts again
+  t.Tick10ms(in);
+  CHECK_EQ(t.Out().mode, TCU_PARK);
+  in.brake = true;
+  for (int i = 0; i < 14; i++)
+    t.Tick10ms(in);
+  CHECK_EQ(t.Out().mode, TCU_PARK);
+  t.Tick10ms(in);
+  CHECK(t.Out().mode != TCU_PARK);
+  CHECK(!t.Out().parkBrakeWait);
+  // Magnet: on after the release, off by 1 s although ParkMagMax = 5 s
+  CHECK(t.Out().parkMagnet);
+  int onTicks = 0;
+  for (int i = 0; i < 300; i++) {
+    t.Tick10ms(in);
+    if (t.Out().parkMagnet)
+      onTicks++;
+  }
+  CHECK(onTicks <= PARK_MAG_LIMIT_MS / 10);
+  CHECK(!t.Out().parkMagnet);
+  // Pressure gone (motor off) while held by the brake only: no release
+  Tcu v;
+  v.Configure(c);
+  TcuInputs vi = In();
+  vi.temp = 40;
+  vi.pMeas = -1;
+  v.Ready();
+  v.Tick10ms(vi);
+  vi.selector = SEL_P;
+  for (int i = 0; i < 20; i++)
+    v.Tick10ms(vi);
+  CHECK_EQ(v.Out().mode, TCU_PARK);
+  c.parkRelRpm = 700;
+  v.Configure(c);
+  vi.selector = SEL_N;
+  vi.brake = true;
+  for (int i = 0; i < 50; i++)
+    v.Tick10ms(vi);
+  CHECK_EQ(v.Out().mode, TCU_PARK);
+  CHECK(v.Out().parkWait);
+  CHECK(!v.Out().parkBrakeWait);
+}
+
+/* The 1 s limiter used on the park magnet output. */
+static void TestOnTimeLimit() {
+  OnTimeLimit l;
+  int on = 0;
+  for (int i = 0; i < 300; i++)
+    on += l.Tick(true, PARK_MAG_LIMIT_MS, 10) ? 1 : 0;
+  CHECK_EQ(on, 100); // 1 s, then off although still requested
+  CHECK(!l.Tick(true, PARK_MAG_LIMIT_MS, 10));
+  CHECK(!l.Tick(false, PARK_MAG_LIMIT_MS, 10)); // request dropped
+  CHECK(l.Tick(true, PARK_MAG_LIMIT_MS, 10));   // a new pulse is allowed
+}
+
 /* parkSt spot value. */
 static void TestParkState() {
   Tcu t;
@@ -1370,6 +1524,9 @@ void TestTcu() {
   TestManualGear();
   TestTipOverride();
   TestPark();
+  TestParkTis();
+  TestOnTimeLimit();
+  TestSteadyStateThree();
   TestGearInSource();
   TestCh7();
   TestVariants();

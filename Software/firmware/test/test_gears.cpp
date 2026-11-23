@@ -96,7 +96,30 @@ static void TestRatiosAndSteps() {
   CHECK(!Gears::IsDriveGear(GEAR_N));
 }
 
+/* BMW TIS shift-element table (G30 8HPCC), B1 B2 K1 K2 K3 = A B C D E,
+ * x = closed, typed in as TIS shows it. Must match our table [C-TIS]. */
+static void TestTisTable() {
+  // Columns: 1 2 3 4 5 6 7 8 R
+  static const char *const row[5] = {
+      "xxooooxxx", // B1 = A
+      "xxxxxooox", // B2 = B
+      "xoxoxxxoo", // K1 = C
+      "oooxxxxxx", // K2 = D
+      "oxxxoxoxo", // K3 = E
+  };
+  for (int col = 0; col < 9; col++) {
+    int g = col + 1; // 1..8, then 9 = R
+    uint8_t m = 0;
+    for (int e = 0; e < 5; e++)
+      if (row[e][col] == 'x')
+        m |= CLUTCH_BIT(e);
+    CHECK_EQ(Gears::ClutchMask(g), m);
+    CHECK_EQ(Gears::CountClutches(m), 3); // exactly 3 closed in every gear
+  }
+}
+
 void TestGears() {
+  TestTisTable();
   TestClutchTable();
   TestSwapTable();
   TestRatiosAndSteps();

@@ -51,6 +51,11 @@ enum TcuMode
 
 /// Park lock as the TCU drives it (spot value parkSt). Not a sensor
 /// reading: park_in / notpark_in are separate.
+/// Longest the park-hold magnet may be on per energise, ms (OEM 1 s [C]).
+/// It only latches the piston after a release; it is never used to hold
+/// N with no oil pressure (TIS describes that, we do not support it).
+#define PARK_MAG_LIMIT_MS 1000
+
 enum ParkState
 {
    PARK_ENGAGED = 0,   // in P
@@ -129,7 +134,18 @@ struct TcuConfig
    int32_t pzylI;         // PZYL current while released, 0.1 mA (I_EDSPSV
                           // 550 mA [C]; cold offset added, I: PSV = PZYL)
    int32_t parkMagMinMs;  // park magnet on at least (100 ms [C])
-   int32_t parkMagMaxMs;  // and at most (1000 ms [C]) per release
+   int32_t parkMagMaxMs;  // and at most (1000 ms [C]) per release; capped at
+                          // PARK_MAG_LIMIT_MS whatever the parameter says
+   // Park engage (TIS cross-check T.3 / T.4). N -> P only once the car is
+   // below parkEngKmh (TIS: never above 5 km/h) AND the output shaft is
+   // below parkEngNab (OEM N_ABBRTVPSEIN 5 rpm [C], the stricter of the
+   // two). Until then the TCU stays in N with PZYL still energised.
+   int32_t parkEngKmh;    // km/h, 0 = no km/h check
+   int32_t nabPerKmh;     // output rpm per km/h (axle ratio and tyre [I])
+   int32_t parkEngNab;    // rpm output speed, 0 = no rpm check
+   // Park release needs the footbrake (TIS: footbrake + R/D/N). false =
+   // bypassed (bench only).
+   bool parkNeedBrake;
 
    // Gear-in (11 Q9d): minimum line pressure, and a pressure source: the
    // pump has delivered for gearInPumpMs or the motor turns at gearInMotRpm
@@ -202,6 +218,7 @@ struct TcuInputs
    bool pumpFault;    // LIN pump reports a fault class
    int32_t pedal;     // accelerator pedal, % (TCC schedule)
    bool tccFault;     // lock-up slip fault: keep the TCC open
+   bool brake;        // footbrake pressed (VCU CAN or BrakeIn parameter)
 };
 
 struct TcuOutputs
@@ -229,11 +246,28 @@ struct TcuOutputs
    int32_t pzylI;       // park cylinder valve current, 0.1 mA
    bool parkMagnet;     // park-hold magnet on
    bool parkWait;       // leaving P, waiting for motor speed or pressure
+   bool parkBrakeWait;  // leaving P, waiting for the footbrake
+   bool parkInhibit;    // P selected but the car still moves: held in N
    bool tipAuto;        // Auto with a tip override running
    bool gearInWait;     // gear-in held: no pressure source yet
    bool inertia;        // the running shift is in its inertia phase
    uint8_t parkState;   // ParkState
    bool tccLocked;      // TCC lock-up commanded closed
+};
+
+/// One energise of an output never lasts longer than maxMs: after that it
+/// is switched off and stays off until the request goes away and comes
+/// back. Used on the park magnet so a stuck request (or the bench test)
+/// cannot cook the coil or pretend to hold N without oil pressure.
+class OnTimeLimit
+{
+public:
+   OnTimeLimit() : onMs(0) {}
+   /// Call every tickMs; returns whether the output may be on now.
+   bool Tick(bool request, int32_t maxMs, int32_t tickMs);
+
+private:
+   int32_t onMs;
 };
 
 class Tcu

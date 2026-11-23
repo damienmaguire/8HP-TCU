@@ -148,7 +148,7 @@ static bool driverFault = false;
 static bool configError = false;
 
 // Latest decoded CAN1 input (canif.h; EcuType picks the protocol).
-static volatile CanRx canRx = {SEL_N, 0, 0, 0, 0};
+static volatile CanRx canRx = {SEL_N, 0, 0, 0, 0, false};
 static uint8_t f11TqCounter = 0;
 static uint8_t tqCeilCounter = 0;
 static uint8_t f11TqQual = 0; // 0x0B0 qualifier and absolute target, Nm
@@ -230,6 +230,10 @@ static void ConfigureTcu() {
   c.pzylI = Param::GetInt(Param::PzylCurrent) * 10;
   c.parkMagMinMs = Param::GetInt(Param::ParkMagMin);
   c.parkMagMaxMs = Param::GetInt(Param::ParkMagMax);
+  c.parkEngKmh = Param::GetInt(Param::ParkEngKmh);
+  c.nabPerKmh = Param::GetInt(Param::NabPerKmh);
+  c.parkEngNab = Param::GetInt(Param::ParkEngNab);
+  c.parkNeedBrake = Param::GetInt(Param::ParkBrake) != PARKBRAKE_BYPASS;
   c.gearInMinP = Param::GetInt(Param::GearInMinP);
   // A pump that cannot run (disabled, F11) counts as never delivering.
   c.gearInPumpMs = Param::GetInt(Param::GearInPumpMs);
@@ -718,6 +722,8 @@ static void Ms1Task() {
 
 static int32_t atfTemp = 40;
 static int32_t vbatmV = 12000;
+static OnTimeLimit parkMagLimit; // park magnet: at most 1 s per energise
+static bool parkMagOn = false;   // park magnet output as driven
 
 // Main 10 ms task: inputs, TCU, outputs, CAN and spot values.
 static void Ms10Task() {
@@ -857,6 +863,14 @@ static void Ms10Task() {
     in.pedal = pp;
   }
   in.tccFault = tccSlip.Fault();
+  // Footbrake for the park release: from the VCU frame (lost with CAN),
+  // from the BrakeIn parameter, or bypassed on the bench (then the TCU
+  // does not ask for it at all, see ConfigureTcu).
+  switch (Param::GetInt(Param::ParkBrake)) {
+  case PARKBRAKE_PARAM: in.brake = Param::GetBool(Param::BrakeIn); break;
+  case PARKBRAKE_BYPASS: in.brake = true; break;
+  default: in.brake = canOk && canRx.brake; break;
+  }
   // LIN pump: delivering time and faults (diagnosis blanked below the
   // load-off voltage, as the OEM does [C]).
   bool uv = Param::GetInt(Param::UvLimit) > 0 && vbatmV < Param::GetInt(Param::UvLimit);
@@ -931,9 +945,13 @@ static void Ms10Task() {
   // Discrete outputs. Park-hold magnet (NCV8402, PC7): driven by the park
   // sequence when ParkCtrl is on (Ian 12.1, 100 ms .. 1 s after a release),
   // plus the bench test at standstill in P or N.
+  // Either way one energise lasts at most 1 s (PARK_MAG_LIMIT_MS); the
+  // bench test has to be switched off and on again for another pulse.
   bool standstillPN = in.n_ab == 0 && (o.mode == TCU_PARK || o.mode == TCU_NEUTRAL);
-  if (!o.safeOutputs && (o.parkMagnet ||
-                         (Param::GetBool(Param::ParkHoldTest) && standstillPN)))
+  bool magReq = !o.safeOutputs &&
+                (o.parkMagnet || (Param::GetBool(Param::ParkHoldTest) && standstillPN));
+  parkMagOn = parkMagLimit.Tick(magReq, PARK_MAG_LIMIT_MS, 10);
+  if (parkMagOn)
     DigIo::park_hold.Set();
   else
     DigIo::park_hold.Clear();
@@ -1071,7 +1089,10 @@ static void Ms10Task() {
   Param::SetInt(Param::tipAuto, o.tipAuto);
   Param::SetInt(Param::pCh7, o.pCh7);
   Param::SetInt(Param::iPZYL, eds.Setpoint(EDS_PZYL) / 10);
-  Param::SetInt(Param::parkMag, o.parkMagnet && !o.safeOutputs);
+  Param::SetInt(Param::parkMag, parkMagOn);
+  Param::SetInt(Param::parkInh, o.parkInhibit);
+  Param::SetInt(Param::brake, in.brake);
+  Param::SetInt(Param::parkBrkW, o.parkBrakeWait);
   {
     const VariantCal &v = Cal::Active();
     Param::SetInt(Param::solSetAct, Cal::ActiveSolSet());

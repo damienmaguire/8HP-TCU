@@ -56,6 +56,7 @@ struct CanRx
    int16_t torque;    // Nm, actual motor torque
    int16_t motorRpm;  // rpm
    uint8_t tips;      // bit 0 tip up, bit 1 tip down (held)
+   bool brake;        // footbrake pressed (VCU byte 6 bit 2; false if not sent)
 };
 
 /// What the TCU puts on the bus.

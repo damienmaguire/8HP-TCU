@@ -53,6 +53,14 @@
  * this count [I].
  *
  * A violation sends the TCU to its safe state.
+ *
+ * "Open" here is the commanded state, not a measured one. On the 8HP only
+ * B is pushed open by oil pressure; A, C, D and E are returned by springs
+ * [C-TIS]. So with no line pressure (motor and pump stopped) B may stay
+ * closed even with its valve vented. Nothing in the firmware relies on B
+ * being open without pressure: gear-in waits for a pressure source, N
+ * keeps B pre-filled anyway, and while driving there is always line
+ * pressure. Bench note in the README.
  */
 
 enum InterlockResult

@@ -34,8 +34,15 @@ void TestCanIf() {
   CHECK_EQ(rx.torque, 300);
   CHECK_EQ(rx.motorRpm, 1000);
   CHECK_EQ(rx.tips, 2);
+  CHECK(!rx.brake);
+  // Byte 6 bit 2: footbrake pressed (park release)
+  const uint8_t fb[7] = {0, 0, 0, 0, 0, 0, 4};
+  CHECK(CanIf::Rx(ECU_NONE_VCU, 768, 768, fb, 7, &rx));
+  CHECK(rx.brake);
+  CHECK_EQ(rx.tips, 0);
   CHECK(CanIf::Rx(ECU_NONE_VCU, 768, 768, f, 6, &rx));
   CHECK_EQ(rx.tips, 0); // DLC 6: no tips
+  CHECK(!rx.brake);     // and no brake
   CHECK(!CanIf::Rx(ECU_NONE_VCU, 768, 769, f, 7, &rx));
   CHECK(!CanIf::Rx(ECU_NONE_VCU, 768, 768, f, 5, &rx));
 

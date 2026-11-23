@@ -33,6 +33,8 @@ struct ShiftRun {
   std::vector<int> glsKzu, glsKab; // states seen while the GLS was non-zero
   int syncToIdleMs = -1;           // upshift: from reaching sync to KZU idle
   bool coast = false;
+  int kzuAtKabEnd = -1;    // on-coming state when the off-going let go
+  bool kabDroppedEarly = false; // off-going at 0 while on-coming still fills
 };
 
 static void Push(std::vector<int> &v, int s) {
@@ -103,6 +105,15 @@ static ShiftRun Run(int from, int to, int32_t m_t, bool plantMoves,
     // Note the states a tick started in, and whether it ran the GLS.
     int pk = o.zKzu, pa = o.zKab;
     s.Tick(inputs());
+    if (r.kzuAtKabEnd < 0 && s.Out().zKab == KAB_END)
+      r.kzuAtKabEnd = s.Out().zKzu;
+    {
+      int z = s.Out().zKzu;
+      bool filling = z == KZU_WAIT || z == KZU_QUICK_FILL || z == KZU_FILL_EQ_UP ||
+                     z == KZU_FILL_EQ_DOWN;
+      if (filling && s.Out().zKab != KAB_END && s.Active() && s.Out().pKab <= 0)
+        r.kabDroppedEarly = true;
+    }
     if (s.Out().gls != 0) {
       Push(r.glsKzu, pk);
       Push(r.glsKab, pa);
@@ -168,6 +179,20 @@ static void TestAllPairsFinish() {
     ShiftRun dn = Run(g + 1, g, 100, true);
     CHECK(dn.done);
     CHECK(!dn.timedOut);
+  }
+}
+
+/* Overlap (TIS "all shifts overlap"): the off-going clutch keeps some
+ * pressure until the on-coming one is past its fill and taking torque. */
+static void TestOverlap() {
+  for (int g = 1; g < 8; g++) {
+    for (int d = 0; d < 2; d++) {
+      ShiftRun r = d ? Run(g + 1, g, 150, true) : Run(g, g + 1, 150, true);
+      CHECK(r.done);
+      CHECK(!r.kabDroppedEarly);
+      CHECK(r.kzuAtKabEnd != KZU_WAIT && r.kzuAtKabEnd != KZU_QUICK_FILL &&
+            r.kzuAtKabEnd != KZU_FILL_EQ_UP && r.kzuAtKabEnd != KZU_FILL_EQ_DOWN);
+    }
   }
 }
 
@@ -332,6 +357,7 @@ void TestSas() {
   TestUpshift12();
   TestDownshift21();
   TestAllPairsFinish();
+  TestOverlap();
   TestTimeout();
   TestRejects();
 }

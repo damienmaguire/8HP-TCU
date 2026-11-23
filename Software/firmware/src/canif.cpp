@@ -39,12 +39,15 @@ static bool VcuRx(uint32_t cmdId, uint32_t id, const uint8_t *b, uint8_t dlc,
    *  byte 4-5 motor speed, rpm, signed
    *  byte 6  (ShifterType = CAN) bit 0 tip up, bit 1 tip down, held
    *          while the lever is held. Optional: DLC 6 means no tips.
+   *          bit 2 footbrake pressed (needed to release park with
+   *          ParkBrake = VcuCan; DLC 6 reads as not pressed).
    */
   rx->selector = b[0] & 3;
   rx->gearReq = b[1];
   rx->torque = (int16_t)(b[2] | (b[3] << 8));
   rx->motorRpm = (int16_t)(b[4] | (b[5] << 8));
   rx->tips = dlc >= 7 ? (b[6] & 3) : 0;
+  rx->brake = dlc >= 7 && (b[6] & 4) != 0;
   return true;
 }
 

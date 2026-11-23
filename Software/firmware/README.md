@@ -314,6 +314,20 @@ and reports gear 6. Faults latch. `FaultClear = 1` is accepted only at
 standstill in P or N; it restarts the drivers and leaves the safe state if
 the cause has gone.
 
+**Bench note, clutch B:** only B is pushed open by oil pressure; A, C, D
+and E are returned by springs (BMW TIS). With the motor and pump stopped
+B can stay closed even with its valve at 0 A, so on the bench do not take
+"B valve vented" as "B open" without line pressure. The firmware never
+does: gear-in waits for a pressure source, N keeps B pre-filled, and while
+driving there is always line pressure. Shifts overlap: the releasing
+clutch is held at a low pressure until the on-coming one carries the
+torque (KAB hold / shift-pressure phases), so 4 clutches are briefly
+applied in a shift, never 5; in a gear exactly 3. On upshifts the
+off-going clutch is kept at least at its own fill pressure (`KL_PFCG`)
+while the on-coming one is still filling: the OEM `KF_PKAB` target and
+the `KL_PGOMTKAB` gradient can reach 0 bar before that, which would drop
+the drive for a moment.
+
 Critical faults: driver fault on A..SYS, chip lost, interlock rejection,
 battery below `UvLimit` (OEM 7.4 V), input/output speed ratio not matching
 the engaged gear for `GearChkMs`, invalid valve map.
@@ -333,8 +347,10 @@ agreed (Q5). Values little endian.
 * RX `CanCmdId` (default 0x300): byte 0 selector (0=P 1=R 2=N 3=D, used
   when `ShifterType = CAN`), byte 1 gear request (0 = hold, 1..8, used
   when `ShiftMode = VCU`), bytes 2-3 actual motor torque Nm (signed),
-  bytes 4-5 motor rpm (signed), byte 6 (optional, `ShifterType = CAN`)
-  bit 0 tip up, bit 1 tip down.
+  bytes 4-5 motor rpm (signed), byte 6 (optional) bit 0 tip up, bit 1
+  tip down (both only with `ShifterType = CAN`), bit 2 footbrake pressed
+  (needed to release park with `ParkBrake = VcuCan`; a 6-byte frame reads
+  as not pressed).
   If it stops for `CanTimeout` ms the TCU posts `CANTIMEOUT`, uses
   `CanLossTq` for line pressure (default 600 Nm, the OEM substitute
   `D_m_IstVM_Default`) and follows `CanLossMode`: 1 (default, Damien's
@@ -596,6 +612,30 @@ Implemented:
   for `ParkMagMin`..`ParkMagMax` (100 ms .. 1 s) after a release.
   `ParkCtrl` is 0 by default (outputs stay off) until the bench confirms
   the PZYL channel and the sequence.
+* Park checks from the TIS cross-check (Ian, T.3 / T.4):
+  * **Engage** (N -> P): only below `ParkEngKmh` (5 km/h, TIS) and with
+    the output shaft below `ParkEngNab` (5 rpm, OEM `N_ABBRTVPSEIN`, the
+    stricter one). km/h is worked out from the output speed with
+    `NabPerKmh` (output rpm per km/h, default 25 [I]: set it from the
+    axle ratio and tyre size). Until then the TCU stays in N (`parkInh`
+    = 1) with PZYL still on; only then do PZYL and the magnet go off.
+  * **Release** (P -> R / D / N): 17 bar stable for `ParkPNDelay`
+    (150 ms) or the motor at `ParkRelRpm`, **and** the footbrake. The
+    footbrake comes from `ParkBrake`: 0 = VCU frame byte 6 bit 2
+    (default; lost with CAN), 1 = the `BrakeIn` parameter, 2 = bypass
+    (bench only). `parkBrkW` = 1 while it waits for the brake.
+  * **Magnet**: at most 1 s per energise (`ParkMagMax` is capped at
+    1000 ms, and the output itself is cut after 1 s, the `ParkHoldTest`
+    bench test included). It is not used to hold N with the motor off:
+    with no oil pressure the spring puts the lock in, which is the safe
+    way round. TIS says the OEM magnet holds the piston in N with the
+    engine stopped; that needs a hold current or pulsing we have not
+    measured, so it is not supported.
+  * **Auto-P** (engine off in drive; stopped in R/D with no pedal, belt
+    off and door open, TIS) is **VCU logic**, not done in the TCU: the
+    VCU sends P when it wants the lock in.
+  * In the safe state every coil is off, PZYL included, whatever the
+    speed: there the lock relies on the hydraulics (see "Safe state").
 * Gear-in source rule (Ian 11 Q9d [I]): N -> D/R only after the LIN pump
   has delivered for `GearInPumpMs` (1 s) or with the motor at
   `GearInMotRpm` (100 rpm), and with line pressure at least `GearInMinP`
@@ -671,7 +711,9 @@ parameters to set once the value is known:
 | Gearbox type (tables, gear-in last clutch, ch7 default, LIN pump) | `GearboxType` | 0 = 8HP75 330e | Ian QA2, F11 diff |
 | Channel 7 (K0 / TCC) | `Ch7Mode`, `K0Press`, `TccPress`, `TccOnRpm`, `TccOffRpm`, `TccMinGear`, `TccRamp` | variant default (F11 TCC, 330e K0); K0 0 mbar (open); TCC 6000 mbar, 1500 / 1200 rpm, from 2nd, 200 mbar/10 ms (all TBD) | bench |
 | Park release | `ParkRelRpm`, `ParkRelP`, `ParkRelHold`, `ParkPNDelay` | 700 rpm, 17000 mbar, 2000 ms, 150 ms | Ian 11 Q9d [C] |
-| Park outputs | `ParkCtrl`, `PzylCurrent`, `ParkMagMin`, `ParkMagMax` | off, 550 mA, 100 ms, 1000 ms | Ian 12.1, bench |
+| Park outputs | `ParkCtrl`, `PzylCurrent`, `ParkMagMin`, `ParkMagMax` | off, 550 mA, 100 ms, 1000 ms (max 1000) | Ian 12.1, bench |
+| Park engage limit | `ParkEngKmh`, `NabPerKmh`, `ParkEngNab` | 5 km/h, 25 rpm per km/h [I], 5 rpm | TIS, `N_ABBRTVPSEIN` [C] |
+| Park release footbrake | `ParkBrake`, `BrakeIn` | VcuCan (required), off | TIS; 2 = bench bypass |
 | Gear-in pressure source | `GearInMinP`, `GearInPumpMs`, `GearInMotRpm` | 8000 mbar, 1000 ms, 100 rpm | Ian 11 Q9d [I] |
 | Pump fault reaction | `PumpFaultAct`, `PumpFaultRpm` | report, 600 rpm | Ian 11 Q9a [I] |
 | Manual gear / tips | `ManualGear`, `TipOverride`, `Tip12Deb` | Selector, 0 (tips ignored in Auto), 30 ms | Damien |
@@ -741,7 +783,7 @@ retired ids stay free and no id changes its name).
 | Gear | `gear`, `target`, `selGear` (ManualGear / VCU request, else the TCU target; N in P/N, R in R), `opmode`, `zkzu`, `zkab`, `engphase`, `inertia`, `drvMode`, `shiftMd` |
 | Line pressure | `pSys` requested, `pSysMeas` measured (-1: no sensor on V4) |
 | LIN pump | `lpState`, `lpRpm`, `lpCurr`, `lpVolt`, `lpEb0`, `lpEb1`, `lpClass`, `lpBusFlt` |
-| Park | `parkSt` (0 Engaged, 1 Releasing, 2 Released, 3 Engaging, 4 Unheld = INIT / safe), `parkMag` |
+| Park | `parkSt` (0 Engaged, 1 Releasing, 2 Released, 3 Engaging, 4 Unheld = INIT / safe), `parkMag` (as driven), `parkWait` (pressure), `parkBrkW` (footbrake), `brake`, `parkInh` (P held off: still moving) |
 | CAN / supply | `canLoss`, `canAct`, `tq0B0` (Nm, absolute 0x0B0 target, 0 = none), `tqQual`, `t15` |
 | Lever | `lvMove` (raw move / code), `lvPBtn`, `lvState` (P R N D M), `lvCrcErr`, `lvCntErr`, `lvTmo` |
 | Variant | `solSetAct` (SolCurveSet in use), `tqClass`, `revLimNm`, `safeOfsNm` (size data [I]), `k0Present` |

@@ -264,7 +264,12 @@ void Tcu::ParkOutputs(const TcuInputs &in) {
   out.pzylI = cfg.parkCtrl && released
                   ? cfg.pzylI + Cal::Interp(pzT, pzOfs, 4, in.temp)
                   : 0;
-  out.parkMagnet = cfg.parkCtrl && relMs >= 0 && relMs < cfg.parkMagMaxMs &&
+  // The magnet only latches the piston for at most 1 s after a release.
+  // It is never kept on to hold N with the motor (and so the oil pressure)
+  // off: without pressure or magnet the spring puts the lock in, which is
+  // the safe way round.
+  int32_t magMax = cfg.parkMagMaxMs < PARK_MAG_LIMIT_MS ? cfg.parkMagMaxMs : PARK_MAG_LIMIT_MS;
+  out.parkMagnet = cfg.parkCtrl && relMs >= 0 && relMs < magMax &&
                    (out.mode != TCU_PARK || relMs < cfg.parkMagMinMs);
 }
 
@@ -426,6 +431,7 @@ void Tcu::Tick10ms(const TcuInputs &in) {
   int wantDir = in.selector == SEL_D ? GEAR_1 : (in.selector == SEL_R ? GEAR_R : GEAR_N);
   int32_t minLine = 0;
   uint8_t allowed = 0;
+  out.parkInhibit = false;
 
   switch (out.mode) {
   case TCU_PARK:
@@ -434,6 +440,7 @@ void Tcu::Tick10ms(const TcuInputs &in) {
     SetNeutral(in);
     allowed = CLUTCH_BIT(CL_B);
     out.parkWait = false;
+    out.parkBrakeWait = false;
     if (in.selector == SEL_P) {
       pnMs = 0;
       break;
@@ -444,9 +451,13 @@ void Tcu::Tick10ms(const TcuInputs &in) {
     // Until then the driver sees "waiting" and the car stays in P.
     // Leaving P: the lock comes out only with the motor turning or enough
     // measured pressure (11 Q9d), then T_VPARKSPPN to N.
+    // The driver must also hold the footbrake (TIS release conditions:
+    // brake pressed and R, D or N selected). Both have to stay true for the
+    // whole P -> N delay, so 17 bar must be stable for that long.
     minLine = cfg.parkRelP;
-    if (!ParkReleaseOk(cfg, in)) {
-      out.parkWait = true;
+    out.parkWait = !ParkReleaseOk(cfg, in);
+    out.parkBrakeWait = cfg.parkNeedBrake && !in.brake;
+    if (out.parkWait || out.parkBrakeWait) {
       pnMs = 0;
       break;
     }
@@ -464,6 +475,22 @@ void Tcu::Tick10ms(const TcuInputs &in) {
     allowed = CLUTCH_BIT(CL_B);
     out.gearInWait = false;
     if (in.selector == SEL_P) {
+      // In plain words: P is only engaged once the car has (almost) stopped.
+      // Dropping the pawl into a turning output would be refused by the
+      // pawl or break it, so above ParkEngKmh, or while the output shaft
+      // still turns at ParkEngNab or more, the TCU stays in N: clutches
+      // open, PZYL still holding the lock out. Once stopped, the OEM delay
+      // runs and then PZYL and the magnet are switched off so the spring
+      // pushes the pawl in.
+      int32_t nab = Abs(in.n_ab);
+      bool moving = (cfg.parkEngNab > 0 && nab >= cfg.parkEngNab) ||
+                    (cfg.parkEngKmh > 0 && cfg.nabPerKmh > 0 &&
+                     nab > cfg.parkEngKmh * cfg.nabPerKmh);
+      if (moving) {
+        npMs = 0;
+        out.parkInhibit = true;
+        break;
+      }
       // N -> P after the OEM delay (from a drive range KL_TVPSEIN).
       npMs += TCU_TICK_MS;
       int32_t d = fromDrive ? Cal::Curve(Cal::Active().global->tvpsein, in.temp)
@@ -639,4 +666,16 @@ void Tcu::Tick10ms(const TcuInputs &in) {
   out.applied = Interlock::AppliedMask(il);
   if (r != IL_OK)
     ForceSafe(TF_INTERLOCK);
+}
+
+// Allow an output on for at most maxMs per request (see tcu.h).
+bool OnTimeLimit::Tick(bool request, int32_t maxMs, int32_t tickMs) {
+  if (!request) {
+    onMs = 0;
+    return false;
+  }
+  if (onMs >= maxMs)
+    return false;
+  onMs += tickMs;
+  return true;
 }
