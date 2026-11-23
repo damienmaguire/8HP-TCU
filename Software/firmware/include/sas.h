@@ -114,6 +114,10 @@ struct SasConfig
    int32_t glsGainPct;  // scale on the OEM GLS gains, 0 = GLS off
    int32_t rampMaxDownMs; // timeout ramp for downshifts (no OEM value in the down set)
    int32_t timePct;     // DriveMode shift time scale, % (100 or 0 = cal as is)
+   /* Learned fill-pressure offsets per clutch (A..E), mbar, added to the
+    * fill pressure KL_PFCG of the on-coming clutch (adapt.h). nullptr or
+    * 0 = none. The array must outlive the shift (the glue keeps it). */
+   const int16_t *fillOfs;
 };
 
 struct SasOutputs
@@ -164,6 +168,8 @@ public:
    static int32_t GlsScale(int32_t kp, int32_t err, int64_t acc);
 
 private:
+   /// Learned fill offset of the on-coming clutch, mbar (0 if none).
+   int32_t FillOfs() const { return cfg.fillOfs ? cfg.fillOfs[onCl] : 0; }
    void TickUpKzu(const SasInputs &in);
    void TickUpKab(const SasInputs &in);
    void TickDownKzu(const SasInputs &in);

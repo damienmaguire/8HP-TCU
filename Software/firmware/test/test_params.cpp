@@ -42,8 +42,8 @@ static const Entry entries[] = {PARAM_LIST};
 #undef PARAM_ENTRY
 #undef VALUE_ENTRY
 
-static const int kNextParamId = 223; // keep equal to param_prj.h
-static const int kNextValueId = 2124;
+static const int kNextParamId = 267; // keep equal to param_prj.h
+static const int kNextValueId = 2155;
 
 static const int retired[] = {1, 22, 23, 24, 25, 26, 27, 34, 35, 40, 42, 53, 54, 69, 70, 102, 106, 107, 157, 158, 159, 160, 161, 162, 2037};
 
@@ -150,6 +150,32 @@ static const Frozen frozen[] = {
     {"revLimNm", 2114}, {"safeOfsNm", 2115}, {"k0Present", 2116},
     {"tBoardSrc", 2117}, {"lvMove", 2118}, {"lvPBtn", 2119},
     {"lvState", 2120}, {"lvCrcErr", 2121}, {"lvCntErr", 2122}, {"lvTmo", 2123},
+    {"TqModel", 223}, {"TqModelScale", 224}, {"TqBoostPct", 225},
+    {"MapKpa", 226}, {"TqNoRedVal", 227}, {"PedalPct", 228},
+    {"AdaptEnable", 229}, {"AdaTqMin", 230}, {"AdaTqMax", 231},
+    {"AdaRpmMin", 232}, {"AdaRpmMax", 233}, {"AdaOilMin", 234},
+    {"AdaOilMax", 235}, {"AdaGearMin", 236}, {"AdaGearMax", 237},
+    {"AdaPedalMin", 238}, {"AdaDriveMin", 239}, {"AdaShiftMs", 240},
+    {"AdaBandMs", 241}, {"AdaFlareRpm", 242}, {"AdaStep", 243},
+    {"AdaMax", 244}, {"DiagRBand", 245}, {"DiagRWire", 246},
+    {"TccSlipMax", 247}, {"TccSlipMs", 248}, {"FrzTime", 249},
+    {"FrzRpm", 250}, {"CalSigExp", 251}, {"TccMode", 252},
+    {"TccMinRpm", 253}, {"TccHyst", 254}, {"TccKp", 255},
+    {"TccKi", 256}, {"TccStartP", 257}, {"TccSlipTgt", 258},
+    {"TccSlipGear", 259}, {"TccSlipRpm", 260}, {"StreamEnable", 261},
+    {"StreamBaseId", 262}, {"StreamBus", 263}, {"DiagSpdOpen", 264},
+    {"DiagSpdShort", 265}, {"DiagSpdNoSig", 266},
+    {"tqSrc", 2124}, {"tqUsed", 2125}, {"tqFrozen", 2126},
+    {"adaStat", 2127}, {"adaShifts", 2128}, {"adA_c", 2129},
+    {"adA_w", 2130}, {"adB_c", 2131}, {"adB_w", 2132},
+    {"adC_c", 2133}, {"adC_w", 2134}, {"adD_c", 2135},
+    {"adD_w", 2136}, {"adE_c", 2137}, {"adE_w", 2138},
+    {"dgA", 2139}, {"dgB", 2140}, {"dgC", 2141},
+    {"dgD", 2142}, {"dgE", 2143}, {"dgSys", 2144},
+    {"dgCh7", 2145}, {"dgPos", 2146}, {"dgPzyl", 2147},
+    {"diagPair", 2148}, {"spdInDiag", 2149}, {"spdOutDiag", 2150},
+    {"canBus", 2151}, {"calSig", 2152}, {"tccSlip", 2153},
+    {"tccSlipFlt", 2154},
 };
 
 static const Entry *Find(const char *name) {

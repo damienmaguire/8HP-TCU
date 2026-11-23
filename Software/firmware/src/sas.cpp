@@ -298,7 +298,7 @@ void SasShift::TickUpKzu(const SasInputs &in) {
       EnterKzu(KZU_FILL_EQ_UP);
     break;
   case KZU_FILL_EQ_UP:
-    p = Cal::Curve(cl.pfcg, in.temp) + Cal::Map(u.pofmtn, in.n_t, in.m_t);
+    p = Cal::Curve(cl.pfcg, in.temp) + Cal::Map(u.pofmtn, in.n_t, in.m_t) + FillOfs();
     if (tShift - fillStart >= TScale(cfg, Cal::Map(u.tfcgnt, in.temp, in.n_t))) {
       out.pKzu = p;
       EnterKzu(KZU_RAMP1);
@@ -537,7 +537,7 @@ void SasShift::TickDownKzu(const SasInputs &in) {
       EnterKzu(KZU_FILL_EQ_DOWN);
     break;
   case KZU_FILL_EQ_DOWN:
-    p = Cal::Curve(cl.pfcg, in.temp);
+    p = Cal::Curve(cl.pfcg, in.temp) + FillOfs();
     if (tKzu >= d.t_f) {
       out.pKzu = p;
       EnterKzu(KZU_RAMP1);

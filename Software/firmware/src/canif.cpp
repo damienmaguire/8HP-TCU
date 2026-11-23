@@ -54,7 +54,8 @@ static int VcuTx(const CanTxIn &in, CanFrame out[CANIF_MAX_TX]) {
    *  byte 1  mode (opmode)
    *  byte 2  target gear
    *  byte 3  fault
-   *  byte 4-5 torque intervention request, Nm, signed (0 = none)
+   *  byte 4-5 torque intervention request, Nm, signed; TqNoRedVal
+   *          (default 0) when there is none
    *  byte 6  ATF temperature + 40 degC
    *  byte 7  bit 0 shifting, bit 1 park request, bit 2 safe state,
    *          bit 3 hold motor torque near 0 (gear-in), bit 4 CAN-loss
@@ -67,8 +68,9 @@ static int VcuTx(const CanTxIn &in, CanFrame out[CANIF_MAX_TX]) {
   f.data[1] = o.mode;
   f.data[2] = o.target;
   f.data[3] = o.fault;
-  f.data[4] = o.tqDelta & 0xFF;
-  f.data[5] = (o.tqDelta >> 8) & 0xFF;
+  int32_t tq = o.tqDelta != 0 ? o.tqDelta : in.noRedVal;
+  f.data[4] = tq & 0xFF;
+  f.data[5] = (tq >> 8) & 0xFF;
   int32_t t = in.atfTemp + 40;
   f.data[6] = t < 0 ? 0 : (t > 255 ? 255 : t);
   f.data[7] = (o.mode == TCU_SHIFT ? 1 : 0) | (o.parkRequest ? 2 : 0) |

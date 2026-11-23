@@ -41,7 +41,7 @@ static void Push(std::vector<int> &v, int s) {
 }
 
 static SasConfig Cfg() {
-  SasConfig c;
+  SasConfig c = {};
   c.pMax = 12750;
   c.syncBand = 30;
   c.glsGainPct = 100;
@@ -285,7 +285,47 @@ static void TestUpshiftAfterSync() {
   CHECK_EQ(r.maxKzu, 12750);
 }
 
+// Learned fill offsets (adapt.h) add to the on-coming clutch's fill
+// pressure only, up and down.
+static void TestFillOffset() {
+  const int pairs[2][2] = {{3, 4}, {6, 5}};
+  for (auto &pr : pairs) {
+    int off, on;
+    Gears::SingleSwap(pr[0], pr[1], off, on);
+    int16_t ofs[5] = {0, 0, 0, 0, 0};
+    ofs[on] = 120;
+    ofs[off] = -999; // must not be used
+    SasConfig ca = Cfg(), cb = Cfg();
+    cb.fillOfs = ofs;
+    SasInputs in = {};
+    in.m_t = 100;
+    in.n_t = Gears::SyncSpeed(pr[0], 1000);
+    in.n_mot = in.n_t;
+    in.temp = 60;
+    in.ndSyn = in.n_t - Gears::SyncSpeed(pr[1], 1000);
+    in.tSyn = SAS_TSYN_NONE;
+    SasShift a, b;
+    CHECK(a.Start(pr[0], pr[1], off, on, ca, in));
+    CHECK(b.Start(pr[0], pr[1], off, on, cb, in));
+    int fillState = pr[0] < pr[1] ? KZU_FILL_EQ_UP : KZU_FILL_EQ_DOWN;
+    bool seen = false;
+    int inState = 0; // the first tick in the state still outputs quick fill
+    for (int i = 0; i < 300 && !seen; i++) {
+      a.Tick(in);
+      b.Tick(in);
+      inState = a.Out().zKzu == fillState && b.Out().zKzu == fillState ? inState + 1 : 0;
+      if (inState == 2) {
+        CHECK_EQ(b.Out().pKzu - a.Out().pKzu, 120);
+        CHECK_EQ(b.Out().pKab, a.Out().pKab);
+        seen = true;
+      }
+    }
+    CHECK(seen);
+  }
+}
+
 void TestSas() {
+  TestFillOffset();
   TestGlsScaling();
   TestGlsOwner();
   TestUpshiftAfterSync();

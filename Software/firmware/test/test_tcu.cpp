@@ -877,6 +877,45 @@ static void TestCh7() {
   in.n_ab = NabFor(2, 1100);
   CHECK(RunTicks(t, in, 2));
   CHECK_EQ(t.Out().pCh7, 0); // opens at once
+  // Scheduled mode (TccMode = Schedule): 2nd gear, pedal 0 locks at
+  // 2200 rpm input (placeholder schedule), opens 200 rpm lower.
+  c.tccMode = TCCMODE_SCHEDULE;
+  c.tcc.minRpm = 1100;
+  c.tcc.hystRpm = 200;
+  c.tcc.kp10 = 10;
+  c.tcc.ki10 = 20;
+  c.tcc.startP = 1500;
+  c.tcc.slipTgt = 0;
+  t.Configure(c);
+  in.pedal = 0;
+  in.n_ab = NabFor(2, 2100);
+  CHECK(RunTicks(t, in, 2));
+  CHECK(!t.Out().tccLocked);
+  CHECK_EQ(t.Out().pCh7, 0);
+  in.n_ab = NabFor(2, 2300);
+  CHECK(RunTicks(t, in, 2));
+  CHECK(t.Out().tccLocked);
+  CHECK_EQ(t.Out().pCh7, 1500); // no motor speed: start pressure, no slip
+  // 50 rpm slip: more pressure (RunTicks would reset n_mot to n_t).
+  for (int i = 0; i < 10; i++) {
+    in.n_mot = in.n_t + 50;
+    t.Tick10ms(in);
+  }
+  CHECK(t.Out().pCh7 > 1500 + 50);
+  in.pedal = 100; // more pedal: on speed 3800, but hysteresis from 2200 only
+  CHECK(RunTicks(t, in, 1));
+  CHECK(!t.Out().tccLocked); // 2300 < 3800 - 200
+  in.pedal = 0;
+  CHECK(RunTicks(t, in, 1));
+  CHECK(t.Out().tccLocked);
+  in.tccFault = true; // slip fault: open
+  CHECK(RunTicks(t, in, 1));
+  CHECK(!t.Out().tccLocked);
+  CHECK_EQ(t.Out().pCh7, 0);
+  in.tccFault = false;
+  in.n_mot = 0;
+  c.tccMode = TCCMODE_SIMPLE;
+  t.Configure(c);
   in.selector = SEL_N;
   CHECK(RunTicks(t, in, 2));
   CHECK_EQ(t.Out().pCh7, 0);

@@ -33,8 +33,8 @@
    2. Temporary parameters (id = 0)
    3. Display values
  */
-// Next param id (increase when adding a new parameter!): 223
-// Next value id: 2124. Retired ids are never reused (test_params.cpp).
+// Next param id (increase when adding a new parameter!): 267
+// Next value id: 2155. Retired ids are never reused (test_params.cpp).
 // (ids 9, 101, 103-105 and 108 were free slots and are used below; 102,
 // 106 and 107 were used by an unreleased draft and are left free. The V4
 // update dropped 1, 22-27, 34, 35, 40, 42, 53, 54, 69 and 70; they are
@@ -117,6 +117,15 @@
   PARAM_ENTRY(CAT_VALVE, TccOffRpm, "rpm", 0, 8000, 1200, 178)                 \
   PARAM_ENTRY(CAT_VALVE, TccMinGear, "", 1, 8, 2, 179)                         \
   PARAM_ENTRY(CAT_VALVE, TccRamp, "mbar/10ms", 0, 12000, 200, 180)             \
+  PARAM_ENTRY(CAT_VALVE, TccMode, TCCMODES, 0, 1, 0, 252)                      \
+  PARAM_ENTRY(CAT_VALVE, TccMinRpm, "rpm", 0, 5000, 1100, 253)                 \
+  PARAM_ENTRY(CAT_VALVE, TccHyst, "rpm", 0, 2000, 200, 254)                    \
+  PARAM_ENTRY(CAT_VALVE, TccKp, "0.1mbar/rpm", 0, 1000, 10, 255)               \
+  PARAM_ENTRY(CAT_VALVE, TccKi, "0.1mbar/rpms", 0, 1000, 20, 256)              \
+  PARAM_ENTRY(CAT_VALVE, TccStartP, "mbar", 0, 12000, 1500, 257)               \
+  PARAM_ENTRY(CAT_VALVE, TccSlipTgt, "rpm", 0, 500, 0, 258)                    \
+  PARAM_ENTRY(CAT_VALVE, TccSlipGear, "", 1, 8, 3, 259)                        \
+  PARAM_ENTRY(CAT_VALVE, TccSlipRpm, "rpm", 0, 6000, 1800, 260)                \
   PARAM_ENTRY(CAT_VALVE, PzylCurrent, "mA", 0, 1000, 550, 188)                 \
   PARAM_ENTRY(CAT_SHIFT, ClutchApplyP, "mbar", 5000, 25000, 16500, 80)         \
   PARAM_ENTRY(CAT_SHIFT, LineOffset, "mbar", -5000, 10000, 0, 81)              \
@@ -186,6 +195,17 @@
   PARAM_ENTRY(CAT_COMM, LeverDeb, "frames", 1, 10, 2, 220)                     \
   PARAM_ENTRY(CAT_COMM, LeverMSub, "", 0, 7, 1, 221)                           \
   PARAM_ENTRY(CAT_COMM, LeverB34, LEVERB34S, 0, 1, 0, 222)                     \
+  PARAM_ENTRY(CAT_COMM, TqModel, ONOFF, 0, 1, 0, 223)                          \
+  PARAM_ENTRY(CAT_COMM, TqModelScale, "%", 10, 500, 100, 224)                  \
+  PARAM_ENTRY(CAT_COMM, TqBoostPct, "%", 0, 200, 100, 225)                     \
+  PARAM_ENTRY(CAT_COMM, MapKpa, "kPa", 0, 400, 100, 226)                       \
+  PARAM_ENTRY(CAT_COMM, TqNoRedVal, "Nm", -32768, 32767, 0, 227)               \
+  PARAM_ENTRY(CAT_COMM, PedalPct, "%", -1, 100, -1, 228)                       \
+  PARAM_ENTRY(CAT_COMM, FrzTime, "ms", 0, 60000, 3000, 249)                    \
+  PARAM_ENTRY(CAT_COMM, FrzRpm, "rpm", 0, 5000, 300, 250)                      \
+  PARAM_ENTRY(CAT_COMM, StreamEnable, ONOFF, 0, 1, 0, 261)                     \
+  PARAM_ENTRY(CAT_COMM, StreamBaseId, "", 1, 2044, 1728, 262)                  \
+  PARAM_ENTRY(CAT_COMM, StreamBus, LEVERBUSES, 0, 1, 0, 263)                   \
   PARAM_ENTRY(CAT_IO, GpOut1Func, GPOUTFUNCS, 0, 2, 0, 147)                    \
   PARAM_ENTRY(CAT_IO, GpOut2Func, GPOUTFUNCS, 0, 2, 0, 148)                    \
   PARAM_ENTRY(CAT_IO, GpPwmFreq, "Hz", 10, 20000, 200, 150)                    \
@@ -212,6 +232,30 @@
   PARAM_ENTRY(CAT_LIN, ChgPlugSet, ONOFF, 0, 1, 0, 203)                        \
   PARAM_ENTRY(CAT_LIN, PumpFaultAct, PUMPFAULTS, 0, 2, 0, 194)                 \
   PARAM_ENTRY(CAT_LIN, PumpFaultRpm, "rpm", 0, 3000, 600, 195)                 \
+  PARAM_ENTRY(CAT_ADAPT, AdaptEnable, ONOFF, 0, 1, 0, 229)                     \
+  PARAM_ENTRY(CAT_ADAPT, AdaTqMin, "Nm", 0, 1000, 55, 230)                     \
+  PARAM_ENTRY(CAT_ADAPT, AdaTqMax, "Nm", 0, 1000, 180, 231)                    \
+  PARAM_ENTRY(CAT_ADAPT, AdaRpmMin, "rpm", 0, 8000, 1600, 232)                 \
+  PARAM_ENTRY(CAT_ADAPT, AdaRpmMax, "rpm", 0, 8000, 3200, 233)                 \
+  PARAM_ENTRY(CAT_ADAPT, AdaOilMin, "C", -40, 150, 55, 234)                    \
+  PARAM_ENTRY(CAT_ADAPT, AdaOilMax, "C", -40, 150, 80, 235)                    \
+  PARAM_ENTRY(CAT_ADAPT, AdaGearMin, "", 1, 8, 3, 236)                         \
+  PARAM_ENTRY(CAT_ADAPT, AdaGearMax, "", 1, 8, 7, 237)                         \
+  PARAM_ENTRY(CAT_ADAPT, AdaPedalMin, "%", 0, 100, 2, 238)                     \
+  PARAM_ENTRY(CAT_ADAPT, AdaDriveMin, "s", 0, 3600, 180, 239)                  \
+  PARAM_ENTRY(CAT_ADAPT, AdaShiftMs, "ms", 100, 3000, 500, 240)                \
+  PARAM_ENTRY(CAT_ADAPT, AdaBandMs, "ms", 0, 1000, 100, 241)                   \
+  PARAM_ENTRY(CAT_ADAPT, AdaFlareRpm, "rpm", 10, 1000, 100, 242)               \
+  PARAM_ENTRY(CAT_ADAPT, AdaStep, "mbar", 0, 50, 5, 243)                       \
+  PARAM_ENTRY(CAT_ADAPT, AdaMax, "mbar", 0, 1000, 300, 244)                    \
+  PARAM_ENTRY(CAT_DIAG, DiagRBand, "%", 5, 100, 25, 245)                       \
+  PARAM_ENTRY(CAT_DIAG, DiagRWire, "mOhm", 0, 2000, 150, 246)                  \
+  PARAM_ENTRY(CAT_DIAG, TccSlipMax, "rpm", 0, 2000, 0, 247)                    \
+  PARAM_ENTRY(CAT_DIAG, TccSlipMs, "ms", 0, 10000, 1000, 248)                  \
+  PARAM_ENTRY(CAT_DIAG, CalSigExp, "", 0, 65535, 0, 251)                       \
+  PARAM_ENTRY(CAT_DIAG, DiagSpdOpen, "mV", 0, 3300, 0, 264)                    \
+  PARAM_ENTRY(CAT_DIAG, DiagSpdShort, "mV", 0, 3300, 0, 265)                   \
+  PARAM_ENTRY(CAT_DIAG, DiagSpdNoSig, "rpm", 0, 3000, 300, 266)                \
   PARAM_ENTRY(CAT_TEST, SelectorSet, SELECTORS, 0, 3, 2, 120)                  \
   PARAM_ENTRY(CAT_TEST, GearSet, "", 0, 8, 0, 121)                             \
   PARAM_ENTRY(CAT_TEST, TorqueSet, "Nm", -500, 1000, 0, 122)                   \
@@ -342,7 +386,38 @@
   VALUE_ENTRY(lvState, LEVERSTATES, 2120)                                      \
   VALUE_ENTRY(lvCrcErr, "", 2121)                                              \
   VALUE_ENTRY(lvCntErr, "", 2122)                                              \
-  VALUE_ENTRY(lvTmo, ONOFF, 2123)
+  VALUE_ENTRY(lvTmo, ONOFF, 2123)                                              \
+  VALUE_ENTRY(tqSrc, TQSRCS, 2124)                                             \
+  VALUE_ENTRY(tqUsed, "Nm", 2125)                                              \
+  VALUE_ENTRY(tqFrozen, ONOFF, 2126)                                           \
+  VALUE_ENTRY(adaStat, "", 2127)                                               \
+  VALUE_ENTRY(adaShifts, "", 2128)                                             \
+  VALUE_ENTRY(adA_c, "mbar", 2129)                                             \
+  VALUE_ENTRY(adA_w, "mbar", 2130)                                             \
+  VALUE_ENTRY(adB_c, "mbar", 2131)                                             \
+  VALUE_ENTRY(adB_w, "mbar", 2132)                                             \
+  VALUE_ENTRY(adC_c, "mbar", 2133)                                             \
+  VALUE_ENTRY(adC_w, "mbar", 2134)                                             \
+  VALUE_ENTRY(adD_c, "mbar", 2135)                                             \
+  VALUE_ENTRY(adD_w, "mbar", 2136)                                             \
+  VALUE_ENTRY(adE_c, "mbar", 2137)                                             \
+  VALUE_ENTRY(adE_w, "mbar", 2138)                                             \
+  VALUE_ENTRY(dgA, DIAGCODES, 2139)                                            \
+  VALUE_ENTRY(dgB, DIAGCODES, 2140)                                            \
+  VALUE_ENTRY(dgC, DIAGCODES, 2141)                                            \
+  VALUE_ENTRY(dgD, DIAGCODES, 2142)                                            \
+  VALUE_ENTRY(dgE, DIAGCODES, 2143)                                            \
+  VALUE_ENTRY(dgSys, DIAGCODES, 2144)                                          \
+  VALUE_ENTRY(dgCh7, DIAGCODES, 2145)                                          \
+  VALUE_ENTRY(dgPos, DIAGCODES, 2146)                                          \
+  VALUE_ENTRY(dgPzyl, DIAGCODES, 2147)                                         \
+  VALUE_ENTRY(diagPair, "", 2148)                                              \
+  VALUE_ENTRY(spdInDiag, SPDDIAGS, 2149)                                       \
+  VALUE_ENTRY(spdOutDiag, SPDDIAGS, 2150)                                      \
+  VALUE_ENTRY(canBus, "", 2151)                                                \
+  VALUE_ENTRY(calSig, "", 2152)                                                \
+  VALUE_ENTRY(tccSlip, "rpm", 2153)                                            \
+  VALUE_ENTRY(tccSlipFlt, ONOFF, 2154)
 
 // Generate the version string. This must be formatted without spaces to meet
 // the format requirements of the "units".
@@ -379,6 +454,10 @@
   "6=VCU_Frame"
 #define LEVERBUSES "0=CAN1, 1=CAN2"
 #define LEVERB34S "0=OEM_FCFF, 1=ZV_Gear"
+#define TCCMODES "0=Simple, 1=Schedule"
+#define TQSRCS "0=CAN, 1=Model, 2=Substitute, 3=Param"
+#define DIAGCODES "0=OK, 1=Open, 2=ShortBat, 3=ShortGnd, 4=RHigh, 5=RLow"
+#define SPDDIAGS "0=OK, 1=Open, 2=Short, 3=NoSignal"
 #define LEVERSTATES "0=P, 1=R, 2=N, 3=D, 4=M"
 #define ATFINPUTS "0=TempIn1, 1=TempIn2"
 #define GPOUTFUNCS "0=Off, 1=On, 2=StarterLock"
@@ -415,6 +494,8 @@
 #define CAT_IO "Spare Outputs"
 #define CAT_LIN "LIN Oil Pump"
 #define CAT_TEST "Testing"
+#define CAT_ADAPT "Adaptation"
+#define CAT_DIAG "Diagnostics"
 
 /// Value of a ChanX parameter for a valve that is not on any MAX22200.
 #define CHAN_NOT_FITTED 255

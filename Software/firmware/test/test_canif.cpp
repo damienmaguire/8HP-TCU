@@ -47,7 +47,7 @@ void TestCanIf() {
   o.nMotReq = 700;
   o.parkWait = true;
   o.pCh7 = 6000;
-  CanTxIn in = {&o, 60, LPC_COMM, 769};
+  CanTxIn in = {&o, 60, LPC_COMM, 769, 0};
   CanFrame out[CANIF_MAX_TX];
   CHECK_EQ(CanIf::Tx(ECU_NONE_VCU, in, out), 2);
   CHECK_EQ(out[0].id, 769u);
@@ -61,6 +61,17 @@ void TestCanIf() {
   CHECK_EQ(out[1].data[3], LPC_COMM);
   CHECK_EQ(out[1].data[4] | (out[1].data[5] << 8), 6000);
   CHECK(CanIf::Name(ECU_NONE_VCU)[0] == 'N');
+  // TqNoRedVal: only when there is no intervention.
+  in.noRedVal = 0x7FFF;
+  CanIf::Tx(ECU_NONE_VCU, in, out);
+  CHECK_EQ(out[0].data[4], 0xCE); // -50 Nm still sent as is
+  o.tqDelta = 0;
+  CanIf::Tx(ECU_NONE_VCU, in, out);
+  CHECK_EQ(out[0].data[4], 0xFF);
+  CHECK_EQ(out[0].data[5], 0x7F);
+  in.noRedVal = 0;
+  CanIf::Tx(ECU_NONE_VCU, in, out);
+  CHECK_EQ(out[0].data[4] | out[0].data[5], 0);
 
   // 0x0B0 [C], F11_SAM_ADDSCOPE.md 3: every field we have no value for
   // (slow path, absorbing torque, sync speed) is 0xFFF.

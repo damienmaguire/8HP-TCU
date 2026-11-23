@@ -23,6 +23,7 @@
 #include "gears.h"
 #include "interlock.h"
 #include "sas.h"
+#include "tcc.h"
 #include <stdint.h>
 
 /* TCU top-level state machine, run every 10 ms.
@@ -153,6 +154,8 @@ struct TcuConfig
    int32_t tccOffRpm;     // open below this input speed (TBD)
    uint8_t tccMinGear;    // lowest gear with lock-up (TBD)
    int32_t tccRamp;       // apply ramp, mbar per 10 ms (TBD)
+   uint8_t tccMode;       // TCCMODE_SIMPLE (the rule above) or TCCMODE_SCHEDULE
+   TccConfig tcc;         // TCCMODE_SCHEDULE settings (tcc.h); maxP = tccP
 
    // DriveMode Track (drivemode.h): no Auto upshift on lift-off.
    bool noLiftUpshift;
@@ -197,6 +200,8 @@ struct TcuInputs
    int32_t pMeas;     // measured line pressure, mbar, < 0 = no sensor
    int32_t pumpDeliverMs; // LIN pump delivering this long, ms (0 = not)
    bool pumpFault;    // LIN pump reports a fault class
+   int32_t pedal;     // accelerator pedal, % (TCC schedule)
+   bool tccFault;     // lock-up slip fault: keep the TCC open
 };
 
 struct TcuOutputs
@@ -228,6 +233,7 @@ struct TcuOutputs
    bool gearInWait;     // gear-in held: no pressure source yet
    bool inertia;        // the running shift is in its inertia phase
    uint8_t parkState;   // ParkState
+   bool tccLocked;      // TCC lock-up commanded closed
 };
 
 class Tcu
@@ -276,6 +282,7 @@ private:
    int32_t tipLeft;    // ms of tip override left (Auto)
    bool fromDrive;     // the N -> P delay started from a drive range
    bool tccLocked;
+   Tcc tccCtl;         // scheduled lock-up control (TccMode = Schedule)
 };
 
 #endif // TCU_H

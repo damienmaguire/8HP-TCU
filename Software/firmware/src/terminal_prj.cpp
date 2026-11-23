@@ -36,6 +36,10 @@ static void PrintList(Terminal *t, char *arg);
 static void PrintAtr(Terminal *t, char *arg);
 static void PrintSerial(Terminal *t, char *arg);
 static void PrintErrors(Terminal *t, char *arg);
+static void AdaptSaveCmd(Terminal *t, char *arg);
+static void AdaptResetCmd(Terminal *t, char *arg);
+void AdaptSave();  // stm32_tcu.cpp
+void AdaptReset(); // stm32_tcu.cpp
 
 extern const TERM_CMD TermCmds[] = {{"set", TerminalCommands::ParamSet},
                                     {"get", TerminalCommands::ParamGet},
@@ -52,6 +56,8 @@ extern const TERM_CMD TermCmds[] = {{"set", TerminalCommands::ParamSet},
                                     {"serial", PrintSerial},
                                     {"errors", PrintErrors},
                                     {"reset", TerminalCommands::Reset},
+                                    {"adaptsave", AdaptSaveCmd},
+                                    {"adaptreset", AdaptResetCmd},
                                     {NULL, NULL}};
 
 static void PrintList(Terminal *t, char *arg) {
@@ -103,4 +109,18 @@ static void PrintSerial(Terminal *t, char *arg) {
   (void)arg;
   fprintf(t, "%X%X%X\r\n", DESIG_UNIQUE_ID2, DESIG_UNIQUE_ID1,
           DESIG_UNIQUE_ID0);
+}
+
+// Clutch adaptation: its own flash page, never touched by save / load /
+// defaults. "adaptreset" is the only way to clear the learned offsets.
+static void AdaptSaveCmd(Terminal *t, char *arg) {
+  (void)arg;
+  AdaptSave();
+  fprintf(t, "Adaptation saved\r\n");
+}
+
+static void AdaptResetCmd(Terminal *t, char *arg) {
+  (void)arg;
+  AdaptReset();
+  fprintf(t, "Adaptation reset\r\n");
 }

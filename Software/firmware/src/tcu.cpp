@@ -76,6 +76,8 @@ void Tcu::ForceSafe(TcuFault f) {
   out.tipAuto = false;
   tipLeft = 0;
   tccLocked = false;
+  out.tccLocked = false;
+  tccCtl.Reset();
   tqRamp = 0;
   out.gear = GEAR_LIMP; // what the hydraulics fall into with no current
   out.target = GEAR_LIMP;
@@ -273,20 +275,35 @@ void Tcu::Ch7(const TcuInputs &in) {
     p = cfg.k0P;
   } else if (cfg.ch7Mode == CH7_TCC) {
     // Lock-up only in a steady drive gear, never during a shift, gear-in
-    // or in N/P. Opens at once, applies along tccRamp [I: TBD values].
+    // or in N/P, and never with a lock-up slip fault. Opens at once.
     bool can = out.mode == TCU_DRIVE && Gears::IsDriveGear(out.gear) &&
-               out.gear != GEAR_R && out.gear >= cfg.tccMinGear;
-    if (!can)
-      tccLocked = false;
-    else if (tccLocked ? in.n_t < cfg.tccOffRpm : in.n_t >= cfg.tccOnRpm)
-      tccLocked = !tccLocked;
-    if (tccLocked) {
-      p = cfg.tccRamp > 0 ? out.pCh7 + cfg.tccRamp : cfg.tccP;
-      if (p > cfg.tccP)
-        p = cfg.tccP;
+               out.gear != GEAR_R && out.gear >= cfg.tccMinGear && !in.tccFault;
+    if (cfg.tccMode == TCCMODE_SCHEDULE) {
+      // Schedule + PI on slip (tcc.h). Without an engine / motor speed
+      // the slip is unknown: run on the start pressure and integrator only.
+      TccConfig tc = cfg.tcc;
+      tc.maxP = cfg.tccP;
+      int32_t nMot = in.n_mot > 0 ? in.n_mot : in.n_t;
+      p = tccCtl.Tick10ms(tc, can, out.gear, in.pedal, in.n_t, nMot);
+      tccLocked = tccCtl.Closed();
+    } else {
+      // Simple: on / off input speeds, apply along tccRamp [I: TBD values].
+      tccCtl.Reset();
+      if (!can)
+        tccLocked = false;
+      else if (tccLocked ? in.n_t < cfg.tccOffRpm : in.n_t >= cfg.tccOnRpm)
+        tccLocked = !tccLocked;
+      if (tccLocked) {
+        p = cfg.tccRamp > 0 ? out.pCh7 + cfg.tccRamp : cfg.tccP;
+        if (p > cfg.tccP)
+          p = cfg.tccP;
+      }
     }
+  } else {
+    tccLocked = false;
   }
   out.pCh7 = p;
+  out.tccLocked = tccLocked;
 }
 
 void Tcu::StartShift(const TcuInputs &in, int next) {

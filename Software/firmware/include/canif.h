@@ -65,6 +65,8 @@ struct CanTxIn
    int32_t atfTemp;    // degC
    uint8_t pumpClass;  // LinPumpClass bits
    uint32_t statId;    // CanStatId
+   int16_t noRedVal;   // TqNoRedVal: sent as the intervention when there
+                       // is none (0 by default; some ECUs want a code)
 };
 
 struct CanFrame

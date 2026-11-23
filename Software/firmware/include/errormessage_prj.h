@@ -34,6 +34,9 @@
   ERROR_MESSAGE_ENTRY(GEARRATIO, ERROR_STOP)                                   \
   ERROR_MESSAGE_ENTRY(ATFSENSOR, ERROR_DISPLAY)                               \
   ERROR_MESSAGE_ENTRY(LINPUMP, ERROR_DISPLAY)                                 \
-  ERROR_MESSAGE_ENTRY(SHIFTER, ERROR_DISPLAY)
+  ERROR_MESSAGE_ENTRY(SHIFTER, ERROR_DISPLAY)                                 \
+  ERROR_MESSAGE_ENTRY(CALSIG, ERROR_STOP)                                     \
+  ERROR_MESSAGE_ENTRY(TCCSLIP, ERROR_DISPLAY)                                 \
+  ERROR_MESSAGE_ENTRY(TQFROZEN, ERROR_DISPLAY)
 
 #endif // ERRORMESSAGE_PRJ_H_INCLUDED

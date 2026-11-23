@@ -47,6 +47,8 @@
 #include "terminal.h"
 #include "terminalcommands.h"
 #include <libopencm3/cm3/scb.h>
+#include <libopencm3/stm32/desig.h>
+#include <libopencm3/stm32/flash.h>
 #include <libopencm3/stm32/adc.h>
 #include <libopencm3/stm32/can.h>
 #include <libopencm3/stm32/gpio.h>
@@ -54,7 +56,12 @@
 #include <libopencm3/stm32/usart.h>
 #include <new>
 
+#include "adapt.h"
 #include "anaconv.h"
+#include "cal_sig.h"
+#include "diag.h"
+#include "statstream.h"
+#include "torquein.h"
 #include "calset.h"
 #include "canif.h"
 #include "drivemode.h"
@@ -147,6 +154,15 @@ static uint8_t tqCeilCounter = 0;
 static uint8_t f11TqQual = 0; // 0x0B0 qualifier and absolute target, Nm
 static int32_t f11TqNm = 0;
 static volatile uint32_t msSinceRx = 0xFFFF;
+// Reference-derived features (README "Torque input", "Clutch adaptation",
+// "Fault detection", "Status stream").
+static Adapt adapt;
+static int16_t fillOfsNow[ADA_CLUTCHES]; // learned offsets at the current oil temperature, mbar
+static FrozenCheck tqFrozen;
+static SlipMonitor tccSlip;
+static StatStream stream;
+static uint8_t tqSrc = TQSRC_CAN;
+static uint32_t drivenMs = 0; // time driven since power-up, ms
 
 static const Param::PARAM_NUM chanParams[EDS_COUNT] = {
     Param::ChanA,   Param::ChanB,    Param::ChanC,    Param::ChanD,
@@ -229,6 +245,35 @@ static void ConfigureTcu() {
   c.tccOffRpm = Param::GetInt(Param::TccOffRpm);
   c.tccMinGear = Param::GetInt(Param::TccMinGear);
   c.tccRamp = Param::GetInt(Param::TccRamp);
+  c.tccMode = Param::GetInt(Param::TccMode);
+  c.tcc.minRpm = Param::GetInt(Param::TccMinRpm);
+  c.tcc.hystRpm = Param::GetInt(Param::TccHyst);
+  c.tcc.kp10 = Param::GetInt(Param::TccKp);
+  c.tcc.ki10 = Param::GetInt(Param::TccKi);
+  c.tcc.startP = Param::GetInt(Param::TccStartP);
+  c.tcc.slipTgt = Param::GetInt(Param::TccSlipTgt);
+  c.tcc.slipGear = Param::GetInt(Param::TccSlipGear);
+  c.tcc.slipRpm = Param::GetInt(Param::TccSlipRpm);
+  // Learned fill offsets only apply with AdaptEnable on.
+  c.sas.fillOfs = Param::GetBool(Param::AdaptEnable) ? fillOfsNow : nullptr;
+  AdaConfig ac;
+  ac.enable = Param::GetBool(Param::AdaptEnable);
+  ac.tqMin = Param::GetInt(Param::AdaTqMin);
+  ac.tqMax = Param::GetInt(Param::AdaTqMax);
+  ac.rpmMin = Param::GetInt(Param::AdaRpmMin);
+  ac.rpmMax = Param::GetInt(Param::AdaRpmMax);
+  ac.oilMin = Param::GetInt(Param::AdaOilMin);
+  ac.oilMax = Param::GetInt(Param::AdaOilMax);
+  ac.gearMin = Param::GetInt(Param::AdaGearMin);
+  ac.gearMax = Param::GetInt(Param::AdaGearMax);
+  ac.pedalMin = Param::GetInt(Param::AdaPedalMin);
+  ac.driveMinS = Param::GetInt(Param::AdaDriveMin);
+  ac.shiftMs = Param::GetInt(Param::AdaShiftMs);
+  ac.bandMs = Param::GetInt(Param::AdaBandMs);
+  ac.flareRpm = Param::GetInt(Param::AdaFlareRpm);
+  ac.step = Param::GetInt(Param::AdaStep);
+  ac.maxOfs = Param::GetInt(Param::AdaMax);
+  adapt.Configure(ac);
   // DriveMode: Sport / Track are modifiers on this Normal set
   // (drivemode.h). Their defaults are placeholders.
   int dm = Param::GetInt(Param::DriveMode);
@@ -331,6 +376,13 @@ static void StartDrivers() {
     configError = true;
   if (configError) {
     ErrorMessage::Post(ERR_VALVEMAP);
+    return;
+  }
+  // Firmware / calibration check: with CalSigExp set, the firmware must
+  // carry exactly that calibration (CAL_SIG16), else nothing is driven.
+  if (!Diag::CalOk(Param::GetInt(Param::CalSigExp), CAL_SIG16)) {
+    configError = true;
+    ErrorMessage::Post(ERR_CALSIG);
     return;
   }
   DigIo::max_enable.Set();
@@ -547,7 +599,8 @@ static void SetCanFilters() {
 /// Only called with CanTxEnable on.
 static void SendStatus(const TcuOutputs &o, int32_t temp) {
   CanTxIn in = {&o, temp, linPump.Classes(),
-                (uint32_t)Param::GetInt(Param::CanStatId)};
+                (uint32_t)Param::GetInt(Param::CanStatId),
+                (int16_t)Param::GetInt(Param::TqNoRedVal)};
   CanFrame f[CANIF_MAX_TX];
   int n = CanIf::Tx(Param::GetInt(Param::EcuType), in, f);
   for (int i = 0; i < n; i++)
@@ -596,6 +649,42 @@ static void SendLog(const TcuOutputs &o, const TcuInputs &in) {
   Put16(b, 0, in.m_t); Put16(b, 1, o.tqDelta);
   Put16(b, 2, o.tSyn); Put16(b, 3, o.gls);
   can2->Send(base + 5, b, 8);
+}
+
+// ---------------------------------------------------------------------
+// Adaptation storage: its own flash page (ADAPT_BLKNUM), apart from the
+// parameters and CAN map. Saved on the terminal command "adaptsave" and
+// automatically when something was learned and the car stands in P / N
+// (a page erase stalls the CPU for ~20 ms). "adaptreset" clears it.
+
+static uint32_t AdaptAddr() {
+  return FLASH_BASE + desig_get_flash_size() * 1024 - ADAPT_BLKNUM * FLASH_PAGE_SIZE;
+}
+
+static void AdaptLoad() {
+  AdaImage img;
+  const uint32_t *src = (const uint32_t *)AdaptAddr();
+  uint32_t *dst = (uint32_t *)&img;
+  for (uint32_t i = 0; i < sizeof(img) / 4; i++)
+    dst[i] = src[i];
+  adapt.Unpack(img); // blank or corrupt page: all offsets 0
+}
+
+void AdaptSave() {
+  AdaImage img;
+  adapt.Pack(&img);
+  const uint32_t *w = (const uint32_t *)&img;
+  uint32_t addr = AdaptAddr();
+  flash_unlock();
+  flash_erase_page(addr);
+  for (uint32_t i = 0; i < sizeof(img) / 4; i++)
+    flash_program_word(addr + i * 4, w[i]);
+  flash_lock();
+}
+
+void AdaptReset() {
+  adapt.Reset();
+  AdaptSave();
 }
 
 // ---------------------------------------------------------------------
@@ -674,8 +763,30 @@ static void Ms10Task() {
     }
   }
   in.gearReq = fromParam ? Param::GetInt(Param::GearSet) : canRx.gearReq;
-  in.m_t = fromParam ? Param::GetInt(Param::TorqueSet) : canRx.torque;
   in.n_mot = fromParam ? Param::GetInt(Param::MotorRpmSet) : canRx.motorRpm;
+  // Input torque (torquein.h): CAN value unless it is a "not available"
+  // code (0x8000 / 0x7FFF) or frozen while the engine speed moves; then
+  // the optional model, else the safe substitute CanLossTq (high torque
+  // = high clamping pressure).
+  {
+    int16_t canTq = canRx.torque;
+    int32_t rpm = in.n_mot < 0 ? -in.n_mot : in.n_mot;
+    bool frozen = canOk && tqFrozen.Tick(canTq, rpm, Param::GetInt(Param::FrzTime),
+                                         Param::GetInt(Param::FrzRpm));
+    TorqueModelIn tm = {rpm, Param::GetInt(Param::MapKpa),
+                        Param::GetInt(Param::TqModelScale), Param::GetInt(Param::TqBoostPct)};
+    if (fromParam) {
+      in.m_t = Param::GetInt(Param::TorqueSet);
+      tqSrc = TQSRC_PARAM;
+    } else {
+      tqSrc = TorqueIn::Select(canTq, TorqueIn::RawValid(canTq) && !frozen,
+                               Param::GetBool(Param::TqModel), tm,
+                               Param::GetInt(Param::CanLossTq), &in.m_t);
+    }
+    Param::SetInt(Param::tqFrozen, frozen);
+    if (frozen)
+      ErrorMessage::Post(ERR_TQFROZEN);
+  }
   // ManualGear (Manual mode): the dropdown picks P / R / N or a gear in
   // D. The TCU still does the gear-in, the shift limits, the input-speed
   // checks and the interlock; the CAN-loss rules below still win.
@@ -700,6 +811,7 @@ static void Ms10Task() {
     in.gearReq = 0;
     in.tipUp = in.tipDown = false;
     in.m_t = Param::GetInt(Param::CanLossTq);
+    tqSrc = TQSRC_SUBSTITUTE; // no engine speed for the model either
   }
   in.canOk = canOk || fromParam;
   in.n_t = Param::GetInt(Param::NtSource) == 1 ? in.n_mot : spdIn.Rpm();
@@ -713,6 +825,18 @@ static void Ms10Task() {
   in.configError = configError;
   in.faultClear = false;
   in.pMeas = -1; // no line pressure sensor on V4
+  // Pedal: PedalPct, or -1 = estimated from the input torque as a share
+  // of the gearbox torque class (the VCU frame carries no pedal).
+  {
+    int32_t pp = Param::GetInt(Param::PedalPct);
+    if (pp < 0) {
+      int32_t cls = Cal::Active().size->torqueClassNm;
+      pp = cls > 0 ? in.m_t * 100 / cls : 0;
+      pp = pp < 0 ? 0 : (pp > 100 ? 100 : pp);
+    }
+    in.pedal = pp;
+  }
+  in.tccFault = tccSlip.Fault();
   // LIN pump: delivering time and faults (diagnosis blanked below the
   // load-off voltage, as the OEM does [C]).
   bool uv = Param::GetInt(Param::UvLimit) > 0 && vbatmV < Param::GetInt(Param::UvLimit);
@@ -726,6 +850,7 @@ static void Ms10Task() {
     if (tcu.Out().mode == TCU_SAFE && in.n_ab == 0 &&
         (in.selector == SEL_P || in.selector == SEL_N)) {
       driverFault = false;
+      tccSlip.Clear();
       StartDrivers();
       in.driverFault = driverFault;
       in.configError = configError;
@@ -739,6 +864,38 @@ static void Ms10Task() {
    */
   tcu.Tick10ms(in);
   const TcuOutputs &o = tcu.Out();
+
+  // TCC lock-up slip (off until TccSlipMax is set: OEM limit not traced).
+  bool slipWas = tccSlip.Fault();
+  tccSlip.Tick10ms(o.tccLocked, in.n_mot, in.n_t, Param::GetInt(Param::TccSlipMax),
+                   Param::GetInt(Param::TccSlipMs));
+  if (tccSlip.Fault() && !slipWas)
+    ErrorMessage::Post(ERR_TCCSLIP);
+
+  // Clutch adaptation: watch the learning shifts, then refresh the
+  // offsets the shift code adds (only used with AdaptEnable on).
+  if ((o.mode == TCU_DRIVE || o.mode == TCU_SHIFT) && in.n_ab > 0 && drivenMs < 0xF0000000u)
+    drivenMs += 10;
+  {
+    AdaInputs ai;
+    ai.mode = o.mode;
+    ai.gear = o.gear;
+    ai.target = o.target;
+    ai.m_t = in.m_t;
+    ai.n_t = in.n_t;
+    ai.n_mot = in.n_mot;
+    ai.n_ab = in.n_ab;
+    ai.temp = atfTemp;
+    ai.pedal = in.pedal;
+    ai.drivenS = (int32_t)(drivenMs / 1000);
+    ai.normalMode = Param::GetInt(Param::DriveMode) == DM_NORMAL &&
+                    Param::GetInt(Param::ShiftMode) != SHIFT_MANUAL;
+    ai.faultFree = o.fault == TF_NONE && !driverFault && !configError &&
+                   tqSrc == TQSRC_CAN && !tccSlip.Fault();
+    adapt.Tick10ms(ai);
+    for (int c = 0; c < ADA_CLUTCHES; c++)
+      fillOfsNow[c] = (int16_t)adapt.Offset(c, atfTemp);
+  }
 
   // Aux oil pump (330e run rule, Ian's 330E_LIN_OIL_PUMP.md section 7).
   // The F11 8HP45 has no LIN pump [C], so the bus stays off for it.
@@ -811,6 +968,48 @@ static void Ms10Task() {
 
   if (Param::GetBool(Param::CanTxEnable))
     SendStatus(o, atfTemp);
+  // Optional status stream (statstream.h): on CAN2 whenever it is up, on
+  // CAN1 only with CanTxEnable as well.
+  if (Param::GetBool(Param::StreamEnable)) {
+    bool onCan2 = Param::GetInt(Param::StreamBus) == 1;
+    CanHardware *bus = onCan2 ? can2 : (Param::GetBool(Param::CanTxEnable) ? can1 : 0);
+    if (bus) {
+      StreamIn si;
+      si.tqTarget = in.m_t + o.tqDelta;
+      si.tqReductPct = StatStream::ReductPct(in.m_t, o.tqDelta);
+      si.shifting = o.mode == TCU_SHIFT;
+      si.coast = o.coast;
+      si.tqActive = o.tqDelta != 0;
+      si.inertia = o.inertia;
+      si.tccClosed = o.tccLocked;
+      si.slip = Gears::SlipRpm(o.gear, in.n_t, in.n_ab);
+      si.nT = in.n_t;
+      si.nAb = in.n_ab;
+      si.nMot = in.n_mot;
+      si.nAux = HW_HAS_SPD3 ? spdAux.Rpm() : 0;
+      si.gear = o.gear;
+      si.target = o.target;
+      si.selector = in.selector;
+      si.mode = o.mode;
+      si.leverState = lever.State();
+      si.driveMode = (uint8_t)Param::GetInt(Param::DriveMode);
+      si.zKzu = o.zKzu;
+      si.zKab = o.zKab;
+      si.fault = o.fault;
+      si.diagBits = (uint16_t)Param::GetInt(Param::valveFault);
+      si.atfC = atfTemp;
+      si.boardC = Param::GetInt(Param::tBoard);
+      si.vbatMv = vbatmV;
+      si.adaStatus = (uint8_t)adapt.Status();
+      si.canLoss = !in.canOk;
+      si.leverTimeout = lever.Seen() && !lever.Valid();
+      si.tqNotCan = tqSrc != TQSRC_CAN && tqSrc != TQSRC_PARAM;
+      CanFrame sf[STREAM_MAX_TX];
+      int ns = stream.Tick10ms(Param::GetInt(Param::StreamBaseId), si, sf);
+      for (int i = 0; i < ns; i++)
+        bus->Send(sf[i].id, sf[i].data, sf[i].dlc);
+    }
+  }
   // Lever display / LEDs: only with LeverTxEnable and CanTxEnable. Only
   // one node may own these ids (see README "CAN gear levers").
   if (lever.IsCan() && Param::GetBool(Param::CanTxEnable) &&
@@ -926,10 +1125,27 @@ static void Ms10Task() {
   f11TqQual = CanIf::F11TqTarget(in.m_t, o.tqDelta, &f11TqNm);
   Param::SetInt(Param::tq0B0, f11TqNm);
   Param::SetInt(Param::tqQual, f11TqQual);
+  Param::SetInt(Param::tqSrc, tqSrc);
+  Param::SetInt(Param::tqUsed, in.m_t);
+  Param::SetInt(Param::adaStat, adapt.Status());
+  Param::SetInt(Param::adaShifts, adapt.Shifts());
+  for (int c = 0; c < ADA_CLUTCHES; c++)
+    for (int k = 0; k < ADA_CLASSES; k++)
+      Param::SetInt((Param::PARAM_NUM)(Param::adA_c + c * 2 + k), adapt.Raw(c, k));
+  Param::SetInt(Param::tccSlip, o.tccLocked ? in.n_mot - in.n_t : 0);
+  Param::SetInt(Param::tccSlipFlt, tccSlip.Fault());
+  Param::SetInt(Param::canBus, (!in.canOk ? 1 : 0) | (lever.Seen() && !lever.Valid() ? 2 : 0));
+  Param::SetInt(Param::calSig, CAL_SIG16);
 }
 
 static void Ms100Task() {
   DigIo::led_out.Toggle();
+  {
+    const TcuOutputs &ao = tcu.Out();
+    if (adapt.Dirty() && Param::GetBool(Param::AdaptEnable) && spdOut.Rpm() == 0 &&
+        (ao.mode == TCU_PARK || ao.mode == TCU_NEUTRAL))
+      AdaptSave();
+  }
   Param::SetInt(Param::cpuload, scheduler->GetCpuLoad() / 10);
 
   // Battery voltage: VbatScale = volts at full ADC scale (V4: 18.33 V).
@@ -990,6 +1206,18 @@ static void Ms100Task() {
       driverFault = true;
       ErrorMessage::Post(ERR_DRVLOST);
     }
+    // Per-channel diagnosis (diag.h) from the flags just read. The
+    // reaction is the one above (pressure valve -> safe state). V4 has no
+    // coil current read-back, so the V/I resistance check is not fed.
+    uint8_t chCode[16] = {0};
+    for (int v = 0; v < EDS_COUNT; v++) {
+      uint8_t code = Diag::Channel(valves.ValveFlags((EdsValve)v), DIAG_OK);
+      Param::SetInt((Param::PARAM_NUM)(Param::dgA + v), code);
+      uint8_t ch = valves.Map((EdsValve)v);
+      if (ch < 16)
+        chCode[ch] = code;
+    }
+    Param::SetInt(Param::diagPair, Diag::Pairs(chCode, 16));
   }
 
   const TcuOutputs &o = tcu.Out();
@@ -1014,6 +1242,27 @@ static void Ms100Task() {
   Param::SetInt(Param::spdInHi, AnaConv::ToMv(spdMax[0]));
   Param::SetInt(Param::spdOutLo, AnaConv::ToMv(spdMin[1]));
   Param::SetInt(Param::spdOutHi, AnaConv::ToMv(spdMax[1]));
+  // Speed sensor diagnosis (diag.h): stuck level, or no edges while
+  // the other shaft shows the car moving in a steady gear.
+  {
+    const TcuOutputs &to = tcu.Out();
+    bool inGear = to.mode == TCU_DRIVE && Gears::IsDriveGear(to.gear);
+    int32_t noSig = Param::GetInt(Param::DiagSpdNoSig);
+    int32_t openMv = Param::GetInt(Param::DiagSpdOpen);
+    int32_t shortMv = Param::GetInt(Param::DiagSpdShort);
+    bool nIn = Param::GetInt(Param::NtSource) == 0;
+    uint8_t dIn = nIn ? Diag::Speed(AnaConv::ToMv(spdMin[0]), AnaConv::ToMv(spdMax[0]),
+                                    spdIn.Rpm() > 0, inGear && spdOut.Rpm() > noSig,
+                                    openMv, shortMv)
+                      : (uint8_t)SPD_OK;
+    uint8_t dOut = Diag::Speed(AnaConv::ToMv(spdMin[1]), AnaConv::ToMv(spdMax[1]),
+                               spdOut.Rpm() > 0, inGear && nIn && spdIn.Rpm() > noSig,
+                               openMv, shortMv);
+    Param::SetInt(Param::spdInDiag, dIn);
+    Param::SetInt(Param::spdOutDiag, dOut);
+    if (dIn != SPD_OK || dOut != SPD_OK)
+      ErrorMessage::Post(ERR_SPEEDSENS); // the gear check (TF_SPEED) reacts
+  }
   for (int i = 0; i < 2; i++) {
     spdMin[i] = 4095;
     spdMax[i] = 0;
@@ -1095,6 +1344,7 @@ extern "C" int main(void) {
   DigIo::led_out.Set();    // active low: off
   AnaIn::Start();
   parm_load();
+  AdaptLoad();
   max_spi_setup();
   gp_pwm_setup(Param::GetInt(Param::GpPwmFreq));
   lin_usart_setup();

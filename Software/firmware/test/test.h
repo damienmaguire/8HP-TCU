@@ -48,6 +48,7 @@ extern int g_failures;
 
 void TestGears();
 void TestLever();
+void TestFeatures();
 void TestInterlock();
 void TestLookup();
 void TestEds();

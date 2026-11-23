@@ -36,6 +36,7 @@ int main() {
       {"anaconv", TestAnaConv},     {"linpump", TestLinPump},
       {"shifter", TestShifter},     {"canif", TestCanIf},
       {"params", TestParams},       {"lever", TestLever},
+      {"features", TestFeatures},
   };
   for (const Suite &s : suites) {
     int before = g_failures;

@@ -223,6 +223,12 @@ pin map. `ChanPZYL` defaults to 8 (chip 2 OUT0) on that board and 255
 | `calset.*` | Per-gearbox table set picked by `GearboxType`, channel 7 mode | `F11_VS_330E_DIFF.md` |
 | `drivemode.*` | DriveMode Sport / Track modifiers on the Normal config | |
 | `canif.*` | CAN1 frames per `EcuType` (handler table), F11 0x0B0 packer | |
+| `gwslever.*`, `canlever.*` | CAN gear levers (`ShifterType`) behind one lever-state interface | ZombieVerter |
+| `torquein.*` | Input torque source: CAN, "not available" codes, optional rpm x MAP model, frozen-signal check | |
+| `adapt.*` | Clutch fill adaptation per clutch and oil-temperature class, own flash page | 330e A2L class windows [C] |
+| `diag.*` | Per-channel valve diagnosis, resistance check, paired channels, speed sensors, lock-up slip, calibration signature | MAX22200 data sheet, 330e A2L [C] |
+| `tcc.*` | Scheduled TCC lock-up with PI on slip (`TccMode = Schedule`) | placeholders |
+| `statstream.*` | Optional dashboard / logger status stream, our own layout | |
 | `stm32_tcu.cpp`, `hwinit.cpp`, `terminal_prj.cpp` | Firmware glue: params, SPI, ADC2 speed sampling, LIN UART, PWM, CAN, terminal | ZombieVerter |
 
 ### Solenoid driver (MAX22200)
@@ -302,7 +308,8 @@ agreed (Q5). Values little endian.
   kept for hydraulic and electrical faults (the safe state). No gear-in is
   started while the frame is missing.
 * TX `CanStatId` (default 0x301, only if `CanTxEnable = 1`): gear, mode,
-  target gear, fault, torque intervention request Nm (signed), ATF + 40,
+  target gear, fault, torque intervention request Nm (signed;
+  `TqNoRedVal`, default 0, when there is none), ATF + 40,
   flags (bit 0 shifting, 1 park request, 2 safe state, 3 hold motor
   torque near 0 for gear-in, 4 CAN-loss gear hold, 5 coast shift). The torque intervention
   request is the hook for the inverter: how it reaches the inverter is
@@ -390,6 +397,125 @@ two senders mean counter and CRC clashes on the lever display. 0x202
 `CmdSource = Param` takes the selector, gear, torque and motor speed from
 the `SelectorSet`, `GearSet`, `TorqueSet` and `MotorRpmSet` parameters for
 bench work without a VCU.
+
+## Torque input, adaptation, diagnosis, lock-up, status stream
+
+These five features are off or neutral by default: with default
+parameters the TCU behaves as before.
+
+### Torque input (`torquein.*`)
+
+1. The torque the VCU / engine ECU sends in the command frame (default).
+2. If that value is a "not available" code (0x8000 or 0x7FFF, how ECUs
+   mark a missing signal) or frozen (below), and `TqModel` is on: the
+   model. Placeholder table of Nm against engine speed and manifold
+   pressure for a 300 Nm engine, scaled by `TqModelScale` (%); above
+   100 kPa the 100 kPa value is multiplied by MAP / 100 and by
+   `TqBoostPct` (%). MAP comes from `MapKpa` for now (no MAP input).
+3. Otherwise the safe substitute `CanLossTq` (600 Nm: high torque = high
+   clamping pressure). On a full CAN loss it is always `CanLossTq`.
+
+`tqSrc` shows which (0 CAN, 1 model, 2 substitute, 3 bench parameter),
+`tqUsed` the Nm used. `TqNoRedVal` is sent in status bytes 4-5 instead
+of 0 when the TCU asks for no torque change (for ECUs that want a code).
+`PedalPct` is the pedal used by the TCC schedule and the adaptation gate;
+-1 (default) estimates it from torque / gearbox torque class, because
+the VCU frame has no pedal.
+
+Frozen signal: the torque has not changed by a single Nm for `FrzTime`
+(3 s) while the engine speed moved more than `FrzRpm` (300 rpm). A real
+torque signal always moves when the engine speed does. `FrzTime = 0`
+switches the check off. Reaction: the substitute (or model), error
+`TQFROZEN`. There is no live pedal signal yet, so the same check is not
+fed with a pedal.
+
+### Clutch adaptation (`adapt.*`, `AdaptEnable`, default off)
+
+A learned fill-pressure offset per clutch **and** per oil-temperature
+class, added to that clutch's calibrated fill pressure (KL_PFCG) when it
+is the on-coming clutch, up- and downshifts.
+
+* Classes [C, 330e A2L CS_UN/OB_ADAKALT / ADAWARM]: cold 10-30 degC,
+  warm 50-110 degC. Between and outside them the nearer class is used
+  (cold below 40 degC).
+* Learning shifts: 3->4 learns D, 4->5 C, 5->6 E, 6->7 A, and the
+  downshift 6->5 learns B (B is never the on-coming clutch of an upshift).
+* Every entry condition is a parameter and must hold at the start and
+  the end of the shift: torque `AdaTqMin`..`AdaTqMax` (55-180 Nm),
+  engine speed `AdaRpmMin`..`AdaRpmMax` (1600-3200), oil
+  `AdaOilMin`..`AdaOilMax` (55-80 degC) and inside a class, gears
+  `AdaGearMin`..`AdaGearMax` (3-7), pedal above `AdaPedalMin` (2 %),
+  driven at least `AdaDriveMin` (180 s) since power-up, `DriveMode`
+  Normal without `ShiftMode` Manual, no TCU fault, torque from CAN.
+  `adaStat` shows which conditions block (bit 0 disabled, 1 torque,
+  2 rpm, 3 oil, 4 gear, 5 pedal, 6 drive time, 7 mode, 8 fault,
+  9 outside a class).
+* Rule (slow on purpose): input-speed flare above `AdaFlareRpm` or a
+  shift longer than `AdaShiftMs + AdaBandMs` = filled late, +`AdaStep`
+  (5 mbar); shorter than `AdaShiftMs - AdaBandMs` = harsh, -`AdaStep`.
+  Limited to +-`AdaMax` (300 mbar). Target time and band are
+  placeholders.
+* Storage: its own flash page (`ADAPT_BLKNUM`, 0x0803E800), with magic,
+  version and CRC-32. `save`, `load`, `defaults` and a parameter upload
+  never touch it. Saved automatically when something changed and the
+  car stands in P / N, or with the terminal command `adaptsave`.
+  **`adaptreset` is the only way to clear it.** With `AdaptEnable` off the
+  offsets are kept but not applied.
+* Values: `adA_c`, `adA_w` .. `adE_w` (mbar), `adaShifts`.
+
+### Fault detection (`diag.*`)
+
+Classification only; the reactions are the existing limp / hold logic:
+
+| Check | How | Reaction |
+|---|---|---|
+| Valve open | MAX22200 OLF | pressure valve: safe state (6th, full line pressure); K0 / POS / PZYL: reported |
+| Valve short to battery | MAX22200 OCP | as above |
+| Valve resistance high | MAX22200 HHF (hit current not reached) | as above |
+| Valve short to ground / resistance out of band | V / I against 5.15 ohm at 20 degC [C, OutMRstn_resActr20_C], +0.393 %/degC, + `DiagRWire` (150 mOhm [C]), band `DiagRBand` (25 %) | as above, **only once a board has coil current read-back** (V4 has none: not fed) |
+| Paired channels | both channels of OUT0/1, 2/3, 4/5 or 6/7 faulted: shared supply / ground / harness | `diagPair` bits, plus the per-channel reaction |
+| Speed sensor open / short | ADC level stuck above `DiagSpdOpen` / below `DiagSpdShort` with no edges (both 0 = off: input circuit levels not measured yet) | `ERR_SPEEDSENS`; the gear check (TF_SPEED) reacts |
+| Speed sensor no signal | no edges while the other shaft turns faster than `DiagSpdNoSig` in a steady gear | as above |
+| Lock-up slip | TCC closed but engine - turbine speed > `TccSlipMax` for `TccSlipMs` | TCC kept open, `ERR_TCCSLIP`, cleared with `FaultClear` |
+| Frozen torque | see Torque input | substitute torque |
+| CAN timeout per bus | VCU frame on CAN1 (`CanTimeout`), lever on its bus (`LeverTimeout`) | `CanLossMode`; `canBus` bit 0 / bit 1 |
+| Firmware / calibration | `CalSigExp` (0 = off) against `CAL_SIG16`, a CRC-16 of the generated tables (`calSig` shows it) | configuration error at boot: nothing driven, `ERR_CALSIG` |
+
+`dgA`..`dgPzyl`: 0 OK, 1 open, 2 short to battery, 3 short to ground,
+4 resistance high, 5 resistance low. **TBD, not invented:** the slip and
+pressure plausibility limits (the OEM monitors were not traced), so
+`TccSlipMax` defaults to 0 = off and there is no pressure plausibility
+check.
+
+### TCC lock-up (`tcc.*`, `TccMode`)
+
+`TccMode = Simple` (default) keeps the `TccOnRpm` / `TccOffRpm` rule.
+`TccMode = Schedule`:
+
+* Per gear, the input speed at which the clutch closes against pedal
+  (0-100 %), placeholder table (later with more pedal, earlier in high
+  gears). Opens `TccHyst` (200 rpm) below that, always open below
+  `TccMinRpm` (1100), below `TccMinGear`, in a shift, gear-in, N / P / R
+  and with a lock-up slip fault.
+* Control: PI on slip (engine - turbine): `TccStartP` (1500 mbar) +
+  `TccKp` x error + `TccKi` integral, limited to 0..`TccPress`. Target
+  slip 0, or `TccSlipTgt` (default 0 = off) at or below `TccSlipGear`
+  (3rd) and below `TccSlipRpm` (1800). Without an engine / motor speed
+  the slip is unknown and it runs on the start pressure.
+* The Sport / Track `TccOfsRpm` offsets only act on the Simple rule.
+
+### Status stream (`statstream.*`, `StreamEnable`, default off)
+
+Our own layout, little-endian, from `StreamBaseId` (1728 = 0x6C0) on
+`StreamBus` (CAN1 needs `CanTxEnable` as well; CAN2 sends whenever it is
+up):
+
+| Id | Rate | Bytes |
+|---|---|---|
+| base+0 | 100 Hz | 0-1 torque target Nm (signed: input + intervention), 2 reduction % of input, 3 flags (bit 0 shift active, 1 coast, 2 intervention, 3 inertia phase, 4 TCC closed), 4-5 slip rpm (signed), 6 alive counter, 7 0 |
+| base+1 | 100 Hz | 0-1 n_t, 2-3 n_ab, 4-5 engine / motor rpm, 6-7 n6 (0 when not fitted) |
+| base+2 | 40 Hz (20 / 30 ms) | 0 gear (0 N, 1-8, 9 R), 1 target, 2 selector, 3 TCU mode, 4 lever state, 5 drive mode, 6 KZU state, 7 KAB state |
+| base+3 | 20 Hz | 0 TCU fault, 1-2 valve fault bits, 3 ATF + 40 degC, 4 board + 40 degC, 5 battery 0.1 V, 6 adaptation status, 7 bit 0 CAN loss, 1 lever timeout, 2 torque not from CAN |
 
 ## Implemented vs stubbed
 

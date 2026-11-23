@@ -92,6 +92,11 @@
 #define PARAM_BLKSIZE FLASH_PAGE_SIZE
 #define CAN1_BLKNUM 2
 #define CAN2_BLKNUM 4
+/* Clutch adaptation (adapt.h): its own page, 3 pages from the top
+ * (0x0803E800 on a 256 KiB part, above the image end 0x0803E000 in
+ * stm32_tcu.ld), so parameter and CAN map saves, loads and uploads never
+ * touch it. */
+#define ADAPT_BLKNUM 3
 
 /* MAX22200 on SPI1, no remap: SCK PA5, MISO PA6 (1k pull-up R28), MOSI
  * PA7. CSB is a software chip select on PA4 (max_cs0, digio_prj.h).
