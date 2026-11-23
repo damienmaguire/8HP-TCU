@@ -103,13 +103,17 @@ DEP = $(OBJS:%.o=%.d)
 # the exports are not in the repo):
 #   make cal Q030_JSON=/path/330e_Q030_cal_full.json \
 #            F11_JSON=/path/f11_sas_eds_cal.json F11_PSYS_JSON=/path/f11_psys_gearin_cal.json \
-#            F11_PORT_JSON=/path/f11_a81v058_cal_ported.json V095_DIR=/path/cal_v095 [CAL_SET=el]
+#            F11_PORT_JSON=/path/f11_a81v058_cal_ported.json \
+#            F11_SHIFT_JSON=/path/f11_shift_pressure_cal.json \
+#            F11_GEARIN_JSON=/path/f11_gearin_timing_cal.json V095_DIR=/path/cal_v095 [CAL_SET=el]
 CAL_SET ?= normal
 cal:
-	@test -n "$(Q030_JSON)" -a -n "$(F11_JSON)" -a -n "$(F11_PSYS_JSON)" -a -n "$(F11_PORT_JSON)" -a -n "$(V095_DIR)" || \
-	  (echo "set Q030_JSON=... F11_JSON=... F11_PSYS_JSON=... F11_PORT_JSON=... V095_DIR=..."; exit 1)
+	@test -n "$(Q030_JSON)" -a -n "$(F11_JSON)" -a -n "$(F11_PSYS_JSON)" -a -n "$(F11_PORT_JSON)" \
+	  -a -n "$(F11_SHIFT_JSON)" -a -n "$(F11_GEARIN_JSON)" -a -n "$(V095_DIR)" || \
+	  (echo "set Q030_JSON=... F11_JSON=... F11_PSYS_JSON=... F11_PORT_JSON=... F11_SHIFT_JSON=... F11_GEARIN_JSON=... V095_DIR=..."; exit 1)
 	python3 tools/gen_cal.py --q030 $(Q030_JSON) --f11 $(F11_JSON) --f11-psys $(F11_PSYS_JSON) \
-	  --f11-port $(F11_PORT_JSON) --v095 $(V095_DIR) --set $(CAL_SET)
+	  --f11-port $(F11_PORT_JSON) --f11-shift $(F11_SHIFT_JSON) --f11-gearin $(F11_GEARIN_JSON) \
+	  --v095 $(V095_DIR) --set $(CAL_SET)
 
 clean:
 	@printf "  CLEAN   $(OUT_DIR)\n"

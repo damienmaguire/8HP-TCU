@@ -251,6 +251,8 @@ class Gen:
         self.out = []
         self.count = 0
         self.used = []
+        self.export = False  # 330e: shift-table arrays get external linkage
+
 
     def get(self, name):
         if self.use_el and (name + "_EL") in self.by:
@@ -263,7 +265,10 @@ class Gen:
 
     def arr(self, ctype, cname, vals):
         body = ", ".join(str(v) for v in vals)
-        self.out.append("static const %s %s[] = {%s};" % (ctype, cname, body))
+        # The 330e up / down arrays are shared with cal_f11.cpp (its
+        # fallback fields point at them instead of carrying copies).
+        link = "extern" if self.export and cname.startswith(("up", "dn")) else "static"
+        self.out.append("%s const %s %s[] = {%s};" % (link, ctype, cname, body))
 
     def ints(self, vals, scale, lo, hi, what):
         res = []
@@ -400,6 +405,32 @@ class SportGen(Gen):
         return "{\n" + "\n".join(parts) + "\n}"
 
 
+class Q030RefGen(SportGen):
+    """Builds the same initialisers as the 330e generator but emits no
+    arrays: it only notes the extern declarations of the 330e arrays."""
+
+    def __init__(self, items, use_el):
+        SportGen.__init__(self, items, use_el)
+        self.decls = []
+
+    def arr(self, ctype, cname, vals):
+        self.decls.append("extern const %s %s[];" % (ctype, cname))
+
+    def field(self, a2l, suffix, kind, prefix_c, field, sport):
+        """One field initialiser, same name rules as struct_init(_sport)."""
+        name = a2l + suffix
+        if sport:
+            sp = sport_name(a2l, suffix)
+            if sp in self.by:
+                name = sp
+        cname = "%s_%s" % (prefix_c, field)
+        if kind == "V":
+            return str(self.value(name)[0])
+        if kind == "C":
+            return self.curve(name, cname)
+        return self.map(name, cname)
+
+
 def lic_text():
     return open(os.path.join(ROOT, "tools", "license_header.txt")).read().rstrip("\n")
 
@@ -414,6 +445,7 @@ def write(rel, lines):
 
 def gen_330e(items, args):
     g = SportGen(items, args.set == "el")
+    g.export = True
     inits = {}
     inits["up"] = [g.struct_init(UP_FIELDS, p, "up%s" % p) for p in UP_PAIRS]
     inits["down"] = [g.struct_init(DOWN_FIELDS, p, "dn%s" % p) for p in DOWN_PAIRS]
@@ -536,8 +568,6 @@ def curve_lines(cname, n, src, xs, ys):
 
 
 F11_PSYS = ["KF_PSYS_" + g for g in PSYS_GEARS]
-# Gear-in fields the F11 export has; the rest are the 330e ones [fallback].
-F11_ENGAGE_OWN = ["pkzu", "pgrasyn", "pgrasynv1", "pgrasynv2", "porasyn"]
 
 
 def f11_fw_items(path):
@@ -562,29 +592,150 @@ def f11_ported_c(path):
             if x["evidence"].startswith("C")]
 
 
+F11_PROGRAMS = 3  # 0 base, 1 SP, 2 SPORT [I] (F11_SAM_ADDSCOPE.md 5.2)
+F11_GEARS = ["R", "1", "2", "3", "4", "5", "6", "7", "8"]
+F11_ENGAGE_GEARIN = ["pgrasyn", "pgrasynv1", "pgrasynv2", "porasyn"]  # R / 1 only
+F11_ENGAGE_STAGE4 = ["tfv1", "tvkzu", "tvkzucgv2", "t_syn"]
+F11_GLOBAL_OWN = {"p_sysmin_d": "P_SYSMIN_D", "p_sysmin_r": "P_SYSMIN_R",
+                  "p_maxobgls": "P_MAXOBGLS", "p_maxungls": "P_MAXUNGLS",
+                  "t_fngtgls": "T_FNGTGLS"}
+
+
+def f11_stage4(sp_path, gi_path):
+    """Ian's stage 4 exports -> Gen items keyed by role, not by name.
+
+    Shift maps are keyed (direction, program, pair) from the index tables
+    [C]; the porter's names are never used. The alternate gear-in family
+    (descriptor 0x50BB4, F11_KF_PKZU_GEALT_*) is left out [H trigger].
+    Returns (items, keys) with keys[(dir, prog, pair)] = item name."""
+    items, keys = [], {}
+    sp = json.load(open(sp_path))["items"]
+    for x in sp:
+        grp = x["group"]
+        if "alternate" in grp or x["block"] == "0x50bb4":
+            continue
+        if grp.startswith("upshift_on-coming"):
+            k = ("up_on", x["program"], x["pair"])
+        elif grp.startswith("upshift_off-going"):
+            k = ("up_off", None, x["pair"])
+        elif grp.startswith("downshift_off-going"):
+            k = ("dn_off", x["program"], x["pair"])
+        elif grp.startswith("gear_in ("):
+            k = ("gearin", None, x["pair"][2:])
+        else:
+            continue  # follow-up / multiple downshifts: no firmware field
+        name = "F11S4:%s:%s:%s" % k
+        y = dict(x)
+        y["name"] = name
+        y["axes"] = [[a["name"], a["values"]] for a in x["axes"]]
+        y["conv"] = "F11_fw_mbar"
+        items.append(y)
+        keys[k] = name
+    gi = json.load(open(gi_path))
+    for x in gi["gear_in"] + gi["globals"]:
+        if x["type"] not in ("VALUE", "CURVE"):
+            continue
+        y = dict(x)
+        y["name"] = x["name"] + "@F11T"
+        y["axes"] = [[a["name"], a["values"]] for a in x.get("axes", [])]
+        y["conv"] = "F11_fw"
+        items.append(y)
+    return items, keys
+
+
 def gen_f11(curves, args, q030):
-    g = Gen(q030 + f11_fw_items(args.f11_psys) + f11_ported_c(args.f11_port), False)
+    s4, keys = f11_stage4(args.f11_shift, args.f11_gearin)
+    g = Gen(q030 + f11_fw_items(args.f11_psys) + f11_ported_c(args.f11_port) + s4, False)
+    ref = Q030RefGen(q030, args.set == "el")
     psys = [g.map(n + "@F11", "f11psys_%s" % n[8:].lower()) for n in F11_PSYS]
-    eng = []
-    for gear in ENGAGE_GEARS:
+
+    def fld(kind, name, cname):
+        if kind == "V":
+            v, src = g.value(name)
+            return str(v), src
+        if kind == "C":
+            return g.curve(name, cname), name
+        return g.map(name, cname), name
+
+    # Shift tables per program. F11 [stage 4]: upshift on-coming KF_PKZU
+    # (per program), upshift off-going KF_PKAB (one set), downshift
+    # off-going KF_PKAB (per program), P_SYSMINxy. The rest point at the
+    # 330e arrays (program 0: Normal, 1 / 2: the 330e Sport set).
+    shared = {}
+    up_sets, dn_sets = [], []
+    for prog in range(F11_PROGRAMS):
+        ups = []
+        for pair in UP_PAIRS:
+            parts = []
+            for field, a2l, kind in UP_FIELDS:
+                if field == "pkzu":
+                    init, _ = fld("M", keys[("up_on", prog, pair)], "f11up%d_%s_pkzu" % (prog, pair))
+                    parts.append("   %s, // pkzu F11 stage 4 [C pair/program, I name]" % init)
+                elif field == "pkab":
+                    k = ("up_off", None, pair)
+                    if k not in shared:
+                        shared[k] = fld("M", keys[k], "f11up_%s_pkab" % pair)[0]
+                    parts.append("   %s, // pkab F11 stage 4 [C pair, I name]" % shared[k])
+                elif field == "p_sysmin":
+                    v, src = fld("V", "P_SYSMIN%s@F11T" % pair, None)
+                    parts.append("   %s, // p_sysmin F11 %s [I]" % (v, src))
+                else:
+                    pre = ("up%s" if prog == 0 else "ups%s") % pair
+                    init = ref.field(a2l, pair, kind, pre, field, prog > 0)
+                    parts.append("   %s, // %s (330e%s FALLBACK)" % (init, field, "" if prog == 0 else " Sport"))
+            ups.append("{\n" + "\n".join(parts) + "\n}")
+        up_sets.append(ups)
+        dns = []
+        for pair in DOWN_PAIRS:
+            parts = []
+            for field, a2l, kind in DOWN_FIELDS:
+                if field == "pkab":
+                    init, _ = fld("M", keys[("dn_off", prog, pair)], "f11dn%d_%s_pkab" % (prog, pair))
+                    parts.append("   %s, // pkab F11 stage 4 [C pair/program, I name]" % init)
+                elif field == "p_sysmin":
+                    v, src = fld("V", "P_SYSMIN%s@F11T" % pair, None)
+                    parts.append("   %s, // p_sysmin F11 %s [I]" % (v, src))
+                else:
+                    pre = ("dn%s" if prog == 0 else "dns%s") % pair
+                    init = ref.field(a2l, pair, kind, pre, field, prog > 0)
+                    note = "330e%s FALLBACK" % ("" if prog == 0 else " Sport")
+                    if field == "pkzu":
+                        note += ": F11 down on-coming 8x8 at 0x54BA0 not mapped"
+                    parts.append("   %s, // %s (%s)" % (init, field, note))
+            dns.append("{\n" + "\n".join(parts) + "\n}")
+        dn_sets.append(dns)
+
+    # Gear-in for R and 1..8 (stage 4 timings, F11 KF_PKZU_g).
+    eng = {}
+    for gear in F11_GEARS:
         parts = []
         for field, a2l, kind in ENGAGE_FIELDS:
-            own = field in F11_ENGAGE_OWN
-            name = a2l + gear + ("@F11" if own else "")
             cname = "f11ge%s_%s" % (gear, field)
-            note = "F11 [I]" if own else "330e Q030 FALLBACK"
-            if kind == "V":
-                v, src = g.value(name)
-                parts.append("   %d, // %s %s (%s)" % (v, field, src, note))
-            elif kind == "C":
-                parts.append("   %s, // %s (%s)" % (g.curve(name, cname), field, note))
+            if field == "pkzu":
+                init, _ = fld("M", keys[("gearin", None, gear)], cname)
+                note = "F11 stage 4 [%s]" % ("C" if gear == "8" else "I")
+            elif field in F11_ENGAGE_STAGE4:
+                init, src = fld(kind, a2l + gear + "@F11T", cname)
+                note = "F11 stage 4 [I]"
+            elif field in F11_ENGAGE_GEARIN and gear in ("R", "1"):
+                init, src = fld(kind, a2l + gear + "@F11", cname)
+                note = "F11 [I]"
             else:
-                parts.append("   %s, // %s (%s)" % (g.map(name, cname), field, note))
-        eng.append("{\n" + "\n".join(parts) + "\n}")
+                init, src = fld(kind, a2l + gear, cname)
+                note = "330e Q030 FALLBACK"
+                if field == "tfcgv2":
+                    note += " [H: the F11 record at this slot is a 16-bit curve on another axis]"
+            parts.append("   %s, // %s (%s)" % (init, field, note))
+        eng[gear] = "{\n" + "\n".join(parts) + "\n}"
+
     glob = []
     for field, a2l in GLOBAL_VALUES:
-        v, src = g.value(a2l)
-        glob.append("   %d, // %s %s (330e Q030 FALLBACK)" % (v, field, src))
+        if field in F11_GLOBAL_OWN:
+            v, src = g.value(F11_GLOBAL_OWN[field] + "@F11T")
+            glob.append("   %d, // %s %s (F11 stage 4 [I])" % (v, field, src))
+        else:
+            v, src = g.value(a2l)
+            glob.append("   %d, // %s %s (330e Q030 FALLBACK [H: no F11 item])" % (v, field, src))
     own_tables = {"kieds_rising": "KF_KIEDSCGSTACE@F11", "kieds_falling": "KF_KIEDSCGFAACE@F11",
                   "psysn": "KF_PSYSN@F11", "tvpsein": "KL_TVPSEIN@F11C"}
     for field, a2l, kind in GLOBAL_TABLES:
@@ -593,20 +744,27 @@ def gen_f11(curves, args, q030):
         init = g.curve(name, "f11g_" + field) if kind == "C" else g.map(name, "f11g_" + field)
         glob.append("   %s, // %s %s (%s)" % (init, field, a2l, note))
     tmax = g.curve("KL_TMAXPSYS@F11", "f11_tmaxpsys")
+    posys = g.curve("KL_POSYSCG@F11T", "f11_posyscg")
 
     gen_note = ("/* GENERATED by tools/gen_cal.py from f11_sas_eds_cal.json, "
-                "f11_psys_gearin_cal.json,\n * the [C] rows of f11_a81v058_cal_ported "
-                "and 330e_Q030_cal_full.json. Do not edit\n * by hand.\n"
+                "f11_psys_gearin_cal.json,\n"
+                " * f11_shift_pressure_cal.json, f11_gearin_timing_cal.json (stage 4), "
+                "the [C] rows of\n * f11_a81v058_cal_ported and 330e_Q030_cal_full.json. "
+                "Do not edit by hand.\n"
                 " * EDS: the F11 v058 solenoid p->I block at 0x19FCA8 (A..E, SYS, TCC), "
                 "mbar -> 0.1 mA.\n * A..E and TCC are byte-identical to the a81 v095 "
                 "8HP90 set [C, checked by the\n * generator]; SYS is not. The next item "
                 "at 0x19FE14 is KF_KIEDSCGFAACE (EDS\n * temperature correction), not POS.\n"
-                " * Line pressure (KF_PSYS_R..8, KF_PSYSN), the EDS temperature "
-                "corrections and the\n * R / 1st gear-in pressures are F11 (Ian's "
-                "f11_psys_gearin_cal, [C structure / I\n * name]); KL_TVPSEIN is a [C] "
-                "port row. Every other field is the 330e Q030 table,\n * marked "
-                "FALLBACK where it is used. */")
-    src = [lic_text(), gen_note, '#include "cal_f11.h"', ""]
+                " * Line pressure, EDS temperature corrections, R / 1st gear-in curves: "
+                "f11_psys_gearin_cal\n * [C structure / I name]. Stage 4: shift pressure "
+                "maps keyed by program (0 base,\n * 1 SP, 2 SPORT [I]) + pair + direction "
+                "from the F11 index tables [C], axes speed\n * raw*32 rpm, torque Nm, "
+                "values mbar [C]; gear-in timings for R, 1..8; P_SYSMIN\n * globals. The "
+                "alternate gear-in family 0x50BB4 is left out. Fields marked\n * FALLBACK "
+                "point at the 330e Q030 arrays (cal_330e.cpp). */")
+    src = [lic_text(), gen_note, '#include "cal_f11.h"', "",
+           "// 330e arrays used by the FALLBACK fields (defined in cal_330e.cpp)."]
+    src += sorted(set(ref.decls)) + [""]
     inits = []
     for n, addr, xs, ys in curves:
         cname = "f11eds_%s" % n[6:].lower()
@@ -615,21 +773,37 @@ def gen_f11(curves, args, q030):
     src += g.out + [""]
     src += ["const CalCurve calF11Eds[7] = {\n   " + ",\n   ".join(inits) + "\n};", ""]
     src += ["const CalMap calF11Psys[9] = {\n   " + ",\n   ".join(psys) + "\n};", ""]
-    src += ["const EngageCal calF11Engage[2] = {\n" + ",\n".join(eng) + "\n};", ""]
+    src += ["const UpShiftCal calF11Up[F11_PROGRAMS][CAL_NUM_PAIRS] = {\n" +
+            ",\n".join("{\n" + ",\n".join(u) + "\n}" for u in up_sets) + "\n};", ""]
+    src += ["const DownShiftCal calF11Down[F11_PROGRAMS][CAL_NUM_PAIRS] = {\n" +
+            ",\n".join("{\n" + ",\n".join(d) + "\n}" for d in dn_sets) + "\n};", ""]
+    src += ["const EngageCal calF11EngageAll[9] = {\n" +
+            ",\n".join(eng[gr] for gr in F11_GEARS) + "\n};", ""]
+    src += ["const EngageCal calF11Engage[2] = {\n" + eng["1"] + ",\n" + eng["R"] + "\n};", ""]
     src += ["const GlobalCal calF11Global = {\n" + "\n".join(glob) + "\n};", ""]
     src += ["// KL_TMAXPSYS: raw axis / values (unit not known), not used.",
             "const CalCurve calF11TmaxPsys = %s;" % tmax, ""]
+    src += ["// KL_POSYSCG [I]: line pressure offset vs oil temperature, mbar. Exported,",
+            "// not used yet.",
+            "const CalCurve calF11PosysCg = %s;" % posys, ""]
     hdr = [lic_text(), gen_note, "#ifndef CAL_F11_H", "#define CAL_F11_H", "",
            '#include "cal_330e.h"', "",
+           "#define F11_PROGRAMS 3 // shift programs: 0 base, 1 SP, 2 SPORT [I]", "",
            "extern const CalCurve calF11Eds[7];   // A B C D E SYS TCC, mbar -> 0.1 mA",
            "extern const CalMap calF11Psys[9];    // R 1..8, x=m_t Nm, y=n_mot rpm [I]",
-           "extern const EngageCal calF11Engage[2]; // N->1, N->R: F11 pressures, 330e timings",
-           "extern const GlobalCal calF11Global;  // 330e scalars, F11 psysn / kieds / tvpsein",
+           "// Shift tables per program, pairs as calUp / calDown.",
+           "extern const UpShiftCal calF11Up[F11_PROGRAMS][CAL_NUM_PAIRS];",
+           "extern const DownShiftCal calF11Down[F11_PROGRAMS][CAL_NUM_PAIRS];",
+           "extern const EngageCal calF11EngageAll[9]; // gear-in R, 1..8 (reference)",
+           "extern const EngageCal calF11Engage[2]; // N->1, N->R (used)",
+           "extern const GlobalCal calF11Global;  // F11 P_SYSMIN / GLS, psysn, kieds, tvpsein",
            "extern const CalCurve calF11TmaxPsys; // raw, not used",
+           "extern const CalCurve calF11PosysCg;  // KL_POSYSCG, mbar vs degC, not used",
            "", "#endif // CAL_F11_H", ""]
     write("include/cal_f11.h", hdr)
     write("src/cal_f11.cpp", src)
-    print("cal_f11: 7 EDS curves, line pressure, R/1st gear-in, %d values" % g.count)
+    print("cal_f11: EDS, line pressure, %d programs x up/down, gear-in R..8, %d values"
+          % (F11_PROGRAMS, g.count))
 
 
 # ---------------------------------------------------------------------------
@@ -831,6 +1005,8 @@ def main():
     ap.add_argument("--q030", required=True, help="330e_Q030_cal_full.json")
     ap.add_argument("--f11", required=True, help="f11_sas_eds_cal.json (v058 EDS block)")
     ap.add_argument("--f11-psys", required=True, help="f11_psys_gearin_cal.json")
+    ap.add_argument("--f11-shift", required=True, help="f11_shift_pressure_cal.json (stage 4)")
+    ap.add_argument("--f11-gearin", required=True, help="f11_gearin_timing_cal.json (stage 4)")
     ap.add_argument("--f11-port", required=True, help="f11_a81v058_cal_ported.json ([C] rows only)")
     ap.add_argument("--v095", required=True, help="directory with params_<cal>.json")
     ap.add_argument("--set", choices=["normal", "el"], default="normal")

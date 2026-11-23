@@ -23,6 +23,6 @@
  * src/cal_330e.cpp, src/cal_f11.cpp, src/cal_v095.cpp.
  * Set CalSigExp to this value to have the boot check confirm the
  * firmware still carries the calibration it was set up with. */
-#define CAL_SIG16 0xB438
+#define CAL_SIG16 0x5479
 
 #endif // CAL_SIG_H

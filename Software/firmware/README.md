@@ -65,24 +65,58 @@ make cal Q030_JSON=/path/to/330e_Q030_cal_full.json \
          F11_JSON=/path/to/f11_sas_eds_cal.json \
          F11_PSYS_JSON=/path/to/f11_psys_gearin_cal.json \
          F11_PORT_JSON=/path/to/f11_a81v058_cal_ported.json \
+         F11_SHIFT_JSON=/path/to/f11_shift_pressure_cal.json \
+         F11_GEARIN_JSON=/path/to/f11_gearin_timing_cal.json \
          V095_DIR=/path/to/cal_v095            # CAL_SET=el for the _EL set
 ```
 
 | File | Source | Evidence |
 |---|---|---|
 | `cal_330e.*` | Ian's full 330e Q030 export (exact A2L labels): shift, gear-in, line pressure, globals, fill, EDS curves; the OEM **Sport set** (every `*SPORT*` label, 269 items; Normal where a map has none); the n6 k-factors `D_k_n6` / `D_k_nab` / `D_k_nmot` (+ `_ntOpt`, `D_i_TargetGear`), exported **but not used** (index mapping [H]) | [C] |
-| `cal_f11.*` | F11 v058: the solenoid block at 0x19FCA8 (A..E, SYS, TCC); line pressure `KF_PSYS_R..8`, `KF_PSYSN`, `KL_TMAXPSYS` (raw, exported only), the EDS temperature corrections `KF_KIEDSCGSTACE/FAACE` and the R / 1st gear-in pressures (`KL_PGRASYN`, `KL_PGRASYNV1/V2`, `KL_PORASYN`, `KF_PKZU`) from `f11_psys_gearin_cal`; `KL_TVPSEIN` from the [C] rows of the v058 port | EDS [C]; psys / gear-in [C structure, I name] |
+| `cal_f11.*` | F11 v058: the solenoid block at 0x19FCA8 (A..E, SYS, TCC); line pressure `KF_PSYS_R..8`, `KF_PSYSN`, `KL_TMAXPSYS` (raw, exported only), the EDS temperature corrections `KF_KIEDSCGSTACE/FAACE` and the R / 1st gear-in curves (`KL_PGRASYN`, `KL_PGRASYNV1/V2`, `KL_PORASYN`) from `f11_psys_gearin_cal`; `KL_TVPSEIN` from the [C] rows of the v058 port. **Stage 4** (`f11_shift_pressure_cal`, `f11_gearin_timing_cal`, `F11_SAM_ADDSCOPE.md` 5): shift-pressure 8x10 maps per program (`calF11Up/Down[3]`), gear-in for R and 1..8 (`calF11EngageAll`), `P_SYSMIN_D/R`, the GLS limits, `T_FNGTGLS`, `P_SYSMINxy`, `KL_POSYSCG` (exported, not used) | EDS [C]; psys / gear-in [C structure, I name]; stage 4 maps [C pair / program / direction, I name], timings and globals [I] |
 | `cal_v095.*` | a81 v095 (five cals): the two solenoid sets (8HP45/70 and 8HP90) and per-size data | [I] |
 
 Only [C] rows (plus the 0x19FCA8 solenoid curves) of the F11 v058 port may
 drive outputs; its [H] rows are never taken (one AH torque-limit curve is
 misplaced). F11 fields with no F11 export use the **330e Q030 table as a
-marked FALLBACK** (`cal_f11.cpp` comments): the per-clutch fill items,
-shift pressure (UP / DOWN maps exist in the F11 but are not name-mapped
-[H]), the other gear-in timings (`KL_TFV1`, `KL_TVKZU`, `KL_TFCGV2`,
-`KL_TVKZUCGV2`, `T_SYN`) and the global scalars. **Change:** the old F11
-fill items from `f11_sas_eds_cal.json` were [I] (and the new port shifts
-their labels by one clutch), so F11 fill now uses the 330e Q030 values.
+marked FALLBACK** (`cal_f11.cpp` comments; the F11 tables point at the
+330e arrays rather than copying them). **Change:** the old F11 fill items
+from `f11_sas_eds_cal.json` were [I] (and the new port shifts their labels
+by one clutch), so F11 fill now uses the 330e Q030 values.
+
+F11 stage 4 (shift pressure, gear-in timing, globals):
+
+* Shift-pressure maps are keyed by **program + gear pair + direction**
+  from the F11 index tables [C], never by the porter's names in
+  `f11_a81v058_cal_ported.csv` (most of its 8x10 labels are shifted).
+  Axes: speed = raw x 32 rpm, torque = raw Nm; values mbar [C, KF_PKZU_8
+  is byte-identical to the 330e record]. Taken: upshift on-coming
+  `KF_PKZU` (per program), upshift off-going `KF_PKAB` (one set for all
+  programs), downshift off-going `KF_PKAB` (per program), `P_SYSMINxy`.
+* Programs 0 / 1 / 2 = base / SP / SPORT [I, inferred, not from a
+  symbol]. Program 0 is Normal; 1 and 2 are the F11 row's **Sport and
+  Track** tables (`upMode` / `downMode`). The DriveMode offsets (shift
+  speeds, time scale, TCC) still apply on top; rows without own tables
+  keep the 330e Sport set plus the offsets.
+* Still 330e FALLBACK in the F11 shift tables: every timing / gradient /
+  GLS field (program 0 from the 330e Normal set, programs 1 and 2 from
+  the 330e Sport set) and the **downshift on-coming** `KF_PKZU`.
+* **Left out:** the 3 maps of the 0x50BB4 family (`F11_KF_PKZU_GEALT_R/1/2`,
+  the alternate gear-in set the F11 uses after an engine restart / standby
+  [trigger H]); the follow-up / multiple-downshift `KF_PKABFOLNACH*` maps
+  (no firmware field); and the **unmapped shift-block maps**: the upshift
+  on-coming 10x3 (u8), the downshift off-going 8x8 and the 8x8 downshift
+  on-coming family at 0x54BA0 (not 8x10, not mapped yet).
+* Gear-in, all gears R and 1..8 (`calF11EngageAll`; the TCU uses R and
+  1st): `KL_TFV1`, `KL_TVKZU`, `KL_TVKZUCGV2`, `T_SYN` and `KF_PKZU` from
+  stage 4 [I; gear 8 map C]. T_SYN = 1000 ms for R / 1 / 2, 200 ms for
+  3-7, 0 for 8; TFV1 and TVKZUCGV2 = 0 for R and 1; **TVKZU = 100 ms for
+  R / 1 / 2** (30 ms for 3-7, 0 for 8) as exported. `KL_TFCGV2` stays on
+  the 330e value [H: the F11 record in that slot is a 16-bit curve on
+  another axis]. `KL_PGRASYN*` / `KL_PORASYN` for 2..8 are 330e.
+* Globals: `P_SYSMIN_D/R` = 7000 / 6500 mbar, `P_MAXOBGLS/UNGLS` = 3000 /
+  3000, `T_FNGTGLS` = 70 ms [I]. `P_SYSMINPSAUS` and `I_EDSPOSV/PSV` have no
+  F11 item and stay 330e [H].
 
 `calset.*` holds one row per gearbox AND calibration (`GearboxType`; ids 0
 and 1 unchanged, new rows appended):
@@ -99,7 +133,8 @@ and 1 unchanged, new rows appended):
 
 * Every row runs the 330e Q030 shift / fill / gear-in / line tables (the
   clutch pattern tables are byte-identical in every SH program [C]),
-  except the F11 row's own line pressure and R / 1st gear-in above.
+  except the F11 row's own line pressure, gear-in and stage 4 shift
+  pressure above.
 * `SolCurveSet` (0 = the row's default) is a **per-unit** setting: it
   follows the valve hardware revision, not the gearbox size. The F11 v058
   set equals the v095 8HP90 set for A..E and ch7 [C, checked by the
@@ -664,7 +699,10 @@ parameters to set once the value is known:
 `DriveMode` (category "Drive Modes"). Normal is the calibration as it is.
 Sport and Track use the **OEM Sport tables from Q030** (every `*SPORT*`
 label for the shift and fill maps, Normal where a map has none; Track
-uses the same Sport tables), plus **parameter-driven modifiers**
+uses the same Sport tables). On the F11 row, Sport and Track run the F11's
+own shift programs 1 (SP) and 2 (SPORT) [I] for the shift maps (stage 4,
+see Calibration tables) and the Q030 Sport set for fill. Both add
+**parameter-driven modifiers**
 (`drivemode.cpp`), so they stay tunable:
 
 | Modifier | Sport | Track | Limits |
@@ -686,7 +724,7 @@ limit are not changed by any mode. The mode's up / down points do feed
 the lugging step-down (also in Manual and in CAN-loss hold, which still
 never upshifts). OEM Sport maps: `VariantCal::upMode` / `downMode` /
 `clutchMode` point Sport and Track at `calUpSport` / `calDownSport` /
-`calClutchSport`. Note: Q030 `SP` in labels like `KF_TOSFHSSP_x` means
+`calClutchSport` (F11 row: `calF11Up/Down[1]` and `[2]`). Note: Q030 `SP` in labels like `KF_TOSFHSSP_x` means
 "spontaneous" and `SP31` etc. are skip shifts; neither is Sport.
 
 ### Spot values (web interface, read-only)

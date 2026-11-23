@@ -995,13 +995,21 @@ static void TestVariants() {
     const CalRef *t = Cal::Ref(*v.size, "TAB_MVG_MT");
     CHECK(t && t->z[t->nx - 1] == w.cls * 1000);
     CHECK(Cal::Ref(*v.size, "NO_SUCH_LABEL") == 0);
-    // Shift / fill tables: 330e Q030 [C] on every row, Sport set for
-    // Sport and Track.
-    CHECK(v.up == calUp && v.down == calDown && v.clutch == calClutch);
+    // Fill tables: 330e Q030 [C] on every row. Shift tables: the F11's
+    // own per program (stage 4) on the F11 row, 330e elsewhere; Sport and
+    // Track use the Sport set (F11: programs 1 and 2).
+    CHECK(v.clutch == calClutch);
     CHECK(v.upMode[DM_NORMAL] == 0);
-    CHECK(v.upMode[DM_SPORT] == calUpSport && v.upMode[DM_TRACK] == calUpSport);
-    CHECK(v.downMode[DM_SPORT] == calDownSport);
     CHECK(v.clutchMode[DM_SPORT] == calClutchSport);
+    if (w.id == CALVAR_F11) {
+      CHECK(v.up == calF11Up[0] && v.down == calF11Down[0]);
+      CHECK(v.upMode[DM_SPORT] == calF11Up[1] && v.upMode[DM_TRACK] == calF11Up[2]);
+      CHECK(v.downMode[DM_SPORT] == calF11Down[1] && v.downMode[DM_TRACK] == calF11Down[2]);
+    } else {
+      CHECK(v.up == calUp && v.down == calDown);
+      CHECK(v.upMode[DM_SPORT] == calUpSport && v.upMode[DM_TRACK] == calUpSport);
+      CHECK(v.downMode[DM_SPORT] == calDownSport);
+    }
     // Line pressure / gear-in: own F11 tables on the F11 row only.
     if (w.id == CALVAR_F11)
       CHECK(v.psys == calF11Psys && v.engage == calF11Engage && v.global == &calF11Global);
@@ -1068,9 +1076,72 @@ static void TestVariants() {
   CHECK_EQ(Cal::Map(Cal::Active().engage[0].pkzu, 704, -18), 400); // KF_PKZU_1
   CHECK_EQ(Cal::Curve(Cal::Active().engage[0].pgrasyn, -50), 500);
   CHECK_EQ(Cal::Curve(calEngage[0].pgrasyn, -50), 1000);
-  CHECK_EQ(Cal::Active().engage[0].t_syn, calEngage[0].t_syn);       // fallback
-  CHECK(SameCurve(Cal::Active().engage[1].tfv1, calEngage[1].tfv1)); // fallback
-  CHECK_EQ(Cal::Active().global->p_sysmin_d, calGlobal.p_sysmin_d);  // fallback
+  // Stage 4 gear-in timings: T_SYN R/1 = 1000 ms, TFV1 / TVKZUCGV2 = 0,
+  // TVKZU 100 ms; TFCGV2 stays 330e [H].
+  CHECK_EQ(Cal::Active().engage[0].t_syn, 1000);
+  CHECK_EQ(Cal::Active().engage[1].t_syn, 1000);
+  CHECK_EQ(Cal::Curve(Cal::Active().engage[0].tfv1, 0), 0);
+  CHECK_EQ(Cal::Curve(Cal::Active().engage[1].tvkzucgv2, 20), 0);
+  CHECK_EQ(Cal::Curve(Cal::Active().engage[0].tvkzu, 500), 100);
+  CHECK(SameCurve(Cal::Active().engage[0].tfcgv2, calEngage[0].tfcgv2));
+  const int tsyn[9] = {1000, 1000, 1000, 200, 200, 200, 200, 200, 0}; // R, 1..8
+  for (int i = 0; i < 9; i++) {
+    CHECK_EQ(calF11EngageAll[i].t_syn, tsyn[i]);
+    CHECK_EQ(Cal::Curve(calF11EngageAll[i].tvkzucgv2, 60), 0);
+  }
+  CHECK_EQ(Cal::Curve(calF11EngageAll[2].tfv1, 1000), 200); // 2nd [C]
+  CHECK_EQ(Cal::Curve(calF11EngageAll[8].tvkzu, 0), 0);
+  CHECK(calF11Engage[1].pkzu.z == calF11EngageAll[0].pkzu.z); // N->R = R
+  CHECK(calF11Engage[0].pkzu.z == calF11EngageAll[1].pkzu.z); // N->1 = 1st
+  CHECK_EQ(Cal::Map(calF11EngageAll[8].pkzu, 992, -18), 0);    // KF_PKZU_8 [C]
+  // Stage 4 globals; P_SYSMINPSAUS and I_EDSPOSV / PSV stay 330e.
+  CHECK_EQ(Cal::Active().global->p_sysmin_d, 7000);
+  CHECK_EQ(Cal::Active().global->p_sysmin_r, 6500);
+  CHECK_EQ(Cal::Active().global->p_maxobgls, 3000);
+  CHECK_EQ(Cal::Active().global->p_maxungls, 3000);
+  CHECK_EQ(Cal::Active().global->t_fngtgls, 70);
+  CHECK_EQ(calF11Global.p_sysminpsaus, calGlobal.p_sysminpsaus);
+  CHECK_EQ(calF11Global.i_edsposv, calGlobal.i_edsposv);
+  CHECK_EQ(calF11Global.i_edspsv, calGlobal.i_edspsv);
+  CHECK_EQ(calF11PosysCg.n, 8);
+  CHECK_EQ(Cal::Curve(calF11PosysCg, -40), 6500);
+  CHECK_EQ(Cal::Curve(calF11PosysCg, 20), 0);
+  // Stage 4 shift maps keyed by program + pair + direction; axes speed
+  // rpm (raw x 32), torque Nm, values mbar.
+  const UpShiftCal &u34 = calF11Up[0][2], &u34s = calF11Up[2][2];
+  CHECK_EQ(u34.pkzu.nx, 8);
+  CHECK_EQ(u34.pkzu.ny, 10);
+  CHECK_EQ(u34.pkzu.x[0], 992);
+  CHECK_EQ(u34.pkzu.y[0], -72);
+  CHECK_EQ(Cal::Map(u34.pkzu, 992, -72), 100);
+  CHECK_EQ(Cal::Map(u34.pkzu, 7008, 552), 5100);   // KF_PKZU34
+  CHECK_EQ(Cal::Map(u34s.pkzu, 7008, 552), 6400);  // program 2 (SPORT)
+  CHECK(u34.pkab.z == u34s.pkab.z);                 // one off-going set
+  CHECK_EQ(Cal::Map(u34.pkab, 992, -102), 500);     // KF_PKAB34
+  CHECK_EQ(u34.p_sysmin, 5000);
+  CHECK_EQ(calF11Up[0][0].p_sysmin, 6500);           // P_SYSMIN12
+  const DownShiftCal &d21 = calF11Down[0][0], &d21s = calF11Down[1][0];
+  CHECK_EQ(Cal::Map(d21.pkab, 0, -102), 500);        // KF_PKAB21
+  CHECK_EQ(Cal::Map(d21s.pkab, 32, -102), 1100);     // program 1 (SP)
+  CHECK_EQ(Cal::Map(calF11Down[2][4].pkab, 992, -102), 250); // SPORT 65
+  CHECK_EQ(d21.p_sysmin, 6500);
+  // Fields without an F11 source point at the 330e arrays.
+  for (int k = 0; k < CAL_NUM_PAIRS; k++) {
+    CHECK(calF11Up[0][k].tfcgnt.z == calUp[k].tfcgnt.z);
+    CHECK(calF11Up[1][k].tfcgnt.z == calUpSport[k].tfcgnt.z);
+    CHECK(calF11Down[0][k].pkzu.z == calDown[k].pkzu.z); // 0x54BA0 not mapped
+    CHECK(calF11Down[2][k].pkzu.z == calDownSport[k].pkzu.z);
+    CHECK(calF11Up[0][k].pkzu.z != calUp[k].pkzu.z);
+    CHECK(calF11Down[0][k].pkab.z != calDown[k].pkab.z);
+    CHECK_EQ(calF11Up[1][k].t_syn, calUpSport[k].t_syn);
+  }
+  // DriveMode on the F11 row switches the program tables.
+  Cal::SelectMode(DM_SPORT);
+  CHECK(Cal::Up() == calF11Up[1] && Cal::Down() == calF11Down[1]);
+  Cal::SelectMode(DM_TRACK);
+  CHECK(Cal::Up() == calF11Up[2]);
+  Cal::SelectMode(DM_NORMAL);
+  CHECK(Cal::Up() == calF11Up[0]);
   CHECK(SameCurve(calF11Global.tvpsein, calGlobal.tvpsein)); // [C] port, same
   CHECK_EQ(calF11TmaxPsys.n, 4);
   // v095 rows run the 330e tables with their own solenoid set.

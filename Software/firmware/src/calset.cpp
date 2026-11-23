@@ -24,11 +24,17 @@
                   {0, calClutchSport, calClutchSport}
 // Shift / gear-in / line pressure / fill: 330e Q030 [C].
 #define Q030_TABLES calClutch, calUp, calDown, calEngage, calPsys, &calGlobal
-/* F11 v058: line pressure, EDS temperature corrections and the R / 1st
- * gear-in pressures from the F11 export; fill, shift pressure, the other
- * gear-in timings and the global scalars are the 330e Q030 ones
- * (FALLBACK, see cal_f11.cpp). */
-#define F11_TABLES calClutch, calUp, calDown, calF11Engage, calF11Psys, &calF11Global
+/* F11 v058: line pressure, EDS temperature corrections, gear-in, the
+ * shift pressure maps (stage 4: up on-coming, up off-going, down
+ * off-going, P_SYSMINxy) and the P_SYSMIN / GLS globals from the F11
+ * export. Fill, the shift timings, the downshift on-coming map and the
+ * remaining scalars are the 330e Q030 ones (FALLBACK, see cal_f11.cpp).
+ * Program 0 = Normal; programs 1 (SP) and 2 (SPORT) [I] are the Sport
+ * and Track tables. */
+#define F11_TABLES calClutch, calF11Up[0], calF11Down[0], calF11Engage, calF11Psys, \
+                   &calF11Global
+#define F11_MODES {0, calF11Up[1], calF11Up[2]}, {0, calF11Down[1], calF11Down[2]}, \
+                  {0, calClutchSport, calClutchSport}
 // Engine torque intervention: 0x0B0 on every row [C, F11 log + Q030].
 #define TQ_TX 0x0B0
 
@@ -40,7 +46,7 @@ static const VariantCal variants[CALVAR_COUNT] = {
     // N47 cal's (same car and gearbox; the v058 port has no [C] size rows).
     {"8HP45_F11", "F11 v058", GBX_8HP45, F11_TABLES, SOLSET_F11_V058, false,
      CH7_TCC, ENG_VAR_F11, false, TQ_TX, false, &calSizes[CALSIZE_V095_F11N47],
-     SPORT_SET},
+     F11_MODES},
     // a81 v095 cals [I]. Gear-in roles: the F11 (Gen1 a81) table [I].
     {"8HP45_F11N47_v095", "a81 v095 2768", GBX_8HP45, Q030_TABLES,
      SOLSET_V095_45_70, false, CH7_TCC, ENG_VAR_F11, false, TQ_TX, false,

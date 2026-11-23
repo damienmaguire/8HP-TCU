@@ -45,9 +45,9 @@
  * small on purpose.
  *
  * OEM Sport tables: Cal::SelectMode() also switches the shift tables to
- * VariantCal::upMode / downMode once Ian's ported SP maps are generated.
- * Then set that mode's modifiers to neutral (0 rpm, 100 %) unless both
- * are wanted.
+ * VariantCal::upMode / downMode (330e: the Q030 Sport set; F11: its
+ * programs 1 and 2). Set a mode's modifiers to neutral (0 rpm, 100 %)
+ * if only the tables are wanted.
  */
 
 #define DRIVEMODE_TIME_MIN_PCT 50 // floor on the shift time scale
