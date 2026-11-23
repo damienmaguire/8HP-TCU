@@ -125,15 +125,12 @@ static void ConfigureTcu() {
   c.sas.syncBand = Param::GetInt(Param::SyncBand);
   c.sas.glsGainPct = Param::GetInt(Param::GlsGain);
   c.sas.rampMaxDownMs = Param::GetInt(Param::RampMaxDown);
-  c.sas.glsKabSlipUp = Param::GetInt(Param::GlsKabSlipUp);
-  c.sas.glsKabSlipDown = Param::GetInt(Param::GlsKabSlipDn);
   c.engage.pMax = Param::GetInt(Param::ShiftPMax);
   c.engage.fillEqMs = Param::GetInt(Param::EngageFillEq);
   c.engage.rampMs = Param::GetInt(Param::EngageRamp);
   c.engage.syncBand = Param::GetInt(Param::SyncBand);
   c.engage.fastCloseGrad = Param::GetInt(Param::EngageCloseGrad);
   c.engage.syncConfirmMs = Param::GetInt(Param::EngageSyncMs);
-  c.engage.postSyncMs = Param::GetInt(Param::EngagePostSync);
   c.engage.tqZeroNm = Param::GetInt(Param::EngageTqZero);
   c.engage.variant = Param::GetInt(Param::Variant);
   c.gearSelMode = Param::GetInt(Param::GearSelMode);
@@ -346,9 +343,14 @@ static void Ms10Task() {
   in.m_t = fromParam ? Param::GetInt(Param::TorqueSet) : rxTorque;
   in.n_mot = fromParam ? Param::GetInt(Param::MotorRpmSet) : rxMotorRpm;
   if (!fromParam && !canOk) {
-    // No VCU. CanLossMode 0 (default): go to neutral. CanLossMode 1: keep
-    // the last selector so the TCU holds the gear (no upshifts, high line
-    // pressure). Either way assume high torque for line pressure.
+    // No VCU. CanLossMode 1 (default, Damien 2026-11-23): keep the last
+    // selector so the TCU holds the gear (no upshifts, LineMax, step down
+    // as the car slows). CanLossMode 0: go to neutral. Either way assume
+    // high torque for line pressure: CanLossTq defaults to the OEM
+    // substitute D_m_IstVM_Default = 600 Nm (@0x218144) [C]. The OEM
+    // fault-to-reaction table (KFC -> KMN) was not found, so what exactly
+    // the OEM does on KFCx_ENGSIGTRQ is [H]; hold-gear is Ian's reading
+    // of the limp states [I] (QA2 answer 8).
     if (Param::GetInt(Param::CanLossMode) != CANLOSS_HOLD)
       in.selector = SEL_N;
     in.gearReq = 0;

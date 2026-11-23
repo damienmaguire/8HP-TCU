@@ -26,15 +26,12 @@ static TcuConfig Cfg() {
   c.sas.syncBand = 30;
   c.sas.glsGainPct = 100;
   c.sas.rampMaxDownMs = 1000;
-  c.sas.glsKabSlipUp = 350;
-  c.sas.glsKabSlipDown = 150;
   c.engage.pMax = 12750;
   c.engage.fillEqMs = 50;
   c.engage.rampMs = 300;
   c.engage.syncBand = 30;
   c.engage.fastCloseGrad = 30000;
   c.engage.syncConfirmMs = 80;
-  c.engage.postSyncMs = 200;
   c.engage.tqZeroNm = 10;
   c.engage.variant = ENG_VAR_330E;
   c.gearSelMode = GSEL_VCU;
@@ -52,7 +49,7 @@ static TcuConfig Cfg() {
   c.dntTauMs = 70;
   c.topGear = 8;
   c.tqInterv = 1;
-  c.canLossMode = CANLOSS_NEUTRAL;
+  c.canLossMode = CANLOSS_HOLD; // the parameter default
   c.ilOpenLow = 600;
   c.ilOpenHigh = 7900;
   c.iMax = 8500;
@@ -338,7 +335,7 @@ static void TestEngageF11() {
 static void TestCanLoss() {
   Tcu t;
   TcuConfig c = Cfg();
-  c.canLossMode = CANLOSS_HOLD;
+  CHECK_EQ(c.canLossMode, CANLOSS_HOLD); // default
   t.Configure(c);
   TcuInputs in = In();
   t.Ready();
@@ -374,9 +371,11 @@ static void TestCanLoss() {
   CHECK(RunTicks(t, in, 5));
   CHECK(!t.Out().canLossHold);
 
-  // Mode 0 (default): no shifts and no hold flag.
+  // Mode 0 (neutral option): no shifts and no hold flag.
   Tcu t0;
-  t0.Configure(Cfg());
+  TcuConfig c0 = Cfg();
+  c0.canLossMode = CANLOSS_NEUTRAL;
+  t0.Configure(c0);
   TcuInputs i0 = In();
   t0.Ready();
   CHECK(EngageTo(t0, i0, SEL_D));

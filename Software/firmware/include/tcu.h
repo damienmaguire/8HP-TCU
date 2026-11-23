@@ -101,8 +101,9 @@ struct TcuConfig
 
 enum CanLossMode
 {
-   CANLOSS_NEUTRAL = 0, // drop to neutral (current default, Damien to decide)
-   CANLOSS_HOLD = 1,    // hold the gear at high line pressure, no upshifts
+   CANLOSS_NEUTRAL = 0, // drop to neutral
+   CANLOSS_HOLD = 1,    // default (Damien, 2026-11-23): hold the gear at
+                        // LineMax, no upshifts, step down as the car slows
 };
 
 struct TcuInputs

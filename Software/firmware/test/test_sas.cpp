@@ -46,8 +46,6 @@ static SasConfig Cfg() {
   c.syncBand = 30;
   c.glsGainPct = 100;
   c.rampMaxDownMs = 1000;
-  c.glsKabSlipUp = 350;
-  c.glsKabSlipDown = 150;
   return c;
 }
 
@@ -159,7 +157,7 @@ static void TestDownshift21() {
   CHECK(Seq(r.kzu, {2, 5, 9, 12, 18, 0}));
   // KAB: (hold 10 is left inside Start) ramp, slip, ramp to sync, hold in
   // sync, overlap, end
-  CHECK(Seq(r.kab, {11, 12, 13, 14, 15, 16}));
+  CHECK(Seq(r.kab, {10, 11, 12, 13, 14, 15, 16}));
 }
 
 static void TestAllPairsFinish() {
@@ -215,6 +213,27 @@ static void TestGlsScaling() {
   CHECK_EQ(Cal::Curve(calUp[0].tvglskabcg, -15), 250);
   CHECK_EQ(Cal::Curve(calUp[0].tvglskabcg, 0), 150);
   CHECK_EQ(Cal::Curve(calUp[0].tvglskabcg, 30), 50);
+  // Other QA2 gain examples: 1->2 KAB KP 3 / KI 11, 2->1 KZU 2 / 8,
+  // 2->1 KAB 1 / 13.
+  CHECK_EQ(calUp[0].kp_glskab, 3);
+  CHECK_EQ(calUp[0].ki_glskab, 11);
+  CHECK_EQ(calDown[0].kp_glskzu, 2);
+  CHECK_EQ(calDown[0].ki_glskzu, 8);
+  CHECK_EQ(calDown[0].kp_glskab, 1);
+  CHECK_EQ(calDown[0].ki_glskab, 13);
+  // Start criterion FUN_0010e60e: KL_NDGLSPOSHS12 350 rpm, KL_NDGLSNEGHS12
+  // -160..-300 rpm over torque, ND_GLSRS21 150 rpm.
+  CHECK_EQ(Cal::Curve(calUp[0].ndglsposhs, 100), 350);
+  CHECK_EQ(Cal::Curve(calUp[0].ndglsneghs, 50), -160);
+  CHECK_EQ(Cal::Curve(calUp[0].ndglsneghs, 350), -300);
+  CHECK_EQ(calDown[0].nd_glsrs, 150);
+  // RS-KAB block: KL_POHKAB21 0.4..1.0 bar, KL_TRAHKAB21 100 ms, both
+  // factors 1.0.
+  CHECK_EQ(Cal::Curve(calDown[0].pohkab, 24), 400);
+  CHECK_EQ(Cal::Curve(calDown[0].pohkab, 448), 1000);
+  CHECK_EQ(Cal::Curve(calDown[0].trahkab, 0), 100);
+  CHECK_EQ(calDown[0].f_trahkab, 100);
+  CHECK_EQ(calDown[0].f_prahkab, 100);
   // KZU start delay KL_TVGLSKZUCG12 is 180-200 ms.
   CHECK(Cal::Curve(calUp[0].tvglskzucg, 60) >= 180);
   CHECK(Cal::Curve(calUp[0].tvglskzucg, -20) <= 200);
@@ -246,14 +265,23 @@ static void TestGlsOwner() {
   CHECK(!dnC.glsKzu.empty());
 }
 
-/* No third ramp: after sync KL_PGRASYN runs for T_SYN, then a ramp to max
- * over T_RAMAX, then the on-coming clutch is done. */
+/* No third (takeover) ramp: after sync KL_PGRASYN runs for T_SYN, then
+ * KL_PORASYN up to PMAX, then the on-coming clutch is done. T_RAMAX is the
+ * timeout ramp only (10 ms on 1->2). */
 static void TestUpshiftAfterSync() {
   CHECK_EQ(calUp[0].t_syn, 300);
+  CHECK_EQ(calUp[0].t_ramax, 10);
+  const CalCurve &por = calUp[0].porasyn;
+  CHECK_EQ(por.n, 3);
+  CHECK_EQ(por.x[2], 450);
+  CHECK_EQ(por.y[0], 100);
+  CHECK_EQ(por.y[2], 12750);
   ShiftRun r = Run(1, 2, 150, true);
   CHECK(r.done);
-  CHECK(r.syncToIdleMs >= calUp[0].t_syn);
-  CHECK(r.syncToIdleMs <= calUp[0].t_syn + calUp[0].t_ramax + 30);
+  // (sync is detected inside SyncBand, a tick or so before the plant's
+  // exact sync, hence the -30 ms)
+  CHECK(r.syncToIdleMs >= calUp[0].t_syn + por.x[2] - 30);
+  CHECK(r.syncToIdleMs <= calUp[0].t_syn + por.x[2] + 40);
   CHECK_EQ(r.maxKzu, 12750);
 }
 

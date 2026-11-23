@@ -67,6 +67,7 @@ UP_FIELDS = [
     ("pgokzumtnt", "KF_PGOKZUMTNT", "M"),
     ("tsynmtrakzu", "KL_TSYNMTRAKZU", "C"),
     ("pgrasyn", "KL_PGRASYN", "C"),
+    ("porasyn", "KL_PORASYN", "C"),
     ("t_syn", "T_SYN", "V"),
     ("t_vkabhs", "T_VKABHS", "V"),
     ("phkabmt", "KL_PHKABMT", "C"),
@@ -89,6 +90,8 @@ UP_FIELDS = [
     ("ki_glskab", "KI_GLSKAB", "V"),
     ("tvglskzucg", "KL_TVGLSKZUCG", "C"),
     ("tvglskabcg", "KL_TVGLSKABCG", "C"),
+    ("ndglsposhs", "KL_NDGLSPOSHS", "C"),
+    ("ndglsneghs", "KL_NDGLSNEGHS", "C"),
     ("mehaupt", "KF_MEHAUPT", "M"),
     ("t_ramee", "T_RAMEE", "V"),
 ]
@@ -123,6 +126,10 @@ DOWN_FIELDS = [
     ("ki_glskab", "KI_GLSKAB", "V"),
     ("tvglskzucg", "KL_TVGLSKZUCG", "C"),
     ("tvglskabcg", "KL_TVGLSKABCG", "C"),
+    ("nd_glsrs", "ND_GLSRS", "V"),
+    ("tohkabmtnt", "KF_TOHKABMTNT", "M"),
+    ("f_trahkab", "F_TRAHKAB", "V"),
+    ("f_prahkab", "F_PRAHKAB", "V"),
 ]
 
 CLUTCH_FIELDS = [
@@ -143,6 +150,9 @@ ENGAGE_FIELDS = [
     ("pgrasyn", "KL_PGRASYN_", "C"),
     ("pgrasynv1", "KL_PGRASYNV1_", "C"),
     ("pgrasynv2", "KL_PGRASYNV2_", "C"),
+    ("tvkzucgv2", "KL_TVKZUCGV2_", "C"),
+    ("t_syn", "T_SYN_", "V"),
+    ("porasyn", "KL_PORASYN_", "C"),
 ]
 
 # EDS pressure->current curves in EdsValve order (see eds.h). POS is left
@@ -178,6 +188,8 @@ def value_scale(conv):
         return 1000.0          # bar -> mbar
     if conv.startswith("UMR_MA__"):
         return 10.0            # mA -> 0.1 mA
+    if conv.startswith("UMR___1_100"):
+        return 100.0           # factor -> percent (F_TRAHKAB, F_PRAHKAB)
     return 1.0                 # ms, Nm, rpm, degC, PI gains
 
 

@@ -17,6 +17,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "engage.h"
+#include "cal_330e.h"
 #include "gears.h"
 #include "test.h"
 
@@ -28,7 +29,6 @@ static EngageConfig Cfg(int variant) {
   c.syncBand = 30;
   c.fastCloseGrad = 30000;
   c.syncConfirmMs = 80;
-  c.postSyncMs = 200;
   c.tqZeroNm = 10;
   c.variant = (uint8_t)variant;
   return c;
@@ -119,7 +119,14 @@ void TestEngage() {
       CHECK(oem.done);
       CHECK(!oem.sawFast);
       CHECK(oem.closeMs > fast.closeMs);
-      CHECK(oem.maxStep <= 15000 * 10 / 1000 + 1); // OEM 1-15 bar/s
+      // OEM: T_SYN_n in sync, then KL_PORASYN_n to PMAX (1500 ms on N->1,
+      // 1100 ms on N->R). Its last step to PMAX is steep (OEM data), so the
+      // rate is not checked here.
+      const EngageCal &ec = calEngage[g];
+      // (at standstill the T_SYN_n dwell may already be over when the
+      // close phase begins, so only the ramp length is certain)
+      CHECK_EQ(ec.t_syn, 200);
+      CHECK(oem.closeMs >= ec.porasyn.x[ec.porasyn.n - 1]);
       // Line pressure not adequate: no fast close.
       EngageInputs line = still;
       line.lineOk = false;
@@ -139,6 +146,25 @@ void TestEngage() {
       CHECK(!sl.done);
       CHECK(!sl.sawFast);
     }
+  }
+
+  // V1 starts at once, V2 waits KL_TVKZUCGV2_n (50 ms at 40 degC) and the
+  // roles follow tables 0x4C21E / 0x4C228 (330e) and 0x5BA12 / 0x5BA1C (F11).
+  struct { int v, g, v1, v2; } roleCase[] = {
+      {ENG_VAR_330E, GEAR_1, CL_A, CL_C}, {ENG_VAR_330E, GEAR_R, CL_A, CL_D},
+      {ENG_VAR_F11, GEAR_1, CL_A, CL_B}, {ENG_VAR_F11, GEAR_R, CL_A, CL_B}};
+  for (auto &rc : roleCase) {
+    Engage r;
+    CHECK(r.Start(rc.g, Cfg(rc.v)));
+    int32_t tv2 = Cal::Curve(calEngage[rc.g == GEAR_1 ? 0 : 1].tvkzucgv2, 40);
+    CHECK_EQ(tv2, 50);
+    r.Tick(still);
+    CHECK(r.Pressure(rc.v1) > 0);
+    if (rc.v2 != CL_B) // B (F11 V2) has no neutral pre-fill here
+      CHECK_EQ(r.Pressure(rc.v2), 0);
+    for (int i = 0; i < tv2 / 10 + 1; i++)
+      r.Tick(still);
+    CHECK(r.Pressure(rc.v2) > 0);
   }
 
   // The fast close waits for the no-slip confirm time.

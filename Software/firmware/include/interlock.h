@@ -27,7 +27,7 @@
  *
  * It works on the commanded coil currents (the targets handed to the
  * MAX22200 layer, before slew and dither), not on pressures, so it checks
- * what the valves will actually be told. Rules, from Ian (QA2):
+ * what the valves will actually be told. Rules, from Ian (QA2 answer 2):
  *
  *  1. A clutch counts as "open" only when its coil current is past the
  *     open threshold for its valve type:
@@ -42,8 +42,17 @@
  *  4. Outside a swap at most three, and three must be a real gear (A C E
  *     is the one three-element combination that is not).
  *
- * A violation sends the TCU to its safe state. The OEM uses an ASIL
- * current-plausibility table (jHydEdsLogik) instead.
+ * OEM background [C]: the L2 current-plausibility monitor
+ * (iUl2IGetrPlausiZustandInt) has a legal state 4 "Verschachtelung, 4 Kup
+ * beteiligt" and errors on 5 clutches or on wrong actuation outside the
+ * shift. The open thresholds are IEDS_STOER_VUNPLAUSI* (A/B 60 mA, C/D/E
+ * 790 mA). Not used here: the "pressurised" thresholds
+ * I_EDSPOWERFLOWUEBMAX_A/B (287/215 mA) and I_EDSPOWERFLOWUEBMIN_C/D/E
+ * (639/618/642 mA), and the position-N check (A/B < 150 mA, C/D/E >
+ * 750 mA). Tie-up during a swap is prevented by the pressure ramps, not by
+ * this count [I].
+ *
+ * A violation sends the TCU to its safe state.
  */
 
 enum InterlockResult

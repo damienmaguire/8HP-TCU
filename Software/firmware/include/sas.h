@@ -43,7 +43,8 @@
  * changes is which clutch carries the slip controller (GLS):
  *   power-on upshift   -> GLS on KZU (from ramp 2)
  *   coast upshift      -> GLS on KAB (from the KAB shift-pressure phase)
- *   power-on downshift -> GLS on KAB (from the KAB slip phase)
+ *   power-on downshift -> GLS on KAB (from the KAB slip/shift-pressure phase)
+ * (GLS sequence table @0x58998, FUN_0010f12e; see GlsUpdate in sas.cpp)
  *   coast downshift    -> GLS on KZU (from the KZU slip/hold phase)
  * TAB_IKABENTLEER (0x234c78, the shift-type switch for the off-going
  * current ramp) is all zeros in the 330e calibration, so that current ramp
@@ -112,8 +113,6 @@ struct SasConfig
    int32_t syncBand;    // |ndSyn| below this counts as synchronous, rpm
    int32_t glsGainPct;  // scale on the OEM GLS gains, 0 = GLS off
    int32_t rampMaxDownMs; // timeout ramp for downshifts (no OEM value in the down set)
-   int32_t glsKabSlipUp;   // KAB GLS starts early once |ndSynIst| reaches this on an upshift, rpm (Ian: 350)
-   int32_t glsKabSlipDown; // same for a downshift, rpm (Ian: 150)
 };
 
 struct SasOutputs
@@ -172,7 +171,7 @@ private:
    void EnterKab(uint8_t s);
    void GlsArm(const CalMap &wtsgls, const SasInputs &in);
    int32_t GlsStep(const SasInputs &in, int32_t kp, int32_t ki);
-   int32_t GlsRun(const SasInputs &in, bool start, int32_t kp, int32_t ki);
+   int32_t GlsUpdate(const SasInputs &in);
 
    SasConfig cfg;
    SasOutputs out;
@@ -195,8 +194,12 @@ private:
    int32_t tGls;        // ms since the GLS phase began (start delay timer)
    bool glsOn;          // GLS start delay has passed
    bool glsOnKab;       // GLS acts on the off-going clutch for this shift
+   bool glsWaitDone;    // GLS wait state left (phase started or start criterion)
+   bool glsPhase;       // the phase that releases the GLS delay timer has started
+   bool glsRa1;         // KZU ramp 1 has started (needed by the start criterion)
    bool coast;          // shift started with negative input torque
-   uint8_t syncPhase;   // upshift ramp 3: 0 before sync, 1 KL_PGRASYN, 2 to max
+   uint8_t syncPhase;   // upshift ramp 3: 0 before sync, 1 T_SYN dwell, 2 KL_PORASYN
+   int32_t tSfEnd;      // downshift: tShift at the end of the KZU quick fill
 };
 
 #endif // SAS_H

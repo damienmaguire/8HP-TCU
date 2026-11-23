@@ -29,22 +29,30 @@
  * gradients KL_PGRASYNV1/V2_n) and then closes the power-flow element, the
  * last clutch in (KL_TVKZU_n delay, KF_PKZU_n, KL_PGRASYN_n).
  *
- * Which clutch closes last depends on the gearbox variant (Ian, QA2):
- *   330e (table 0x4C214): B for both N->1 and N->R; A+C pre-filled for 1st,
- *                         A+D for R. This matches the calibration in use.
- *   F11 8HP (table 0x5BA08): C for 1st and D for R, with A+B pre-filled.
- * The variant is the Variant parameter; only this table differs for now.
+ * Which clutch closes last depends on the gearbox variant (Ian, QA2
+ * answer 1) [C]. Roles {last, V1, V2}:
+ *   330e (tables 0x4C214 / 0x4C21E / 0x4C228): 1st {B, A, C}, R {B, A, D}.
+ *     B is the internal launch element on the converterless hybrid.
+ *   F11 8HP (tables 0x5BA08 / 0x5BA12 / 0x5BA1C): 1st {C, A, B}, R {D, A, B}.
+ * The variant is the Variant parameter (default 330e, which matches the
+ * calibration in use); only this table differs for now.
  *
- * Closing (Ian, QA2):
- *  - Normal: the OEM gradients (1-15 bar/s against torque), and the gear
- *    only counts as in once there has been no slip for 200 ms after sync.
- *  - Fast: a faster, rate-limited close (default 30 bar/s, 20-50) that
- *    reaches full pressure well inside 1.5 s. Only allowed when no slip has
- *    been confirmed for 50-100 ms on valid speed sensors, the motor torque
+ * V2 starts filling KL_TVKZUCGV2_n (300 -> 50 ms) after V1.
+ *
+ * Closing (QA2 answers 1 and 6):
+ *  - OEM [C]: KL_PGRASYN_n (1 / 1 / 1.1 / 3 / 5 / 15 bar/s at -50..400 Nm)
+ *    until sync, T_SYN_n (200 ms) in sync, then KL_PORASYN_n up to PMAX
+ *    (1500 ms on N->1). Fully clamped about 1.5 s after sync.
+ *  - Fast [I, Ian's opinion]: one rate-limited gradient (EngageCloseGrad,
+ *    default 30 bar/s, 20-50) that clamps well inside that 1.5 s. Only
+ *    while no slip (|n_t - n_ab x i| < SyncBand, 30 rpm) has been confirmed
+ *    for EngageSyncMs (50-100 ms) on valid speed sensors, the motor torque
  *    is near 0 (the TCU asks for it to be held there until the gear is
  *    clamped, see TorqueHold()), and line pressure is adequate.
  *
- * The OEM closed-loop gear-in (KF_WNGTNDSYNCGGE_n) is not implemented.
+ * Not implemented: the OEM gear-in GLS on the power-flow clutch
+ * (SWI_GLSGE, KF_WNGTNDSYNCGGE_n, T_VGLSKZU_n = 400 ms, ND_GLSGE_n) and the
+ * ramp-start lead T_SYNRAKZU_n (-50 ms).
  */
 
 enum EngageVariant
@@ -70,7 +78,6 @@ struct EngageConfig
    int32_t syncBand;   // |n_t - n_ab x ratio| below this = no slip, rpm
    int32_t fastCloseGrad; // fast closing gradient, mbar/s (Ian: ~30000, 20000-50000)
    int32_t syncConfirmMs; // no slip this long before the fast close, ms (Ian: 50-100)
-   int32_t postSyncMs;    // normal close: no slip this long before "in gear", ms (OEM 200)
    int32_t tqZeroNm;      // |m_t| at or below this counts as "held near 0", Nm
    uint8_t variant;       // EngageVariant
 };
@@ -115,7 +122,10 @@ private:
    int gear, idx, clV1, clV2, clPower;
    int32_t t, tPower;
    int32_t tNoSlip;  // ms with no slip on valid sensors
-   int32_t tAtMax;   // ms with every element at full pressure
+   int32_t tAtMax;   // ms in ENG_CLOSE without valid speed sensors
+   int32_t tMaxRamp; // ms into the KL_PORASYN_n ramp, -1 = not started
+   int32_t pSync;    // power-flow pressure when that ramp started
+   int32_t tvV2;     // KL_TVKZUCGV2_n delay before V2 starts to fill, ms
    int32_t fillV1, fillV2; // total fill times, ms
    int32_t p[5];
    int32_t pStart;

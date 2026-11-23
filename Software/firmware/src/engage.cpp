@@ -23,44 +23,51 @@
 
 #define ENG_TICK_MS 10
 
-/* Last clutch in per variant and gear. See engage.h. */
+/* Gear-in roles per variant, from the byte tables Ian read out (QA2
+ * answer 1) [C]. Each entry is {last (power-flow), V1, V2} for 1st and R.
+ *   330e: power-flow 0x4C214, V1 0x4C21E, V2 0x4C228
+ *   F11:  power-flow 0x5BA08, V1 0x5BA12, V2 0x5BA1C
+ */
+static const int8_t roles[2][2][3] = {
+    // 1st                 R
+    {{CL_B, CL_A, CL_C}, {CL_B, CL_A, CL_D}}, // ENG_VAR_330E
+    {{CL_C, CL_A, CL_B}, {CL_D, CL_A, CL_B}}, // ENG_VAR_F11
+};
+
+static const int8_t *Roles(int g, int variant) {
+  if ((g != GEAR_1 && g != GEAR_R) || variant < 0 || variant > 1)
+    return 0;
+  return roles[variant][g == GEAR_1 ? 0 : 1];
+}
+
 int Engage::PowerFlowClutch(int g, int variant) {
-  if (g != GEAR_1 && g != GEAR_R)
-    return -1;
-  if (variant == ENG_VAR_F11)
-    return g == GEAR_1 ? CL_C : CL_D; // table 0x5BA08
-  if (variant == ENG_VAR_330E)
-    return CL_B; // table 0x4C214
-  return -1;
+  const int8_t *r = Roles(g, variant);
+  return r ? r[0] : -1;
 }
 
 Engage::Engage()
     : cfg(), phase(ENG_IDLE), gear(0), idx(0), clV1(CL_A), clV2(CL_B),
-      clPower(-1), t(0), tPower(0), tNoSlip(0), tAtMax(0), fillV1(0),
+      clPower(-1), t(0), tPower(0), tNoSlip(0), tAtMax(0), tMaxRamp(-1),
+      pSync(0), tvV2(-1), fillV1(0),
       fillV2(0), pStart(0), v1Closing(false), v2Closing(false), fast(false) {
   for (int i = 0; i < 5; i++)
     p[i] = 0;
 }
 
 bool Engage::Start(int g, const EngageConfig &c) {
-  clPower = PowerFlowClutch(g, c.variant);
-  if (clPower < 0)
+  const int8_t *r = Roles(g, c.variant);
+  if (!r)
     return false;
   cfg = c;
   gear = g;
   idx = g == GEAR_1 ? 0 : 1;
-  // The two other elements of the gear are V1 and V2, lowest letter first.
-  uint8_t rest = Gears::ClutchMask(g) & ~CLUTCH_BIT(clPower);
-  clV1 = clV2 = -1;
-  for (int cl = 0; cl < CL_COUNT; cl++) {
-    if (rest & CLUTCH_BIT(cl)) {
-      if (clV1 < 0)
-        clV1 = cl;
-      else
-        clV2 = cl;
-    }
-  }
+  clPower = r[0];
+  clV1 = r[1];
+  clV2 = r[2];
   t = tPower = tNoSlip = tAtMax = 0;
+  tMaxRamp = -1;
+  pSync = 0;
+  tvV2 = -1;
   v1Closing = v2Closing = false;
   fast = false;
   fillV1 = fillV2 = -1;
@@ -89,6 +96,10 @@ void Engage::Tick(const EngageInputs &in) {
     // Fill times are taken once, at the start.
     fillV1 = Cal::Curve(e.tfv1, in.n_ab);
     fillV2 = Cal::Curve(e.tfcgv2, in.temp);
+    // KL_TVKZUCGV2_n "Verzoegerungszeit 2. nichtkraftschliessende KZU":
+    // V2 starts to fill this long after V1 (300 -> 50 ms over temperature).
+    // The V2 fill time is counted from the end of this delay [I].
+    tvV2 = Cal::Curve(e.tvkzucgv2, in.temp);
     // A zero fill time (KL_TFV1 at speed) still needs the quick fill.
     int32_t q1 = Cal::Curve(calClutch[clV1].tsfcg, in.temp);
     int32_t q2 = Cal::Curve(calClutch[clV2].tsfcg, in.temp);
@@ -121,8 +132,9 @@ void Engage::Tick(const EngageInputs &in) {
     p[clV1] += (g1 * ENG_TICK_MS) / 1000;
   }
   if (!v2Closing) {
-    p[clV2] = FillPressure(clV2, t, fillV2, in);
-    if (t >= fillV2)
+    int32_t t2 = t - tvV2;
+    p[clV2] = t2 < 0 ? 0 : FillPressure(clV2, t2, fillV2, in);
+    if (t2 >= fillV2)
       v2Closing = true;
   } else if (p[clV2] < cfg.pMax) {
     p[clV2] += (g2 * ENG_TICK_MS) / 1000;
@@ -160,17 +172,39 @@ void Engage::Tick(const EngageInputs &in) {
     }
     tPower += ENG_TICK_MS;
     break;
-  case ENG_CLOSE:
-    p[clPower] += (gp * ENG_TICK_MS) / 1000;
-    if (p[clPower] >= cfg.pMax && p[clV1] >= cfg.pMax && p[clV2] >= cfg.pMax) {
-      tAtMax += ENG_TICK_MS;
-      // In gear once fully clamped and there has been no slip for the
-      // OEM 200 ms after sync. Without working speed sensors there is no
-      // way to see sync, so wait the same time at full pressure instead.
-      if (tNoSlip >= cfg.postSyncMs || (!in.speedsValid && tAtMax >= cfg.postSyncMs))
-        phase = ENG_DONE;
+  case ENG_CLOSE: {
+    // OEM (QA2 answers 1 and 6) [C values]: close with KL_PGRASYN_n
+    // (1-15 bar/s over torque) until sync, stay in sync for T_SYN_n
+    // (200 ms, "Verweilzeit in Synchron zum Start Max.Rampe"), then run
+    // KL_PORASYN_n (+0.5 bar by 950 ms, PMAX at 1500 ms on N->1).
+    // KL_PORASYN_n is read as an offset on the pressure at its start with
+    // the last point meaning PMAX [I]. The fast close replaces all of this
+    // with one rate-limited gradient while its conditions hold.
+    const CalCurve &r = e.porasyn;
+    if (fast) {
+      p[clPower] += (gp * ENG_TICK_MS) / 1000;
+    } else if (tMaxRamp >= 0) {
+      p[clPower] = tMaxRamp >= r.x[r.n - 1] ? cfg.pMax
+                                            : pSync + Cal::Curve(r, tMaxRamp);
+      tMaxRamp += ENG_TICK_MS;
+    } else {
+      p[clPower] += (gp * ENG_TICK_MS) / 1000;
+      // Start the max ramp after T_SYN_n in sync. Without working speed
+      // sensors sync cannot be seen, so start it T_SYN_n after this phase
+      // began instead.
+      bool dwell = in.speedsValid ? tNoSlip >= e.t_syn : tAtMax >= e.t_syn;
+      if (!in.speedsValid)
+        tAtMax += ENG_TICK_MS;
+      if (dwell) {
+        tMaxRamp = 0;
+        pSync = p[clPower];
+      }
     }
+    if (p[clPower] >= cfg.pMax && p[clV1] >= cfg.pMax && p[clV2] >= cfg.pMax &&
+        (fast || tMaxRamp > r.x[r.n - 1]))
+      phase = ENG_DONE;
     break;
+  }
   default:
     break;
   }

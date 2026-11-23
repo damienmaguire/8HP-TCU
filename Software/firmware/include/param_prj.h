@@ -28,7 +28,8 @@
    3. Display values
  */
 // Next param id (increase when adding a new parameter!): 127
-// (ids 9 and 101-108 were free slots and are used below)
+// (ids 9, 101, 103-105 and 108 were free slots and are used below; 102,
+// 106 and 107 were used by an unreleased draft and are left free)
 //
 // Anything marked TBD below has not been measured yet. The defaults are
 // placeholders chosen so the firmware runs on a bench, not values to drive
@@ -113,18 +114,15 @@
   PARAM_ENTRY(CAT_SHIFT, UvLimit, "mV", 0, 12000, 7400, 99)                    \
   PARAM_ENTRY(CAT_SHIFT, VbatScale, "mV", 1000, 60000, 23100, 100)             \
   PARAM_ENTRY(CAT_SHIFT, EngageSyncMs, "ms", 50, 100, 80, 101)                 \
-  PARAM_ENTRY(CAT_SHIFT, EngagePostSync, "ms", 0, 1000, 200, 102)              \
   PARAM_ENTRY(CAT_SHIFT, EngageTqZero, "Nm", 0, 100, 10, 103)                  \
   PARAM_ENTRY(CAT_SHIFT, IlOpenLow, "mA", 0, 200, 60, 104)                     \
   PARAM_ENTRY(CAT_SHIFT, IlOpenHigh, "mA", 500, 1000, 790, 105)                \
-  PARAM_ENTRY(CAT_SHIFT, GlsKabSlipUp, "rpm", 0, 2000, 350, 106)               \
-  PARAM_ENTRY(CAT_SHIFT, GlsKabSlipDn, "rpm", 0, 2000, 150, 107)               \
   PARAM_ENTRY(CAT_COMM, CanCmdId, "", 1, 2047, 768, 110)                       \
   PARAM_ENTRY(CAT_COMM, CanStatId, "", 1, 2047, 769, 111)                      \
   PARAM_ENTRY(CAT_COMM, CanTimeout, "ms", 50, 5000, 500, 112)                  \
   PARAM_ENTRY(CAT_COMM, CanTxEnable, ONOFF, 0, 1, 0, 113)                      \
-  PARAM_ENTRY(CAT_COMM, CanLossTq, "Nm", 0, 1000, 400, 114)                    \
-  PARAM_ENTRY(CAT_COMM, CanLossMode, CANLOSSMODES, 0, 1, 0, 108)               \
+  PARAM_ENTRY(CAT_COMM, CanLossTq, "Nm", 0, 1000, 600, 114)                    \
+  PARAM_ENTRY(CAT_COMM, CanLossMode, CANLOSSMODES, 0, 1, 1, 108)               \
   PARAM_ENTRY(CAT_COMM, SdoNodeId, "", 1, 127, 22, 115)                        \
   PARAM_ENTRY(CAT_COMM, Can1Baud, CANBAUDS, 0, 4, 2, 116)                      \
   PARAM_ENTRY(CAT_COMM, LogEnable, ONOFF, 0, 1, 0, 117)                        \
