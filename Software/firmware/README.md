@@ -1008,7 +1008,12 @@ Still open:
    recommendation [I] (`GearInPumpMs`, `GearInMotRpm`).
 8. Warm-up (b1 0x08: below 16 degC, ends at 60 degC, < 8 km/h, <= 8 bar,
    pump SW >= 0x0705) and limp (0x04) requests are not generated yet.
-9. LIN hardware: TJA1021 on UART4 (SLP_N PD11); untested.
+9. LIN hardware: TJA1021 on UART4 (SLP_N PD11); untested. Wake-up
+   (`LinWake`, at start-up and whenever the bus starts): SLP_N high,
+   100 us wait, 5 us low pulse to clear the local wake flag the chip holds
+   on TXD, high again, 100 us wait, and only then the first break (data
+   sheet Rev. 9: tgotonorm 10 us max, tinit(norm) 20 us max, tgotosleep
+   2..10 us). With the bus off, SLP_N goes low again and U7 sleeps.
 10. Charging plug input: none (the plug always counts as out).
 11. Air-ingestion guard (30 s on a gradient / 500 s at speed) and the
     car-wash cut-off are not done.
