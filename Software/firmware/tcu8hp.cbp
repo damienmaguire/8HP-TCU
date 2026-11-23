@@ -70,6 +70,7 @@
 		<Unit filename="include/param_prj.h" />
 		<Unit filename="include/sas.h" />
 		<Unit filename="include/shifter.h" />
+		<Unit filename="include/slowadc.h" />
 		<Unit filename="include/speedsens.h" />
 		<Unit filename="include/tcu.h" />
 		<Unit filename="include/valveout.h" />
@@ -89,6 +90,7 @@
 		<Unit filename="src/max22200.cpp" />
 		<Unit filename="src/sas.cpp" />
 		<Unit filename="src/shifter.cpp" />
+		<Unit filename="src/slowadc.cpp" />
 		<Unit filename="src/speedsens.cpp" />
 		<Unit filename="src/stm32_tcu.cpp" />
 		<Unit filename="src/tcu.cpp" />

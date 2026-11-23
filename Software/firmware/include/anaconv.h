@@ -26,12 +26,13 @@
  * is the 3.3 V supply (VDDA through L2), not a precision reference.
  */
 
-/* Speed sensors on PA0 (ISS) / PA1 (OSS): two-wire current sensors into
- * 100 ohm, 7 mA / 14 mA = about 0.7 V / 1.4 V. That is below the digital
- * VIH, so the pins are sampled by ADC2 (Damien's choice) and an edge is a
- * crossing of the high threshold after the signal has been below the low
- * one (hysteresis). Thresholds are parameters until the RC filter of the
- * next board revision is fitted and measured.
+/* Speed sensors on PA0 (ISS) / PA1 (OSS), rev B also PA2 (n6): two-wire
+ * current sensors into 100 ohm, 7 mA / 14 mA = about 0.7 V / 1.4 V. That
+ * is below the digital VIH, so the pins are sampled by the ADC (Damien's
+ * choice; V4 ADC2, rev B ADC1 + DMA) and an edge is a crossing of the high
+ * threshold after the signal has been below the low one (hysteresis).
+ * Thresholds are parameters until the rev B RC filter (10k / 1 nF) is
+ * fitted and measured (Bob: about 1.05 V).
  */
 class AdcEdge
 {
@@ -52,6 +53,10 @@ public:
       return false;
    }
    bool High() const { return high; }
+   uint16_t Lo() const { return lo; }
+   uint16_t Hi() const { return hi; }
+   /// For block processing (ScanEdges): carry the state across blocks.
+   void SetHigh(bool h) { high = h; }
 
 private:
    uint16_t lo, hi;
@@ -62,9 +67,16 @@ namespace AnaConv
 {
 const int32_t ADC_FS = 4095;
 const int32_t VREF_MV = 3300;
-/// Pull-ups to 5 V on the V4 temperature inputs (R22, R23), ohm.
+/// Pull-ups to 5 V on the temperature inputs (R22, R23), ohm. V4: 2.6k
+/// and 470R; rev B: 2.7k on both (Bob, rev B BOM). HW_REV comes from the
+/// Makefile (hwdefs.h).
+#if defined(HW_REV) && HW_REV >= 5
+const int32_t TEMPIN1_PULLUP = 2700;
+const int32_t TEMPIN2_PULLUP = 2700;
+#else
 const int32_t TEMPIN1_PULLUP = 2600;
 const int32_t TEMPIN2_PULLUP = 470;
+#endif
 
 /// ADC counts -> mV at the pin.
 int32_t ToMv(int32_t counts);
@@ -75,7 +87,8 @@ int32_t ToCounts(int32_t mv);
 int32_t VbatMv(int32_t counts, int32_t fsMv);
 
 /** Sensor resistance on a temperature input, ohm. The input has a pull-up
- * rPullUp to 5 V at the connector (2.6k on TempIn1, 470R on TempIn2), then
+ * rPullUp to 5 V at the connector (V4: 2.6k on TempIn1, 470R on TempIn2;
+ * rev B: 2.7k on both), then
  * a 10k/10k divider to the ADC, so the sensor sees Rs || 20k and
  *   Vadc = 1/2 x 5 V x (Rs || 20k) / (rPullUp + Rs || 20k).
  * Returns -1 if the reading means open circuit (Rs not finite).
@@ -93,18 +106,18 @@ int32_t TempFromOhms(int32_t ohms, const int32_t *rPts, const int32_t *tPts, int
  * temperature (V4 has no board sensor). */
 int32_t McuTempC(int32_t counts);
 
-/* Board NTC (HW_REV 5), in the libopeninv / ZombieVerter TempMeas style:
- * a table of ADC counts at fixed temperature steps, interpolated.
- * Placeholder values = the ZombieVerter V1.3 TH1 circuit: 10k NTC B3450
- * (SDNT2012X103F3450) to GND, 10k pull-up to 3V3, counts =
- * 4095 x R / (R + 10k), -40..125 degC in 5 degC steps. The real board's
- * NTC and pull-up are TBD (Bob): change BOARD_NTC_* and the table. */
+/* Board NTC TH1 (rev B, HW_REV 5), in the libopeninv / ZombieVerter
+ * TempMeas style: a table of ADC counts at fixed temperature steps,
+ * interpolated. Rev B circuit (Bob): 10k NTC at 25 degC, B 3950 K, to GND,
+ * 10k pull-up to 3V3, so counts = 4095 x R / (R + 10k) with
+ * R = 10k x exp(3950 x (1/T - 1/298.15)), -40..125 degC in 5 degC steps.
+ */
 #define BOARD_NTC_TMIN -40 // degC, first table entry
 #define BOARD_NTC_STEP 5 // degC between table entries
 #define BOARD_NTC_TABLE                                                        \
-  3939, 3885, 3816, 3732, 3631, 3511, 3372, 3214, 3041, 2853, 2656, 2453,      \
-      2249, 2048, 1853, 1668, 1494, 1334, 1188, 1055, 937, 831, 736, 653, 580, \
-      515, 458, 408, 365, 326, 292, 262, 236, 212
+  3996, 3955, 3900, 3830, 3740, 3629, 3495, 3337, 3156, 2955, 2738, 2510,      \
+      2278, 2048, 1825, 1614, 1419, 1241, 1081, 940, 815, 707, 613, 532, 462,  \
+      401, 350, 305, 267, 234, 206, 181, 160, 142
 /// Counts outside this window mean open (pulled up) or shorted: not valid.
 #define BOARD_NTC_OPEN 4050 // ADC counts (12 bit)
 #define BOARD_NTC_SHORT 40 // ADC counts (12 bit)

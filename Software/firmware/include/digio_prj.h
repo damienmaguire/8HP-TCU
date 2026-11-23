@@ -34,9 +34,13 @@
  *              both are push-pull outputs held low.
  *
  * Discrete low-side drivers (NCV8402, active high):
- *  park_hold   PC7, park-hold magnet (moved off the MAX22200 on V4)
- *  gp_out1/2   PC8 / PC9, spare, either can be a starter lock
- * gp_pwm (PC6, TIM3_CH1, inverted FAN3121) is set up in hwinit.cpp.
+ *  park_hold   PC7, park-hold magnet (moved off the MAX22200 on V4; stays
+ *              on PC7 / Q3 on rev B)
+ *  gp_out1/2   PC8 / PC9, spare, either can be a starter lock. V4 only:
+ *              rev B removes Q1 / Q2 and drives these functions from IC4
+ *              OUT1 / OUT2; PC8 / PC9 are free.
+ * gp_pwm (PC6, TIM3_CH1, inverted FAN3121) is set up in hwinit.cpp. V4
+ * only: on rev B the GP PWM function is IC4 OUT3 and PC6 is free.
  *
  * Digital inputs D1, D2, PARK, NOT_PARK (J1.54/53/52/51): active high
  * (switch to +12 V), 4.7k / 1.5k divider, the 1.5k is the pull-down, so
@@ -45,22 +49,31 @@
  * Speed sensors are on PA0 / PA1 as analogue inputs (anain_prj.h), not
  * EXTI pins. The sensor supply is always on (no switch on V4).
  *
- * lin_nslp  PD11, LIN transceiver SLP_N (high = awake). REV: no LIN
- *           transceiver on V4; UART4 PC10/PC11 is kept free for it.
+ * lin_nslp  PD11, LIN transceiver SLP_N (high = awake). No LIN
+ *           transceiver on V4 (UART4 PC10/PC11 kept free); rev B: TJA1021.
  * led_out   PE2, active low.
  *
- * Next revision (HW_REV 5, pins TBD in hwdefs.h, DIG_IO_NEXT below):
- *  max_cs1   CSB of the second MAX22200 (same SPI1, CMD and ENABLE [I])
- *  shift_up / shift_dn  12 V shift up / down inputs, active high [I]
- *  t15_in    terminal 15 (ignition on), active high [I]
+ * Rev B (HW_REV 5, hwdefs.h):
+ *  max_cs1     CSB of the second MAX22200 (IC4), PE12; same SPI1, CMD and
+ *              ENABLE as IC2
+ *  max_nfault1 nFAULT of IC4, PE13, open drain, internal pull-up
+ *  shift_up    PD2 / shift_dn PD3: 12 V shift up / down inputs, active
+ *              high (divider with pull-down: INPUT_FLT)
+ *  t15_in      PD0, terminal 15 (ignition on), active high
+ *  lin_nslp    PD11 drives the TJA1021 SLP_N (fitted on rev B)
  */
 #if HW_REV >= 5
+#define DIG_IO_GP
 #define DIG_IO_NEXT                                                            \
   DIG_IO_ENTRY(max_cs1, MAX_CS1_PORT, MAX_CS1_PIN, PinMode::OUTPUT)            \
+  DIG_IO_ENTRY(max_nfault1, MAX_NFAULT1_PORT, MAX_NFAULT1_PIN, PinMode::INPUT_PU) \
   DIG_IO_ENTRY(shift_up, SHIFT_UP_PORT, SHIFT_UP_PIN, PinMode::INPUT_FLT)      \
   DIG_IO_ENTRY(shift_dn, SHIFT_DN_PORT, SHIFT_DN_PIN, PinMode::INPUT_FLT)      \
   DIG_IO_ENTRY(t15_in, T15_PORT, T15_PIN, PinMode::INPUT_FLT)
 #else
+#define DIG_IO_GP                                                              \
+  DIG_IO_ENTRY(gp_out1, GPIOC, GPIO8, PinMode::OUTPUT)                         \
+  DIG_IO_ENTRY(gp_out2, GPIOC, GPIO9, PinMode::OUTPUT)
 #define DIG_IO_NEXT
 #endif
 #define DIG_IO_LIST                                                            \
@@ -71,13 +84,12 @@
   DIG_IO_ENTRY(max_triga, GPIOE, GPIO9, PinMode::OUTPUT)                       \
   DIG_IO_ENTRY(max_trigb, GPIOE, GPIO11, PinMode::OUTPUT)                      \
   DIG_IO_ENTRY(park_hold, GPIOC, GPIO7, PinMode::OUTPUT)                       \
-  DIG_IO_ENTRY(gp_out1, GPIOC, GPIO8, PinMode::OUTPUT)                         \
-  DIG_IO_ENTRY(gp_out2, GPIOC, GPIO9, PinMode::OUTPUT)                         \
+  DIG_IO_GP                                                                    \
   DIG_IO_ENTRY(din1, GPIOD, GPIO4, PinMode::INPUT_FLT)                         \
   DIG_IO_ENTRY(din2, GPIOD, GPIO5, PinMode::INPUT_FLT)                         \
   DIG_IO_ENTRY(park_in, GPIOD, GPIO6, PinMode::INPUT_FLT)                      \
   DIG_IO_ENTRY(notpark_in, GPIOD, GPIO7, PinMode::INPUT_FLT)                   \
-  DIG_IO_ENTRY(lin_nslp, GPIOD, GPIO11, PinMode::OUTPUT) /* REV */             \
+  DIG_IO_ENTRY(lin_nslp, GPIOD, GPIO11, PinMode::OUTPUT)                       \
   DIG_IO_ENTRY(led_out, GPIOE, GPIO2, PinMode::OUTPUT)   /* active low */      \
   DIG_IO_NEXT                                                                  \
   DIG_IO_ENTRY(dummypin, GPIOE, GPIO15, PinMode::INPUT_PD)

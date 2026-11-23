@@ -1,9 +1,14 @@
 # Build output (never commit firmware images)
 obj/
+obj_revb/
 stm32_tcu
 stm32_tcu.bin
 stm32_tcu.hex
+stm32_tcu_revb
+stm32_tcu_revb.bin
+stm32_tcu_revb.hex
 linker.map
+linker_revb.map
 *.o
 *.d
 # Host tests

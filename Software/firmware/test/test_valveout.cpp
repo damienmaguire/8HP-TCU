@@ -106,4 +106,31 @@ void TestValveOut() {
   CHECK_EQ(f, 1u << EDS_PZYL);
   CHECK_EQ(v.ValveFlags(EDS_PZYL), VALVE_F_CHIP);
   CHECK_EQ(v.ValveFlags(EDS_C), 0); // other chip
+  bus.reg[1][0] &= ~MAX22200_ST_OVT;
+  v.PollFaults();
+
+  // Rev B general-purpose outputs on chip 1 OUT1..OUT3 (global 9..11).
+  v.SetAuxMap(0, 8); // on PZYL's channel: refused
+  CHECK(!v.Validate());
+  v.SetAuxMap(0, 9);
+  v.SetAuxMap(1, 10);
+  v.SetAuxMap(2, 11);
+  CHECK(v.Validate());
+  v.SetAuxMap(2, 3); // on valve D's channel: refused
+  CHECK(!v.Validate());
+  v.SetAuxMap(2, 11);
+  CHECK(v.Init(Cfg(), 0));
+  v.SetAux(0, 4000); // 400 mA on
+  v.SetAux(1, 0);    // off
+  v.SetAux(2, 2000);
+  v.Update(e);
+  CHECK_EQ(bus.reg[1][1 + 1] >> 24, 51); // 400 mA of 1 A = code 51
+  CHECK_EQ(bus.reg[1][0] >> 24, 0x01 | 0x02 | 0x08); // PZYL, OUT1, OUT3
+  bus.reg[1][MAX22200_REG_FAULT] = 0x02u << 8; // open load on OUT1
+  f = v.PollFaults();
+  CHECK_EQ(f, 0); // not a valve fault
+  CHECK_EQ(v.AuxFlags(0), VALVE_F_OLF);
+  CHECK_EQ(v.AuxFlags(1), 0);
+  v.AllOff();
+  CHECK_EQ(bus.reg[1][0] >> 24, 0);
 }

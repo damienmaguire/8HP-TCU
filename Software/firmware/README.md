@@ -34,7 +34,8 @@ sudo apt-get install gcc-arm-none-eabi g++ make git
 git clone --recursive https://github.com/damienmaguire/8HP-TCU.git
 cd 8HP-TCU/Software/firmware
 make get-deps      # builds libopencm3 for STM32F1 (first time only)
-make               # -> stm32_tcu, stm32_tcu.bin, stm32_tcu.hex
+make               # V4 board -> stm32_tcu, stm32_tcu.bin, stm32_tcu.hex
+make HW_REV=5      # V4 rev B board -> stm32_tcu_revb(.bin/.hex), objects in obj_revb/
 make Test          # host unit tests
 test/test_tcu
 ```
@@ -187,12 +188,13 @@ negative as in the ROM (-30 = 30 ms before sync).
   wires up the hardware.
 * **Tasks** (Stm32Scheduler on TIM4): 1 ms dither + SPI updates + LIN
   schedule, 10 ms shifter + control + CAN, 100 ms faults, ATF, battery
-  voltage. Interrupts: ADC2 at 40 kHz for the speed sensors, UART4 for LIN.
+  voltage. Interrupts: speed sensors (V4: ADC2 at 40 kHz; rev B: DMA
+  half / full buffer at 2.4 kHz), UART4 for LIN.
 
 ### Pin map (Stm32_TCU_V4)
 
 From Bob's `Stm32_TCU_V4/pinmap/firmware_answers.md`; Damien approved the
-header mapping. **REV** = waiting for the next board revision.
+header mapping. **REV** = changed on rev B (next section).
 
 | Function | Pin(s) | Notes |
 |---|---|---|
@@ -202,13 +204,13 @@ header mapping. **REV** = waiting for the next board revision.
 | MAX22200 nFAULT | PE10 | `INPUT_PU` (no external pull-up), polled every 10 ms |
 | MAX22200 TRIGA / TRIGB | PE9 / PE11 | outputs held low (channels SPI-controlled) |
 | MAX22200 OUT0..7 | A, B, C, D, E, LINE (SYS), OUT6 (POS? bench-check; Bob's header says "PREL"), TCC | all low-side CDR; RREF 15k -> IFS 1.0 A (0.5 A with HFS) |
-| Park-hold magnet | PC7 | NCV8402, active high (off the MAX22200 on V4) |
-| Spare low-side outputs | gp_out1 PC8, gp_out2 PC9 | NCV8402, `GpOut1Func`/`GpOut2Func` (off / on / starter lock) |
-| gp_pwm | PC6, TIM3_CH1 | FAN3121 **inverting**: PC6 low = +12 V; TIM3 full remap; `GpPwmFreq`/`GpPwmDuty` |
-| Speed ISS / OSS | PA0 / PA1 (ADC12_IN0 / IN1) | sampled by ADC2 at 40 kHz, edges with `SpdAdcLo`/`SpdAdcHi` hysteresis; sensor supply always on. **REV:** RC filter |
-| Aux speed (n6) | none on V4 | next revision: probably PA2 (ADC12_IN2), `HW_HAS_SPD3`; `nAux` reads 0 on V4 |
+| Park-hold magnet | PC7 | NCV8402, active high (off the MAX22200 on V4; same on rev B) |
+| Spare low-side outputs | gp_out1 PC8, gp_out2 PC9 | NCV8402, `GpOut1Func`/`GpOut2Func` (off / on / starter lock). **REV:** IC4 OUT1 / OUT2 |
+| gp_pwm | PC6, TIM3_CH1 | FAN3121 **inverting**: PC6 low = +12 V; TIM3 full remap; `GpPwmFreq`/`GpPwmDuty`. **REV:** IC4 OUT3 |
+| Speed ISS / OSS | PA0 / PA1 (ADC12_IN0 / IN1) | sampled by ADC2 at 40 kHz, edges with `SpdAdcLo`/`SpdAdcHi` hysteresis; sensor supply always on. **REV:** RC filter, ADC1 + DMA |
+| Aux speed (n6) | none on V4 | **REV:** PA2 (ADC12_IN2); `nAux` reads 0 on V4 |
 | vbat | PC0 (IN10) | 0.18 divider, `VbatScale` 18330 mV full scale |
-| atf_temp1 / atf_temp2 | PC1 (IN11) / PC2 (IN12) | 2.6k / 470R pull-up to 5 V, then /2; `AtfInput` picks one |
+| atf_temp1 / atf_temp2 | PC1 (IN11) / PC2 (IN12) | 2.6k / 470R pull-up to 5 V, then /2; `AtfInput` picks one. **REV:** 2.7k / 2.7k |
 | ana_in | PC3 (IN13) | /2, 0-6.6 V (analog shifter placeholder) |
 | din1, din2, park_in, notpark_in | PD4, PD5, PD6, PD7 | active high, external 1.5k pull-down, `INPUT_FLT` |
 | LED | PE2 | active low |
@@ -216,27 +218,79 @@ header mapping. **REV** = waiting for the next board revision.
 | CAN1 | PA11 RX / PA12 TX | no remap |
 | CAN2 | PB5 / PB6 (remap) | **REV:** no transceiver on V4; only started with `Can2Enable = 1` |
 | LIN (aux oil pump) | UART4 TX PC10 / RX PC11, SLP_N PD11 | **REV:** no transceiver on V4; `LinPumpEnable = 0` by default |
-| T15 (ignition sense) | not on V4 | next revision, pin TBD (`HW_HAS_T15`); `t15` reads 1 on V4 |
-| 12 V shift up / down | not on V4 | next revision, pins TBD (`HW_HAS_SHIFT12V`) |
-| MAX22200 #2 | not on V4 | next revision: SPI1, own CSB (pin TBD, `max_cs1`), PZYL on its OUT0 = channel 8 |
+| T15 (ignition sense) | not on V4 | **REV:** PD0; `t15` reads 1 on V4 |
+| 12 V shift up / down | not on V4 | **REV:** PD2 / PD3 |
+| MAX22200 #2 | not on V4 | **REV:** IC4, CSB PE12, nFAULT PE13 |
 | Debug | SWD only | JTAG disabled (frees PA15, PB3, PB4) |
 
 There is no Sol1 and no high-side supply switch on V4.
 
-### Next board revision (placeholders)
+### Rev B (`HW_REV=5`)
 
-Bob's next revision is not final, so its parts are behind `HW_REV` in
-`hwdefs.h` (default 4 = V4; nothing changes for a V4 build). With
-`HW_REV=5` the code for a second MAX22200 (SPI1, own CSB), the third
-speed input (n6, PA2 probably), the 12 V shift up / down inputs and T15
-is compiled in, plus a board NTC like the ZombieVerter V1.3 (TH1 10k
-NTC to GND, 10k pull-up to 3V3; converted with a libopeninv-style ADC
-lookup table in `anaconv.h`, values TBD from Bob; `tBoard` from the NTC
-when it reads valid, else from the die sensor, `tBoardSrc` shows which),
-and the build stops with `#error` until the TBD pins (`MAX_CS1_*`,
-`SHIFT_UP_*`, `SHIFT_DN_*`, `T15_*`, `BOARD_NTC_*`) are set from the final
-pin map. `ChanPZYL` defaults to 8 (chip 2 OUT0) on that board and 255
-(not fitted) on V4. No other pins are assumed.
+Bob's rev B delta to V4 (`Stm32_TCU_V4/pinmap/firmware_answers.md`,
+pin map CSVs; Damien approved). `make HW_REV=5` builds it; the default
+`make` is the V4 board and is unchanged. In the code everything rev B
+is behind `HW_REV >= 5` / the `HW_HAS_*` and `HW_SPEED_DMA` switches in
+`hwdefs.h`.
+
+| Function | Rev B pin(s) | Notes |
+|---|---|---|
+| MAX22200 #2 (IC4) | SPI1, CSB PE12, nFAULT PE13 | CMD PE8 / ENABLE PE7 shared with IC2, TRIGA/B tied to GND, nFAULT `INPUT_PU`; IFS 1 A on both chips (`MaxIfs` 1000); fault flags only, no current read-back |
+| IC4 OUT0 | J1.42 | PZYL (`ChanPZYL` = 8) |
+| IC4 OUT1 / OUT2 | J1.10 / J1.11 | `GpOut1Func` / `GpOut2Func`, replaces the V4 NCV8402 Q1 / Q2 (PC8 / PC9 now free). Current-regulated at `GpOutCurrent` (default 400 mA [I]; Bob: Sol1 0.95 A peak / 0.4 A hold) |
+| IC4 OUT3 | J1.12 | GP PWM function, now low side, replaces the FAN3121 on PC6 (free). `GpPwmDuty` = % of `GpOutCurrent` as a regulated current; `GpPwmFreq` is not used |
+| IC4 OUT4..7 | J1.16..19 | spare, not mapped (a `Chx` parameter can point at 12..15) |
+| IC2 OUT6 | J1.3 | POS (`ChanPOS` = 6), bench-check |
+| Park-hold magnet | PC7 | unchanged: NCV8402 Q3 stays |
+| Speed ISS / OSS / n6 | PA0 / PA1 / PA2 (ADC12_IN0..2) | 10k / 1 nF RC each; ADC1 continuous scan + DMA, below |
+| T15 | PD0 | 12 V input, active high |
+| Shift up / down | PD2 / PD3 | 12 V inputs, active high |
+| CAN1 / CAN2 | PA11/PA12, PB5/PB6 (CAN2_REMAP) | CAN1 vehicle PT-CAN, CAN2 ZombieVerter link, both 500k; `Can2Enable` defaults to 1 on rev B |
+| LIN | UART4 PC10 / PC11, SLP_N PD11 | TJA1021 (master termination); `LinPumpEnable` still 0 by default (330e only) |
+| Board NTC TH1 | PB0 (ADC12_IN8) | 10k at 25 C, B 3950, 10k pull-up to 3V3, NTC to GND; table in `anaconv.h`; `tBoard` from it when valid |
+| TempIn1 / TempIn2 | PC1 / PC2 | pull-ups now 2.7k / 2.7k (`TEMPIN*_PULLUP`) |
+
+**GP outputs on rev B** go through the valve driver (`valveout.*` aux
+outputs), so unlike the V4 NCV8402 outputs they are **off whenever the
+valves are off**: safe state, driver init failure or a valve map error.
+`ValveOut::Validate` refuses a valve `Chx` on IC4 OUT1..3. `gpFault`
+shows a fault flag per GP output (bit 0 OUT1, 1 OUT2, 2 OUT3),
+`drvFlags1` the IC4 status.
+
+**Speed sampling on rev B.** ADC1 converts IN0, IN1, IN2 back to back in
+continuous scan mode (13.5 + 12.5 cycles at 12 MHz = 2.17 us per
+conversion, 6.5 us per scan = **153.8 kS/s per input**; Bob asks
+>= 100 kS/s, so 10 kHz at 10000 rpm x 60 ppr still gets 15 samples per
+period). DMA1 channel 1 writes a circular buffer of 2 x 64 scans; the
+half- and full-transfer interrupts (every 416 us, 2404 per second) hand
+one half to `ScanEdges` (`speedsens.*`), which runs the same
+hysteresis edge test as V4 per channel and keeps the min / max levels.
+The scan count is the time base (`SPEED_TIMER_HZ` = 153846). The slow
+inputs move to ADC2 (`slowadc.*`, software-started every 10 ms, averaged
+over about 4 readings; libopeninv `AnaIn` is not linked); the die sensor
+(ADC1 only) is one injected conversion every 100 ms, which pauses the
+scan for 21 us.
+
+DMA map (no clash): DMA1 CH1 = ADC1 (speed scan), CH2 / CH3 = USART3
+terminal TX / RX. ADC2 has no DMA on the F1 (polled). SPI1 to the
+MAX22200s is blocking (no DMA; its requests would be CH2 / CH3, taken by
+the terminal, so it must stay that way). UART4 LIN is interrupt-driven
+(its DMA would be DMA2 CH3 / CH5, unused). CAN has no DMA.
+
+**CPU load (estimate from the disassembly, -Os).** The inner loop is
+12 Thumb-2 instructions per sample, about 20-25 cycles with the flash
+wait states: 461538 samples/s x 25 = 11.5 M cycles/s = **16 %** of
+72 MHz. Per half buffer add the ISR entry / exit and set-up (~200
+cycles, 0.7 %) and about 50 cycles per edge (two sensors at 10 kHz:
+2.8 %), so **17 % with no signal, about 20 % worst case**; DMA bus
+stealing adds about 1 %. V4 at 40 kHz is about 5 %. The F107 copes:
+the scheduler tasks need a fraction of what is left, and the ISR has the
+scheduler's priority, so a 10 ms task can delay one half-buffer by at
+most its own run time (the next half has 416 us to go). The ISR measures
+itself: spot value `spdLoad` (0.1 %, DWT cycle counter, without entry /
+exit), separate from `cpuload`. If the load is too high on the bench,
+the sample time can go to 28.5 cycles (97.6 kS/s, 10 % less) or the
+min / max levels can be taken on every 4th scan.
 
 ### Modules
 
@@ -251,7 +305,7 @@ pin map. `ChanPZYL` defaults to 8 (chip 2 OUT0) on that board and 255
 | `valveout.*` | Valve-to-channel map (one chip on V4, two supported), per-channel HFS, fault mapping | |
 | `speedsens.*` | Edge period -> rpm with tooth count as a parameter | §2, pinout §1 |
 | `anaconv.*` | ADC edge finder with hysteresis (speed sensors), vbat, temperature-input resistance, R -> T table | V4 pin map |
-| `shifter.*` | Selector and tip up/down from CAN or the V4 inputs (`ShifterType`), plus the 12 V shift up / down inputs (next board) | Damien |
+| `shifter.*` | Selector and tip up/down from CAN or the V4 inputs (`ShifterType`), plus the 12 V shift up / down inputs (rev B) | Damien |
 | `linpump.*` | LIN master for the aux oil pump: PID, checksum, CRC-8, 6-slot schedule, 0x30 build, 0x32/33/34 decode, OEM receive checks and fault classes, run rule | `330E_LIN_OIL_PUMP.md` |
 | `tcu.*` | Top-level mode machine, line pressure, faults, limp | §3, §5.5 |
 | `cal_330e.*`, `cal_f11.*`, `caltypes.*` | Generated calibration tables (330e, F11 8HP45) and the lookup code | JSON exports |
@@ -597,7 +651,7 @@ Implemented:
 * `ShiftMode`: Auto (simple input-speed thresholds, default), Manual
   (driver tips with rpm limits and lugging protection, or the
   `ManualGear` dropdown), VCU (gear from the CAN frame). 12 V shift up /
-  down inputs (next board) and Auto tip override (`TipOverride`).
+  down inputs (rev B) and Auto tip override (`TipOverride`).
 * Variant rows (`GearboxType`, 7 rows) and `SolCurveSet` (see
   "Calibration tables"), gear-in last clutch per variant (F11 / v095: C
   for 1st, D for R; 330e: B with the A+C / A+D pre-fill), channel 7 mode
@@ -655,7 +709,7 @@ Stubbed / not done yet:
   the magnet / PZYL order is [I].
 * **Electric oil pump (IEP) over LIN**: done to Ian's OEM read (see "LIN
   oil pump"), but untested (no transceiver on V4).
-* **n6 cross-check**: the third speed input is read on the next board
+* **n6 cross-check**: the third speed input is read on rev B
   (`nAux`). The 330e virtual-turbine factors `D_k_n6` / `D_k_nab` /
   `D_k_nmot` (+ `_ntOpt`) are now exported (`calN6`), but their index ->
   gear mapping is [H], so they are not used for control. The F11 has no
@@ -691,7 +745,7 @@ parameters to set once the value is known:
 
 | Item | Parameter(s) | Default (placeholder) | Open question |
 |---|---|---|---|
-| Solenoid -> MAX22200 channel | `ChanA` .. `ChanPZYL` (chip x 8 + channel, 255 = not fitted) | A..E = 0..4, SYS 5, POS 6 (OUT6 / J1.3, POS? bench-check), K0/TCC 7, PZYL 255 (V4) / 8 (next board) | Bob, Damien bench |
+| Solenoid -> MAX22200 channel | `ChanA` .. `ChanPZYL` (chip x 8 + channel, 255 = not fitted) | A..E = 0..4, SYS 5, POS 6 (OUT6 / J1.3, POS? bench-check), K0/TCC 7, PZYL 255 (V4) / 8 (rev B) | Bob, Damien bench |
 | MAX22200 full scale / half scale | `MaxIfs`, `MaxHfsMask` | 1000 mA (RREF 15k), no channel on HFS | Bob |
 | Chopping (PWM) frequency | `MaxFreq`, `MaxFreqDiv` | 100 kHz / 4 = 25 kHz | Q10 |
 | Dither amplitude / period / shape | `DitherAmp`, `DitherPeriod`, `DitherShape` | 30 mA, 8 ms, triangle | Q10 |
@@ -702,7 +756,7 @@ parameters to set once the value is known:
 | Battery voltage scaling | `VbatScale` | 18330 mV full scale (V4 0.18 divider) | Bob |
 | Analog shifter | `ShAnaR`, `ShAnaN`, `ShAnaMin`, `ShAnaMax` | 1500 / 3000 / 200 / 6000 mV | shifter not chosen |
 | Manual mode limits | `ManMaxRpm`, `ManMinRpm` | 6000 / 1000 rpm | bench |
-| Spare outputs | `GpOut1Func`, `GpOut2Func`, `GpPwmFreq`, `GpPwmDuty` | off, 200 Hz, 0 % | use not decided |
+| Spare outputs | `GpOut1Func`, `GpOut2Func`, `GpPwmFreq`, `GpPwmDuty`, `GpOutCurrent` (rev B) | off, 200 Hz, 0 %, 400 mA | use not decided; rev B current [I] |
 | Aux pump LIN | `LinPumpEnable`, `LinPumpReq`, `LinPumpRpm`, `LinPumpHyst`, `LinTempMin/Max`, `LinColdMin`, `LinColdMs`, `LinPMax`, `LinPumpP`, `LinOffDelay`, `LinChecksum`, `LinSlotMs`, `LinBusFault`, `LinArmMs`, `LinSymMax`, `LinDelivRpm`, `LinRxCheck`, `ChgPlugSrc`, `ChgPlugSet` | off; Auto: on < 500 / off > 550 rpm, 0..125 degC (-15 degC for 5 s), < 20 bar, 800 ms; enhanced; 10 ms slot; 1.8 s; not-delivering check 1000 / 1500 ms below 100 rpm; replies checked; no charge plug | Ian `330E_LIN_OIL_PUMP.md` |
 | Inverter torque CAN | `CanCmdId`, `CanStatId`, `CanTxEnable`, `TqInterv`, `TqRamp` | placeholder frames, TX off | Q5, Q11 |
 | Applied clutch pressure | `ClutchApplyP` | 16500 mbar (valve fully open) | bench |
@@ -778,13 +832,14 @@ retired ids stay free and no id changes its name).
 | Group | Values |
 |---|---|
 | Valves A-E, SYS, Ch7 (TCC/K0), POS, PZYL | commanded pressure `pA`..`pE`, `pSys`, `pCh7` (mbar; POS / PZYL are current-only); target current `itA`..`itPZYL` (mA, from the pressure / current command before slew and dither); setpoint `iA`..`iK0`, `iPOS`, `iPZYL` (mA, slewed); faults `fA`..`fPZYL` (bits: 1 OCP, 2 HHF, 4 OLF, 8 DPM, 16 chip OVT / reset / SPI) |
-| Temperatures | `atfTemp` sump, `tBoard` (board NTC on HW_REV 5 when fitted and valid, else the STM32 die sensor, uncalibrated, about +-20 C), `tBoardSrc` (0 Die, 1 NTC), `lpTempRaw` pump (raw only) |
+| Temperatures | `atfTemp` sump, `tBoard` (board NTC on rev B when valid, else the STM32 die sensor, uncalibrated, about +-20 C), `tBoardSrc` (0 Die, 1 NTC), `lpTempRaw` pump (raw only) |
 | Speeds | `nIn` n_t, `nOut` n_ab, `nAux` n6 (rpm), `ratio` n_t / n_ab x 1000, `slip` n_t - sync of the current gear (rpm) |
 | Gear | `gear`, `target`, `selGear` (ManualGear / VCU request, else the TCU target; N in P/N, R in R), `opmode`, `zkzu`, `zkab`, `engphase`, `inertia`, `drvMode`, `shiftMd` |
 | Line pressure | `pSys` requested, `pSysMeas` measured (-1: no sensor on V4) |
 | LIN pump | `lpState`, `lpRpm`, `lpCurr`, `lpVolt`, `lpEb0`, `lpEb1`, `lpClass`, `lpBusFlt` |
 | Park | `parkSt` (0 Engaged, 1 Releasing, 2 Released, 3 Engaging, 4 Unheld = INIT / safe), `parkMag` (as driven), `parkWait` (pressure), `parkBrkW` (footbrake), `brake`, `parkInh` (P held off: still moving) |
 | CAN / supply | `canLoss`, `canAct`, `tq0B0` (Nm, absolute 0x0B0 target, 0 = none), `tqQual`, `t15` |
+| Drivers / load | `drvFlags0` / `drvFlags1` (IC2 / IC4 status), `gpFault` (rev B GP outputs), `cpuload` (scheduler), `spdLoad` (rev B speed ISR, 0.1 %) |
 | Lever | `lvMove` (raw move / code), `lvPBtn`, `lvState` (P R N D M), `lvCrcErr`, `lvCntErr`, `lvTmo` |
 | Variant | `solSetAct` (SolCurveSet in use), `tqClass`, `revLimNm`, `safeOfsNm` (size data [I]), `k0Present` |
 
@@ -962,7 +1017,7 @@ Still open:
    recommendation [I] (`GearInPumpMs`, `GearInMotRpm`).
 8. Warm-up (b1 0x08: below 16 degC, ends at 60 degC, < 8 km/h, <= 8 bar,
    pump SW >= 0x0705) and limp (0x04) requests are not generated yet.
-9. LIN hardware on the next board (transceiver part, SLP_N on PD11).
+9. LIN hardware: rev B fits a TJA1021 on UART4 (SLP_N PD11); untested.
 10. Charging plug input: pin TBD (`ChgPlugSrc = Input` reads "not
     plugged" until it exists).
 11. Air-ingestion guard (30 s on a gradient / 500 s at speed) and the
@@ -1006,18 +1061,15 @@ crystal, terminal, speed sensor interface). Still open:
   firmware maps POS there (`ChanPOS = 6`) pending the bench check; Ian
   reads "park release" as PZYL, which has its own channel (IC4 OUT0 /
   J1.42), see "Valves and speed sensors".
-* **Board NTC (next board)**: ADC pin and NTC / pull-up values. The code
-  follows the ZombieVerter V1.3 TH1 circuit (10k NTC B3450 to GND, 10k
-  pull-up to 3V3) as a placeholder table.
 * **TCC on OUT7**: on the 330e this is K0 (held open), on the F11 the
-  converter lock-up. Same channel for both variants?
-* Revision items: speed sensor RC filter (thresholds to re-check), CAN2
-  transceiver on PB5/PB6, LIN transceiver. Placeholders are in the code
-  for the second MAX22200 CSB, the third speed input (PA2?), the 12 V
-  shift up / down inputs and T15 (`HW_REV 5`, pins TBD; see "Next board
-  revision").
-* `spd_in_ana` / `spd_out_ana` are sampled by ADC2 only, not by the
-  ADC1 scan, so one channel is never converted by both ADCs at once.
+  converter lock-up. Same channel for both variants? IFS is 1 A on both
+  chips on rev B; whether TCC / K0 need more is not verified.
+* **Rev B open items** from Bob's list (S1, S5, S6, S7, S8): S8, OSS
+  signals above 10 kHz, would need the RC re-sized; the scan rate
+  itself has margin. The speed thresholds (`SpdAdcLo` / `SpdAdcHi`)
+  need a re-check with the RC fitted (Bob: about 1.05 V = 1300 counts).
+* `spd_*_ana` are only ever converted by the speed ADC (V4: ADC2, rev B:
+  ADC1), so one channel is never converted by both ADCs at once.
 * Starter lock on gp_out1/2: which polarity does the vehicle want? The
   firmware drives the output *on* in P/N.
 * Which temperature input (TempIn1 2.6k or TempIn2 470R) the 8HP ATF

@@ -19,6 +19,7 @@
 #ifndef SPEEDSENS_H
 #define SPEEDSENS_H
 
+#include "anaconv.h" // AdcEdge
 #include <stdint.h>
 
 /* Hall speed sensor: edge periods -> rpm.
@@ -68,5 +69,34 @@ private:
 
 /// OEM substitute temperature when the ATF sensor is faulty [C].
 const int32_t ATF_SUBSTITUTE_C = 120;
+
+/** Rev B speed front end: ADC1 scans the speed pins back to back
+ * (continuous scan, circular DMA), and the DMA half / full interrupts hand
+ * over a block of scans. Block() walks one block, channel by channel,
+ * finds the rising edges with AdcEdge (hysteresis) and gives each sensor
+ * the period since its last edge in scans. The scan count is the time
+ * base, so the sensors are configured with the scan rate as timerHz.
+ * Buffer layout: buf[scan * nch + ch]. Also keeps the lowest and highest
+ * level seen per channel for the sensor diagnosis (mV levels).
+ */
+#define SCAN_MAX_CH 3
+class ScanEdges
+{
+public:
+   ScanEdges();
+   AdcEdge edge[SCAN_MAX_CH];
+   /// Process `scans` scans of `nch` channels; sens[ch] gets the edges.
+   void Block(const volatile uint16_t *buf, int scans, int nch, SpeedSensor *const *sens);
+   uint32_t Scans() const { return n; }
+   uint16_t Min(int ch) const { return mn[ch]; }
+   uint16_t Max(int ch) const { return mx[ch]; }
+   /// Start a new min / max window (100 ms task).
+   void ResetLevels();
+
+private:
+   uint32_t n;                 // scans processed so far
+   uint32_t last[SCAN_MAX_CH]; // scan count at the last edge per channel
+   uint16_t mn[SCAN_MAX_CH], mx[SCAN_MAX_CH];
+};
 
 #endif // SPEEDSENS_H

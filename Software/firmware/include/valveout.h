@@ -42,6 +42,11 @@
  */
 
 #define VALVE_MAX_CHIPS 2
+/// General-purpose low-side outputs on spare driver channels (rev B: IC4
+/// OUT1..OUT3 = J1.10 / J1.11 / J1.12, which were discrete drivers on V4).
+/// They are not valves: never part of the interlock, a fault on them is
+/// only reported.
+#define VALVE_AUX_MAX 3
 #define VALVE_NOT_FITTED 0xFF
 
 /// Per-valve fault flags of the last PollFaults() (ValveFlags()).
@@ -63,8 +68,14 @@ public:
    /// Set the channel for a valve: chip * 8 + channel, or VALVE_NOT_FITTED.
    void SetMap(EdsValve v, uint8_t globalCh) { map[v] = globalCh; }
    uint8_t Map(EdsValve v) const { return map[v]; }
+   /// Put general-purpose output i (0..VALVE_AUX_MAX-1) on a channel, or
+   /// VALVE_NOT_FITTED (the default).
+   void SetAuxMap(uint8_t i, uint8_t globalCh) { if (i < VALVE_AUX_MAX) auxMap[i] = globalCh; }
+   /// Current for output i in 0.1 mA; 0 switches it off. Sent by Update().
+   void SetAux(uint8_t i, int32_t current_0p1mA) { if (i < VALVE_AUX_MAX) aux[i] = current_0p1mA; }
    /// Check the map. False if an entry is out of range, on a missing chip
-   /// or shared with another valve. Also false if A..E or SYS is unmapped.
+   /// or shared with another valve or output. Also false if A..E or SYS is
+   /// unmapped.
    bool Validate() const;
 
    /** Bring the chips up (data sheet Figure 6). Returns false on a map
@@ -88,6 +99,8 @@ public:
    uint8_t ChipFlags(uint8_t idx) const { return flags[idx]; }
    /// ValveFlag bits of one valve from the last poll (0 if not fitted).
    uint8_t ValveFlags(EdsValve v) const { return vflags[v]; }
+   /// ValveFlag bits of general-purpose output i from the last poll.
+   uint8_t AuxFlags(uint8_t i) const { return i < VALVE_AUX_MAX ? aflags[i] : 0; }
    /// True if a chip reset itself (UVM) or the SPI echo check failed.
    bool ChipLost() const { return lost; }
 
@@ -96,6 +109,9 @@ private:
    uint8_t map[EDS_COUNT];
    uint8_t flags[VALVE_MAX_CHIPS];
    uint8_t vflags[EDS_COUNT];
+   uint8_t auxMap[VALVE_AUX_MAX];
+   int32_t aux[VALVE_AUX_MAX];
+   uint8_t aflags[VALVE_AUX_MAX];
    bool ok;
    bool lost;
 };

@@ -33,9 +33,11 @@ void nvic_setup(void);
 /// SPI1 for the MAX22200: mode 0 (CPOL 0, CPHA 0), MSB first, 8 bit.
 void max_spi_setup(void);
 uint8_t max_spi_transfer(uint8_t tx);
-/// ADC2 injected sampling of the speed sensor pins, TIM1-triggered.
-void speed_adc_setup(void);
-/// gp_pwm on PC6 (TIM3_CH1), inverted polarity.
+/// Speed sensor pins. V4: ADC2 injected sampling, TIM1-triggered (buf
+/// unused). Rev B: ADC1 continuous scan, circular DMA into buf
+/// (2 x SPEED_HALF_SCANS x SPEED_NUM samples).
+void speed_adc_setup(volatile uint16_t *buf);
+/// gp_pwm on PC6 (TIM3_CH1), inverted polarity. V4 only (rev B: IC4 OUT3).
 void gp_pwm_setup(uint32_t freqHz);
 void gp_pwm_set(uint32_t dutyPct);
 /// UART4 in LIN mode for the aux oil pump.

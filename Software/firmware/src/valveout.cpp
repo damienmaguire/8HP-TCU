@@ -32,6 +32,11 @@ ValveOut::ValveOut() : ok(false), lost(false) {
     map[v] = VALVE_NOT_FITTED;
     vflags[v] = 0;
   }
+  for (int i = 0; i < VALVE_AUX_MAX; i++) {
+    auxMap[i] = VALVE_NOT_FITTED;
+    aux[i] = 0;
+    aflags[i] = 0;
+  }
 }
 
 // Attach a driver chip (0 = not fitted).
@@ -60,6 +65,16 @@ bool ValveOut::Validate() const {
       return false;
     if (used & (1u << g))
       return false;
+    used |= 1u << g;
+  }
+  for (int i = 0; i < VALVE_AUX_MAX; i++) {
+    uint8_t g = auxMap[i];
+    if (g == VALVE_NOT_FITTED)
+      continue;
+    if (g >= VALVE_MAX_CHIPS * MAX22200_CHANNELS || chips[g >> 3] == 0)
+      return false;
+    if (used & (1u << g))
+      return false; // a spare output must not sit on a valve channel
     used |= 1u << g;
   }
   return true;
@@ -96,6 +111,14 @@ void ValveOut::Update(const Eds &eds) {
     if (i > 0)
       on[g >> 3] |= 1u << (g & 7);
   }
+  for (int a = 0; a < VALVE_AUX_MAX; a++) {
+    uint8_t g = auxMap[a];
+    if (g == VALVE_NOT_FITTED)
+      continue;
+    chips[g >> 3]->SetCurrent(g & 7, aux[a]);
+    if (aux[a] > 0)
+      on[g >> 3] |= 1u << (g & 7);
+  }
   for (int c = 0; c < VALVE_MAX_CHIPS; c++) {
     if (chips[c] && chips[c]->GetOnMask() != on[c])
       chips[c]->SetOnMask(on[c]);
@@ -114,6 +137,8 @@ uint16_t ValveOut::PollFaults() {
   uint16_t valves = 0;
   for (int v = 0; v < EDS_COUNT; v++)
     vflags[v] = 0;
+  for (int a = 0; a < VALVE_AUX_MAX; a++)
+    aflags[a] = 0;
   for (int c = 0; c < VALVE_MAX_CHIPS; c++) {
     if (!chips[c])
       continue;
@@ -135,6 +160,15 @@ uint16_t ValveOut::PollFaults() {
       if (chFault & bit)
         valves |= 1u << v;
       vflags[v] = (f.ocp & bit ? VALVE_F_OCP : 0) | (f.hhf & bit ? VALVE_F_HHF : 0) |
+                  (f.olf & bit ? VALVE_F_OLF : 0) | (f.dpm & bit ? VALVE_F_DPM : 0) |
+                  (wholeChip ? VALVE_F_CHIP : 0);
+    }
+    for (int a = 0; a < VALVE_AUX_MAX; a++) {
+      uint8_t g = auxMap[a];
+      if (g == VALVE_NOT_FITTED || (g >> 3) != c)
+        continue;
+      uint8_t bit = 1u << (g & 7);
+      aflags[a] = (f.ocp & bit ? VALVE_F_OCP : 0) | (f.hhf & bit ? VALVE_F_HHF : 0) |
                   (f.olf & bit ? VALVE_F_OLF : 0) | (f.dpm & bit ? VALVE_F_DPM : 0) |
                   (wholeChip ? VALVE_F_CHIP : 0);
     }

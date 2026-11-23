@@ -80,3 +80,77 @@ void SpeedSensor::Tick10ms() {
   if (rpm < minRpm)
     rpm = 0;
 }
+
+// No scans yet, levels window empty.
+ScanEdges::ScanEdges() : n(0) {
+  for (int c = 0; c < SCAN_MAX_CH; c++)
+    last[c] = 0;
+  ResetLevels();
+}
+
+// Empty the min / max window.
+void ScanEdges::ResetLevels() {
+  for (int c = 0; c < SCAN_MAX_CH; c++) {
+    mn[c] = 4095;
+    mx[c] = 0;
+  }
+}
+
+// Inner loop of Block(): min / max until the threshold test hits.
+// Returns the sample that hit, or end. Few live values, so it all stays in
+// registers (README "CPU load"). Not inlined: inlined into Block(), GCC
+// -Os runs out of registers and keeps lo / hi on the stack.
+__attribute__((noinline)) static const uint16_t *ScanRun(const uint16_t *p, const uint16_t *end,
+                                                         int step, uint32_t mode,
+                                                         uint32_t *lohi) {
+  // mode = flip << 16 | thr: four register arguments, so nothing in the
+  // loop comes from the stack.
+  const uint32_t flip = mode >> 16, thr = mode & 0xFFFFu;
+  uint32_t l = lohi[0], h = lohi[1];
+  for (; p < end; p += step) {
+    uint32_t v = *p;
+    l = v < l ? v : l;
+    h = v > h ? v : h;
+    if ((v ^ flip) >= thr)
+      break;
+  }
+  lohi[0] = l;
+  lohi[1] = h;
+  return p;
+}
+
+// One DMA half-buffer: edges and levels, channel by channel. Runs about
+// 2400 times a second, so the inner loop is kept to a load, min / max and
+// one compare: the AdcEdge test "at or below lo while high / at or above
+// hi while low" becomes (v ^ flip) >= thr, with flip = 0xFFFF while high
+// (0xFFFF - v >= 0xFFFF - lo is v <= lo). Same result as AdcEdge::Sample
+// (host test TestScanEdges).
+void ScanEdges::Block(const volatile uint16_t *buf, int scans, int nch,
+                      SpeedSensor *const *sens) {
+  if (nch > SCAN_MAX_CH)
+    nch = SCAN_MAX_CH;
+  // The DMA is filling the other half: this half is stable while we read.
+  const uint16_t *base = (const uint16_t *)buf;
+  for (int c = 0; c < nch; c++) {
+    AdcEdge &e = edge[c];
+    const uint32_t thrRise = e.Hi(), thrFall = 0xFFFFu - e.Lo();
+    bool high = e.High();
+    uint32_t lohi[2] = {mn[c], mx[c]};
+    const uint16_t *first = base + c;
+    const uint16_t *end = first + scans * nch;
+    const uint16_t *p = first;
+    while ((p = ScanRun(p, end, nch, high ? (0xFFFF0000u | thrFall) : thrRise, lohi)) < end) {
+      high = !high;
+      if (high) {
+        uint32_t at = n + (uint32_t)((p - first) / nch) + 1;
+        sens[c]->Edge(at - last[c]); // dropped inside after a timeout
+        last[c] = at;
+      }
+      p += nch;
+    }
+    e.SetHigh(high);
+    mn[c] = (uint16_t)lohi[0];
+    mx[c] = (uint16_t)lohi[1];
+  }
+  n += (uint32_t)scans;
+}

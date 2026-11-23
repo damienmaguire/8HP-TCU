@@ -42,8 +42,8 @@ static const Entry entries[] = {PARAM_LIST};
 #undef PARAM_ENTRY
 #undef VALUE_ENTRY
 
-static const int kNextParamId = 272; // keep equal to param_prj.h
-static const int kNextValueId = 2158;
+static const int kNextParamId = 273; // keep equal to param_prj.h
+static const int kNextValueId = 2161;
 
 static const int retired[] = {1, 22, 23, 24, 25, 26, 27, 34, 35, 40, 42, 53, 54, 69, 70, 102, 106, 107, 157, 158, 159, 160, 161, 162, 2037};
 
@@ -166,7 +166,7 @@ static const Frozen frozen[] = {
     {"StreamBaseId", 262}, {"StreamBus", 263}, {"DiagSpdOpen", 264},
     {"DiagSpdShort", 265}, {"DiagSpdNoSig", 266},
     {"ParkEngKmh", 267}, {"NabPerKmh", 268}, {"ParkEngNab", 269},
-    {"ParkBrake", 270}, {"BrakeIn", 271},
+    {"ParkBrake", 270}, {"BrakeIn", 271}, {"GpOutCurrent", 272},
     {"tqSrc", 2124}, {"tqUsed", 2125}, {"tqFrozen", 2126},
     {"adaStat", 2127}, {"adaShifts", 2128}, {"adA_c", 2129},
     {"adA_w", 2130}, {"adB_c", 2131}, {"adB_w", 2132},
@@ -178,7 +178,7 @@ static const Frozen frozen[] = {
     {"diagPair", 2148}, {"spdInDiag", 2149}, {"spdOutDiag", 2150},
     {"canBus", 2151}, {"calSig", 2152}, {"tccSlip", 2153},
     {"tccSlipFlt", 2154}, {"parkInh", 2155}, {"brake", 2156},
-    {"parkBrkW", 2157},
+    {"parkBrkW", 2157}, {"drvFlags1", 2158}, {"gpFault", 2159}, {"spdLoad", 2160},
 };
 
 static const Entry *Find(const char *name) {

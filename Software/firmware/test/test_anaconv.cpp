@@ -44,22 +44,21 @@ void TestAnaConv() {
   CHECK_EQ(McuTempC(ToCounts(1430 - 43 * 6)), 85); // 1.172 V
   CHECK_EQ(McuTempC(ToCounts(1430 + 43 * 6)), -35);
 
-  // Board NTC (HW_REV 5), ZombieVerter V1.3 placeholder table: 10k B3450
-  // to GND, 10k pull-up to 3V3.
+  // Board NTC (rev B): 10k B3950 to GND, 10k pull-up to 3V3.
   int32_t tb = 999;
   CHECK(BoardNtcC(2048, &tb)); // R = 10k: 25 degC
   CHECK_EQ(tb, 25);
-  CHECK(BoardNtcC(3939, &tb));
+  CHECK(BoardNtcC(3996, &tb));
   CHECK_EQ(tb, -40);
   CHECK(BoardNtcC(4000, &tb)); // colder than the table: clamped
   CHECK_EQ(tb, -40);
-  CHECK(BoardNtcC(212, &tb));
+  CHECK(BoardNtcC(142, &tb));
   CHECK_EQ(tb, 125);
   CHECK(BoardNtcC(100, &tb)); // hotter than the table: clamped
   CHECK_EQ(tb, 125);
-  CHECK(BoardNtcC(1951, &tb)); // between 25 (2048) and 30 (1853)
+  CHECK(BoardNtcC(1951, &tb)); // between 25 (2048) and 30 (1825)
   CHECK_EQ(tb, 27);
-  CHECK(BoardNtcC(937, &tb));
+  CHECK(BoardNtcC(815, &tb));
   CHECK_EQ(tb, 60);
   tb = 999;
   CHECK(!BoardNtcC(4095, &tb)); // open: pulled up

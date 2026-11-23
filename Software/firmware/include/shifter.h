@@ -41,7 +41,7 @@
  * (the board RC is only about 1.1 ms). A tip gives one request on the
  * rising edge; holding it does not repeat.
  *
- * 12 V shift up / down inputs (Bob's next revision, pins TBD, see
+ * 12 V shift up / down inputs (rev B: PD2 / PD3, see
  * hwdefs.h HW_HAS_SHIFT12V): debounced over Tip12Deb samples of 10 ms,
  * edge-triggered, one gear per press, in addition to the shifter tips
  * above and whatever ShifterType is. Whether a tip does anything is up
@@ -64,7 +64,7 @@ struct ShifterRaw
    // Analog
    bool din1, din2, parkIn, notParkIn;
    int32_t anaMv; // ana_in at the connector (after undoing the /2), mV
-   // 12 V shift inputs (next board; false where not fitted)
+   // 12 V shift inputs (rev B; false where not fitted)
    bool up12, down12;
 };
 

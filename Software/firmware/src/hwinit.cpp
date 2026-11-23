@@ -21,6 +21,7 @@
 #include <libopencm3/cm3/nvic.h>
 #include <libopencm3/cm3/scb.h>
 #include <libopencm3/stm32/adc.h>
+#include <libopencm3/stm32/dma.h>
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/rtc.h>
@@ -44,13 +45,17 @@ void clock_setup(void) {
   rcc_periph_clock_enable(RCC_AFIO);
   rcc_periph_clock_enable(RCC_USART3); // terminal
   rcc_periph_clock_enable(RCC_TIM4);   // scheduler
-  rcc_periph_clock_enable(SPEED_TRIG_RCC);
-  rcc_periph_clock_enable(SPEED_ADC_RCC);
-  rcc_periph_clock_enable(GP_PWM_RCC);
+#if !HW_SPEED_DMA
+  rcc_periph_clock_enable(SPEED_TRIG_RCC); // V4: TIM1 triggers ADC2
+#endif
+#if HW_HAS_GP_DISCRETE
+  rcc_periph_clock_enable(GP_PWM_RCC); // V4: TIM3 for the PC6 GP PWM
+#endif
   rcc_periph_clock_enable(LIN_USART_RCC);
   rcc_periph_clock_enable(MAX_SPI_RCC);
   rcc_periph_clock_enable(RCC_DMA1); // ADC1 and terminal UART
   rcc_periph_clock_enable(RCC_ADC1);
+  rcc_periph_clock_enable(RCC_ADC2);
   rcc_periph_clock_enable(RCC_CAN1);
   rcc_periph_clock_enable(RCC_CAN2); // CAN2 needs the CAN1 clock as well
 }
@@ -63,8 +68,9 @@ void rtc_setup(void) {
 }
 
 /* AFIO: SWD only (JTAG pins freed), TIM3 full remap so TIM3_CH1 is on PC6
- * (gp_pwm). CAN1 stays on PA11/PA12 (no remap). CAN2 is remapped to
- * PB5/PB6, where the next revision puts its transceiver (REV).
+ * (V4 gp_pwm; harmless on rev B, where TIM3 is not used). CAN1 stays on
+ * PA11/PA12 (no remap). CAN2 is remapped to PB5 RX / PB6 TX, where rev B
+ * has its transceiver (V4 has none there).
  */
 void afio_setup(void) {
   gpio_primary_remap(AFIO_MAPR_SWJ_CFG_JTAG_OFF_SW_ON,
@@ -78,8 +84,13 @@ void nvic_setup(void) {
 
   // Speed sensor samples: same priority as the scheduler, so neither can
   // interrupt the other and the edge counters stay consistent.
-  nvic_enable_irq(NVIC_ADC1_2_IRQ);
+#if HW_SPEED_DMA
+  nvic_enable_irq(SPEED_DMA_IRQ); // rev B: DMA half / full buffer
+  nvic_set_priority(SPEED_DMA_IRQ, 0);
+#else
+  nvic_enable_irq(NVIC_ADC1_2_IRQ); // V4: ADC2 JEOC per sample
   nvic_set_priority(NVIC_ADC1_2_IRQ, 0);
+#endif
 
   // LIN bytes: lower priority, 19200 baud leaves 520 us per byte.
   nvic_enable_irq(LIN_USART_IRQ);
@@ -111,14 +122,67 @@ uint8_t max_spi_transfer(uint8_t tx) {
   return (uint8_t)spi_xfer(MAX_SPI, tx);
 }
 
+#if HW_SPEED_DMA
+/* Rev B speed inputs: ADC1 regular group IN0, IN1, IN2 in continuous scan
+ * mode, DMA1 channel 1 circular into buf (2 x SPEED_HALF_SCANS scans of
+ * SPEED_NUM samples), half- and full-transfer interrupts on. 13.5 + 12.5
+ * cycles per conversion: one scan every 6.5 us (153.8 kS/s per input).
+ * Source impedance: the 10k of the RC is above the data sheet RAIN for
+ * 13.5 cycles, but the 1 nF holds the pin and the 8 pF sample capacitor
+ * takes under 1 % of its charge, a few mV at the 1.05 V threshold, which
+ * the AdcEdge hysteresis covers. ADC1 injected IN16 (die sensor,
+ * 239.5 cycles) is also set up here, software started by SlowAdc.
+ */
+void speed_adc_setup(volatile uint16_t *buf) {
+  gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_ANALOG,
+                GPIO0 | GPIO1 | GPIO2);
+  adc_power_off(SPEED_ADC);
+  adc_enable_scan_mode(SPEED_ADC);
+  adc_set_continuous_conversion_mode(SPEED_ADC);
+  adc_set_right_aligned(SPEED_ADC);
+  adc_set_sample_time(SPEED_ADC, SPEED_ADC_CH_IN, SPEED_SMP);
+  adc_set_sample_time(SPEED_ADC, SPEED_ADC_CH_OUT, SPEED_SMP);
+  adc_set_sample_time(SPEED_ADC, SPEED_ADC_CH_AUX, SPEED_SMP);
+  adc_set_sample_time(SPEED_ADC, ADC_CHANNEL_TEMP, ADC_SMPR_SMP_239DOT5CYC);
+  uint8_t ch[SPEED_NUM] = {SPEED_ADC_CH_IN, SPEED_ADC_CH_OUT, SPEED_ADC_CH_AUX};
+  adc_set_regular_sequence(SPEED_ADC, SPEED_NUM, ch);
+  uint8_t tch[1] = {ADC_CHANNEL_TEMP};
+  adc_set_injected_sequence(SPEED_ADC, 1, tch);
+  adc_enable_external_trigger_regular(SPEED_ADC, ADC_CR2_EXTSEL_SWSTART);
+  adc_enable_external_trigger_injected(SPEED_ADC, ADC_CR2_JEXTSEL_JSWSTART);
+  adc_enable_temperature_sensor();
+  adc_enable_dma(SPEED_ADC);
+  adc_power_on(SPEED_ADC);
+  for (volatile int i = 0; i < 800; i++) {
+  } // tSTAB
+  adc_reset_calibration(SPEED_ADC);
+  adc_calibrate(SPEED_ADC);
+
+  dma_channel_reset(SPEED_DMA, SPEED_DMA_CH);
+  dma_set_peripheral_address(SPEED_DMA, SPEED_DMA_CH, (uint32_t)&ADC_DR(SPEED_ADC));
+  dma_set_memory_address(SPEED_DMA, SPEED_DMA_CH, (uint32_t)buf);
+  dma_set_number_of_data(SPEED_DMA, SPEED_DMA_CH, 2 * SPEED_HALF_SCANS * SPEED_NUM);
+  dma_set_read_from_peripheral(SPEED_DMA, SPEED_DMA_CH);
+  dma_enable_memory_increment_mode(SPEED_DMA, SPEED_DMA_CH);
+  dma_set_peripheral_size(SPEED_DMA, SPEED_DMA_CH, DMA_CCR_PSIZE_16BIT);
+  dma_set_memory_size(SPEED_DMA, SPEED_DMA_CH, DMA_CCR_MSIZE_16BIT);
+  dma_enable_circular_mode(SPEED_DMA, SPEED_DMA_CH);
+  dma_set_priority(SPEED_DMA, SPEED_DMA_CH, DMA_CCR_PL_VERY_HIGH);
+  dma_enable_half_transfer_interrupt(SPEED_DMA, SPEED_DMA_CH);
+  dma_enable_transfer_complete_interrupt(SPEED_DMA, SPEED_DMA_CH);
+  dma_enable_channel(SPEED_DMA, SPEED_DMA_CH);
+  adc_start_conversion_regular(SPEED_ADC); // runs from here on
+}
+#else
 /* Speed sensors: ADC2 injected group IN0 (ISS, PA0), IN1 (OSS, PA1),
- * started by TIM1 TRGO (update) at SPEED_TIMER_HZ. JEOC interrupt reads
+ * started by TIM1 TRGO (update) at SPEED_TIMER_HZ (V4). JEOC interrupt reads
  * both results (adc1_2_isr in stm32_tcu.cpp). 2 x (7.5 + 12.5) cycles at
  * 12 MHz = 3.3 us per pair, so 40 kHz leaves plenty of margin.
  */
-void speed_adc_setup(void) {
+void speed_adc_setup(volatile uint16_t *buf) {
+  (void)buf; // V4: no DMA buffer
   gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_ANALOG,
-                GPIO0 | GPIO1 | (HW_HAS_SPD3 ? GPIO2 : 0));
+                GPIO0 | GPIO1);
   adc_power_off(SPEED_ADC);
   adc_enable_scan_mode(SPEED_ADC);
   adc_set_single_conversion_mode(SPEED_ADC);
@@ -126,7 +190,6 @@ void speed_adc_setup(void) {
   adc_set_sample_time(SPEED_ADC, SPEED_ADC_CH_IN, ADC_SMPR_SMP_7DOT5CYC);
   adc_set_sample_time(SPEED_ADC, SPEED_ADC_CH_OUT, ADC_SMPR_SMP_7DOT5CYC);
   adc_set_sample_time(SPEED_ADC, SPEED_ADC_CH_AUX, ADC_SMPR_SMP_7DOT5CYC);
-  // Third input (n6) on the next revision only (HW_HAS_SPD3).
   uint8_t ch[3] = {SPEED_ADC_CH_IN, SPEED_ADC_CH_OUT, SPEED_ADC_CH_AUX};
   adc_set_injected_sequence(SPEED_ADC, SPEED_NUM, ch);
   adc_enable_external_trigger_injected(SPEED_ADC, ADC_CR2_JEXTSEL_TIM1_TRGO);
@@ -146,6 +209,9 @@ void speed_adc_setup(void) {
   timer_enable_counter(SPEED_TRIG_TIMER);
 }
 
+#endif
+
+#if HW_HAS_GP_DISCRETE
 /* gp_pwm: TIM3_CH1 on PC6 (full remap), inverted output polarity because
  * the FAN3121 inverts. Starts at 0 % (J1.12 off).
  */
@@ -174,6 +240,7 @@ void gp_pwm_set(uint32_t dutyPct) {
   uint32_t arr = TIM_ARR(GP_PWM_TIMER) + 1;
   timer_set_oc_value(GP_PWM_TIMER, TIM_OC1, (arr * dutyPct) / 100);
 }
+#endif // HW_HAS_GP_DISCRETE
 
 /* LIN on UART4: PC10 TX (AF push-pull), PC11 RX, 19200 8N1, LIN mode
  * (LINEN, break generation with SBK). RXNE interrupt on; TXE is turned on

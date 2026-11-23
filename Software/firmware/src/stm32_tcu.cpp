@@ -25,15 +25,16 @@
  *   1 ms    dither and current setpoints to the MAX22200, LIN schedule
  *   10 ms   inputs, shifter, TCU state machine, pressure -> current, CAN
  *   100 ms  driver faults, ATF temperature, battery voltage, CAN timeout
- * Interrupts: ADC2 JEOC at 40 kHz (speed sensor edges), UART4 (LIN bytes).
+ * Interrupts: speed sensor edges (V4: ADC2 JEOC at 40 kHz; rev B: DMA1
+ * channel 1 half / full buffer at 2.4 kHz), UART4 (LIN bytes).
  *
- * CAN1 talks to the vehicle/VCU. CAN2 (logging) has no transceiver on V4
- * and is only started with Can2Enable = 1. Nothing is transmitted by
+ * CAN1 talks to the vehicle/VCU. CAN2 has no transceiver on V4 and is
+ * only started with Can2Enable = 1; on rev B it is the ZombieVerter link
+ * (PB5 / PB6) and on by default. Nothing is transmitted by
  * default (CanTxEnable = 0, LogEnable = 0). SDO replies on CAN1 are only
  * sent when a tool asks for them. The LIN pump master is off by default
- * (LinPumpEnable = 0); V4 has no LIN transceiver yet.
+ * (LinPumpEnable = 0); V4 has no LIN transceiver, rev B has a TJA1021.
  */
-#include "anain.h"
 #include "canmap.h"
 #include "cansdo.h"
 #include "digio.h"
@@ -46,11 +47,13 @@
 #include "stm32scheduler.h"
 #include "terminal.h"
 #include "terminalcommands.h"
+#include <libopencm3/cm3/dwt.h>
 #include <libopencm3/cm3/scb.h>
 #include <libopencm3/stm32/desig.h>
 #include <libopencm3/stm32/flash.h>
 #include <libopencm3/stm32/adc.h>
 #include <libopencm3/stm32/can.h>
+#include <libopencm3/stm32/dma.h>
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/timer.h>
 #include <libopencm3/stm32/usart.h>
@@ -70,13 +73,14 @@
 #include "max22200.h"
 #include "shifter.h"
 #include "canlever.h"
+#include "slowadc.h"
 #include "speedsens.h"
 #include "tcu.h"
 #include "valveout.h"
 
 /// MAX22200 pins on the STM32: one chip on V4, CSB on PA4, CMD on PE8.
-/// The next revision adds a second chip on the same SPI1 with its own CSB
-/// (max_cs1, pin TBD, HW_HAS_MAX2).
+/// Rev B adds a second chip (IC4) on the same SPI1 with its own CSB
+/// (max_cs1, PE12, HW_HAS_MAX2).
 class StmMaxBus : public Max22200Bus
 {
 public:
@@ -115,7 +119,7 @@ static CanHardware *can2;
 static StmMaxBus maxBus;
 static Max22200 max0(maxBus, 0);
 #if HW_HAS_MAX2
-static Max22200 max1(maxBus, 1); // next revision: PZYL on its OUT0 (ch 8)
+static Max22200 max1(maxBus, 1); // rev B IC4: PZYL on OUT0 (ch 8), GP on OUT1..3
 #endif
 static ValveOut valves;
 static Eds eds;
@@ -135,14 +139,33 @@ static LeverRxBuf leverBuf[8];
 static LinPump linPump;
 static LinPumpRule linRule;
 // Speed sensors: ISS n_t (index 0, PA0), OSS n_ab (index 1, PA1) and, on
-// the next revision, n6 (index 2, PA2 probably). All 60 ppr, 30 rpm
+// rev B, n6 (index 2, PA2). All 60 ppr, 30 rpm
 // minimum on both gearboxes [C]. n6 is an internal shaft the OEM uses
 // only as a level-2 cross-check; shifting runs on n_t / n_ab (Ian 12.2).
 static SpeedSensor spdIn, spdOut, spdAux;
+#if HW_SPEED_DMA
+// Rev B: DMA ring of 2 halves; ScanEdges does edges and min / max levels.
+static volatile uint16_t spdBuf[2 * SPEED_HALF_SCANS * SPEED_NUM];
+static ScanEdges spdScan;
+static AdcEdge *const spdEdge = spdScan.edge;
+static uint16_t SpdLo(int i) { return spdScan.Min(i); }
+static uint16_t SpdHi(int i) { return spdScan.Max(i); }
+static void SpdResetLevels() { spdScan.ResetLevels(); }
+#else
+static volatile uint16_t *const spdBuf = 0; // V4: no DMA buffer
 static AdcEdge spdEdge[3];
 static volatile uint32_t spdSamples = 0;
 static uint32_t spdLastEdge[3];
 static volatile uint16_t spdMin[3] = {4095, 4095, 4095}, spdMax[3] = {0, 0, 0};
+static uint16_t SpdLo(int i) { return spdMin[i]; }
+static uint16_t SpdHi(int i) { return spdMax[i]; }
+static void SpdResetLevels() {
+  for (int i = 0; i < SPEED_NUM; i++) {
+    spdMin[i] = 4095;
+    spdMax[i] = 0;
+  }
+}
+#endif
 static bool driversUp = false;
 static bool driverFault = false;
 static bool configError = false;
@@ -368,6 +391,11 @@ static void ConfigureValveMap() {
   valves.AttachChip(0, &max0); // V4: one MAX22200
 #if HW_HAS_MAX2
   valves.AttachChip(1, &max1);
+  // Rev B: GpOut1 / GpOut2 / GP PWM on IC4 OUT1..OUT3. Validate() refuses
+  // the map if a valve Chx parameter points at one of these channels.
+  valves.SetAuxMap(0, GP_AUX_CH1);
+  valves.SetAuxMap(1, GP_AUX_CH2);
+  valves.SetAuxMap(2, GP_AUX_PWM);
 #else
   valves.AttachChip(1, 0);
 #endif
@@ -420,7 +448,32 @@ static void StartDrivers() {
 // ---------------------------------------------------------------------
 // Interrupts
 
-/// Speed sensors: ADC2 injected pair (ISS, OSS) at SPEED_TIMER_HZ. The
+#if HW_SPEED_DMA
+/// Rev B speed sensors: DMA1 channel 1 has filled one half of spdBuf
+/// (SPEED_HALF_SCANS scans of ISS, OSS, n6) while the other half fills.
+/// 416 us per half; ScanEdges takes about 70-80 us of it (README "CPU
+/// load"; measured on the board as spdLoad).
+/// Both flags set at once means a half was missed: process both, oldest
+/// first is not known, so the periods across that gap are off once.
+static volatile uint32_t spdIsrCycles = 0; // CPU cycles in this ISR (spdLoad)
+extern "C" void dma1_channel1_isr(void) {
+  static SpeedSensor *const sens[3] = {&spdIn, &spdOut, &spdAux};
+  uint32_t t0 = DWT_CYCCNT;
+  uint32_t isr = DMA_ISR(SPEED_DMA);
+  if (isr & DMA_ISR_HTIF(SPEED_DMA_CH)) {
+    DMA_IFCR(SPEED_DMA) = DMA_IFCR_CHTIF(SPEED_DMA_CH);
+    spdScan.Block(spdBuf, SPEED_HALF_SCANS, SPEED_NUM, sens);
+  }
+  if (isr & DMA_ISR_TCIF(SPEED_DMA_CH)) {
+    DMA_IFCR(SPEED_DMA) = DMA_IFCR_CTCIF(SPEED_DMA_CH);
+    spdScan.Block(spdBuf + SPEED_HALF_SCANS * SPEED_NUM, SPEED_HALF_SCANS, SPEED_NUM, sens);
+  }
+  if (isr & DMA_ISR_TEIF(SPEED_DMA_CH))
+    DMA_IFCR(SPEED_DMA) = DMA_IFCR_CTEIF(SPEED_DMA_CH);
+  spdIsrCycles += DWT_CYCCNT - t0;
+}
+#else
+/// V4 speed sensors: ADC2 injected pair (ISS, OSS) at SPEED_TIMER_HZ. The
 /// sample count is the time base; AdcEdge finds the edges.
 extern "C" void adc1_2_isr(void) {
   if (!(ADC_SR(SPEED_ADC) & ADC_SR_JEOC))
@@ -441,6 +494,7 @@ extern "C" void adc1_2_isr(void) {
     }
   }
 }
+#endif
 
 // ---------------------------------------------------------------------
 // LIN master (aux oil pump) on UART4. The UART hears its own bytes, so
@@ -727,6 +781,7 @@ static bool parkMagOn = false;   // park magnet output as driven
 
 // Main 10 ms task: inputs, TCU, outputs, CAN and spot values.
 static void Ms10Task() {
+  SlowAdc::Tick10ms();
   spdIn.Tick10ms();
   spdOut.Tick10ms();
 
@@ -748,7 +803,7 @@ static void Ms10Task() {
   raw.din2 = DigIo::din2.Get();
   raw.parkIn = DigIo::park_in.Get();
   raw.notParkIn = DigIo::notpark_in.Get();
-  raw.anaMv = 2 * AnaConv::ToMv(AnaIn::ana_in.Get()); // /2 on the board
+  raw.anaMv = 2 * AnaConv::ToMv(SlowAdc::Get(SlowAdc::ANA)); // /2 on the board
   shifter.Update(raw);
   bool canShifter = Param::GetInt(Param::ShifterType) != LEVER_ANALOG;
 
@@ -958,15 +1013,29 @@ static void Ms10Task() {
   // Spare outputs: StarterLock = on while the TCU is in P or N [H: the
   // polarity the starter interlock wants is not known].
   const Param::PARAM_NUM gpFunc[2] = {Param::GpOut1Func, Param::GpOut2Func};
+#if HW_HAS_GP_DISCRETE
   DigIo *gpPin[2] = {&DigIo::gp_out1, &DigIo::gp_out2};
+#endif
   for (int i = 0; i < 2; i++) {
     int f = Param::GetInt(gpFunc[i]);
     bool on = f == 1 || (f == 2 && (o.mode == TCU_PARK || o.mode == TCU_NEUTRAL));
+#if HW_HAS_GP_DISCRETE
     if (on)
       gpPin[i]->Set();
     else
       gpPin[i]->Clear();
+#else
+    // Rev B: IC4 OUT1 / OUT2, current-regulated at GpOutCurrent. Off with
+    // the valves in the safe state (one ENABLE for both chips).
+    valves.SetAux((uint8_t)i, on ? Param::GetInt(Param::GpOutCurrent) * 10 : 0);
+#endif
   }
+#if !HW_HAS_GP_DISCRETE
+  // Rev B GP PWM function on IC4 OUT3: GpPwmDuty % of GpOutCurrent, as a
+  // regulated current (the chip chops at its own frequency, GpPwmFreq is
+  // not used).
+  valves.SetAux(2, Param::GetInt(Param::GpOutCurrent) * Param::GetInt(Param::GpPwmDuty) / 10);
+#endif
 
   if (o.safeOutputs || !driversUp) {
     eds.SafeState();
@@ -997,7 +1066,12 @@ static void Ms10Task() {
   eds.Tick10ms();
 
   // A fault pin pulled low gets read at once rather than at 100 ms.
-  if (driversUp && !DigIo::max_nfault.Get()) {
+#if HW_HAS_MAX2
+  bool nfault = !DigIo::max_nfault.Get() || !DigIo::max_nfault1.Get();
+#else
+  bool nfault = !DigIo::max_nfault.Get();
+#endif
+  if (driversUp && nfault) {
     uint16_t f = valves.PollFaults();
     if (f & ValveOut::CriticalMask())
       driverFault = true;
@@ -1080,7 +1154,7 @@ static void Ms10Task() {
   Param::SetInt(Param::engphase, o.engPhase);
   Param::SetInt(Param::nIn, in.n_t);
   Param::SetInt(Param::nOut, in.n_ab);
-  // n6 (next revision only). The OEM cross-check needs the per-gear
+  // n6 (rev B only). The OEM cross-check needs the per-gear
   // D_k_n6 factors, which are not all known yet (TBD), so it is shown only.
   Param::SetInt(Param::nAux, HW_HAS_SPD3 ? spdAux.Rpm() : 0);
   Param::SetInt(Param::nMotReq, o.nMotReq);
@@ -1189,9 +1263,18 @@ static void Ms100Task() {
       AdaptSave();
   }
   Param::SetInt(Param::cpuload, scheduler->GetCpuLoad() / 10);
+#if HW_SPEED_DMA
+  {
+    // Measured speed ISR load over the last 100 ms, 0.1 %: cycles /
+    // 7.2 M cycles x 1000. Not in cpuload (that counts scheduler tasks).
+    uint32_t cyc = spdIsrCycles;
+    spdIsrCycles = 0;
+    Param::SetInt(Param::spdLoad, (int32_t)(cyc / 7200));
+  }
+#endif
 
   // Battery voltage: VbatScale = volts at full ADC scale (V4: 18.33 V).
-  vbatmV = AnaConv::VbatMv(AnaIn::vbat.Get(), Param::GetInt(Param::VbatScale));
+  vbatmV = AnaConv::VbatMv(SlowAdc::Get(SlowAdc::VBAT), Param::GetInt(Param::VbatScale));
   Param::SetInt(Param::vbat, vbatmV);
   if (Param::GetInt(Param::UvLimit) > 0 && vbatmV < Param::GetInt(Param::UvLimit))
     ErrorMessage::Post(ERR_UNDERVOLT);
@@ -1200,7 +1283,7 @@ static void Ms100Task() {
   // AtfR / AtfT table (generic NTC until the sensor is known). Fixed value
   // by default (AtfSource = Fixed).
   bool in2 = Param::GetInt(Param::AtfInput) == 1;
-  int32_t adc = in2 ? AnaIn::atf_temp2.Get() : AnaIn::atf_temp1.Get();
+  int32_t adc = SlowAdc::Get(in2 ? SlowAdc::ATF2 : SlowAdc::ATF1);
   int32_t ohm = AnaConv::TempInputOhms(adc, in2 ? AnaConv::TEMPIN2_PULLUP
                                                 : AnaConv::TEMPIN1_PULLUP);
   Param::SetInt(Param::atfAdc, adc);
@@ -1226,9 +1309,10 @@ static void Ms100Task() {
   {
     int32_t tb;
 #if HW_HAS_BOARD_NTC
-    int src = AnaConv::BoardTempC(true, AnaIn::board_ntc.Get(), AnaIn::mcu_temp.Get(), &tb);
+    int src = AnaConv::BoardTempC(true, SlowAdc::Get(SlowAdc::BOARD_NTC),
+                               SlowAdc::Get(SlowAdc::MCU_TEMP), &tb);
 #else
-    int src = AnaConv::BoardTempC(false, 0, AnaIn::mcu_temp.Get(), &tb);
+    int src = AnaConv::BoardTempC(false, 0, SlowAdc::Get(SlowAdc::MCU_TEMP), &tb);
 #endif
     Param::SetInt(Param::tBoard, tb);
     Param::SetInt(Param::tBoardSrc, src);
@@ -1238,6 +1322,9 @@ static void Ms100Task() {
     uint16_t f = valves.PollFaults();
     Param::SetInt(Param::valveFault, f);
     Param::SetInt(Param::drvFlags0, valves.ChipFlags(0));
+    Param::SetInt(Param::drvFlags1, valves.ChipFlags(1));
+    Param::SetInt(Param::gpFault, (valves.AuxFlags(0) ? 1 : 0) | (valves.AuxFlags(1) ? 2 : 0) |
+                                      (valves.AuxFlags(2) ? 4 : 0));
     if (f & ValveOut::CriticalMask()) {
       driverFault = true;
       ErrorMessage::Post(ERR_DRVFAULT);
@@ -1275,15 +1362,15 @@ static void Ms100Task() {
     ErrorMessage::Post(ERR_SHIFTER);
 
   // Spare inputs and speed sensor levels (for setting SpdAdcLo/Hi).
-  Param::SetInt(Param::anaIn, 2 * AnaConv::ToMv(AnaIn::ana_in.Get()));
+  Param::SetInt(Param::anaIn, 2 * AnaConv::ToMv(SlowAdc::Get(SlowAdc::ANA)));
   Param::SetInt(Param::dinBits, (DigIo::din1.Get() ? 1 : 0) |
                                     (DigIo::din2.Get() ? 2 : 0) |
                                     (DigIo::park_in.Get() ? 4 : 0) |
                                     (DigIo::notpark_in.Get() ? 8 : 0));
-  Param::SetInt(Param::spdInLo, AnaConv::ToMv(spdMin[0]));
-  Param::SetInt(Param::spdInHi, AnaConv::ToMv(spdMax[0]));
-  Param::SetInt(Param::spdOutLo, AnaConv::ToMv(spdMin[1]));
-  Param::SetInt(Param::spdOutHi, AnaConv::ToMv(spdMax[1]));
+  Param::SetInt(Param::spdInLo, AnaConv::ToMv(SpdLo(0)));
+  Param::SetInt(Param::spdInHi, AnaConv::ToMv(SpdHi(0)));
+  Param::SetInt(Param::spdOutLo, AnaConv::ToMv(SpdLo(1)));
+  Param::SetInt(Param::spdOutHi, AnaConv::ToMv(SpdHi(1)));
   // Speed sensor diagnosis (diag.h): stuck level, or no edges while
   // the other shaft shows the car moving in a steady gear.
   {
@@ -1293,11 +1380,11 @@ static void Ms100Task() {
     int32_t openMv = Param::GetInt(Param::DiagSpdOpen);
     int32_t shortMv = Param::GetInt(Param::DiagSpdShort);
     bool nIn = Param::GetInt(Param::NtSource) == 0;
-    uint8_t dIn = nIn ? Diag::Speed(AnaConv::ToMv(spdMin[0]), AnaConv::ToMv(spdMax[0]),
+    uint8_t dIn = nIn ? Diag::Speed(AnaConv::ToMv(SpdLo(0)), AnaConv::ToMv(SpdHi(0)),
                                     spdIn.Rpm() > 0, inGear && spdOut.Rpm() > noSig,
                                     openMv, shortMv)
                       : (uint8_t)SPD_OK;
-    uint8_t dOut = Diag::Speed(AnaConv::ToMv(spdMin[1]), AnaConv::ToMv(spdMax[1]),
+    uint8_t dOut = Diag::Speed(AnaConv::ToMv(SpdLo(1)), AnaConv::ToMv(SpdHi(1)),
                                spdOut.Rpm() > 0, inGear && nIn && spdIn.Rpm() > noSig,
                                openMv, shortMv);
     Param::SetInt(Param::spdInDiag, dIn);
@@ -1305,13 +1392,12 @@ static void Ms100Task() {
     if (dIn != SPD_OK || dOut != SPD_OK)
       ErrorMessage::Post(ERR_SPEEDSENS); // the gear check (TF_SPEED) reacts
   }
-  for (int i = 0; i < 2; i++) {
-    spdMin[i] = 4095;
-    spdMax[i] = 0;
-  }
+  SpdResetLevels();
 
+#if HW_HAS_GP_DISCRETE
   // gp_pwm duty (frequency is applied on a parameter change)
   gp_pwm_set(Param::GetInt(Param::GpPwmDuty));
+#endif
 
   // LIN pump status. Reaction on a fault class: PumpFaultAct (default
   // report only).
@@ -1350,9 +1436,11 @@ void Param::Change(Param::PARAM_NUM paramNum) {
     if (can1)
       can1->ClearUserMessages(); // calls SetCanFilters() again
     break;
+#if HW_HAS_GP_DISCRETE
   case Param::GpPwmFreq:
     gp_pwm_setup(Param::GetInt(Param::GpPwmFreq));
     break;
+#endif
   default:
     break;
   }
@@ -1370,7 +1458,6 @@ extern "C" int main(void) {
   clock_setup();
   rtc_setup();
   afio_setup(); // SWD only, TIM3 full remap, CAN2 on PB5/PB6
-  ANA_IN_CONFIGURE(ANA_IN_LIST);
   DIG_IO_CONFIGURE(DIG_IO_LIST);
   DigIo::max_enable.Clear(); // drivers off before anything else
   DigIo::max_cs0.Set();
@@ -1381,18 +1468,30 @@ extern "C" int main(void) {
   DigIo::max_triga.Clear(); // SPI-controlled channels: TRIGA/B held low
   DigIo::max_trigb.Clear();
   DigIo::park_hold.Clear();
+#if HW_HAS_GP_DISCRETE
   DigIo::gp_out1.Clear();
   DigIo::gp_out2.Clear();
+#endif
   DigIo::lin_nslp.Clear(); // LIN transceiver asleep
   DigIo::led_out.Set();    // active low: off
-  AnaIn::Start();
+#if HW_SPEED_DMA
+  dwt_enable_cycle_counter(); // for the spdLoad measurement
+  speed_adc_setup(spdBuf); // rev B: ADC1 first, SlowAdc uses its injected group
+  SlowAdc::Start();
+#else
+  SlowAdc::Start();        // V4: AnaIn on ADC1 + DMA
+#endif
   parm_load();
   AdaptLoad();
   max_spi_setup();
+#if HW_HAS_GP_DISCRETE
   gp_pwm_setup(Param::GetInt(Param::GpPwmFreq));
+#endif
   lin_usart_setup();
   Param::Change(Param::PARAM_LAST);
-  speed_adc_setup();
+#if !HW_SPEED_DMA
+  speed_adc_setup(spdBuf);
+#endif
   nvic_setup();
 
   Terminal t(USART3, TermCmds);
@@ -1401,7 +1500,8 @@ extern "C" int main(void) {
       CanHardware::Baud800, CanHardware::Baud1000};
   Stm32Can c(CAN1, bauds[Param::GetInt(Param::Can1Baud)]);
   can1 = &c;
-  // CAN2: no transceiver on V4 (REV: PB5/PB6). Only started on request.
+  // CAN2: no transceiver on V4; rev B: ZombieVerter link on PB5 / PB6
+  // (Can2Enable on by default there).
   // Placement new into static storage: no heap, no guard variable.
   alignas(Stm32Can) static uint8_t can2mem[sizeof(Stm32Can)];
   can2 = 0;
