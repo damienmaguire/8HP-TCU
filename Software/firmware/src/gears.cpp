@@ -102,6 +102,18 @@ int32_t SyncSpeed(int gear, int32_t outputRpm) {
   return (int32_t)(((int64_t)outputRpm * RatioX1000(gear)) / 1000);
 }
 
+int32_t MeasuredRatioX1000(int32_t inputRpm, int32_t outputRpm) {
+  if (outputRpm < 100 && outputRpm > -100)
+    return 0;
+  return (int32_t)(((int64_t)inputRpm * 1000) / outputRpm);
+}
+
+int32_t SlipRpm(int gear, int32_t inputRpm, int32_t outputRpm) {
+  if (!IsDriveGear(gear))
+    return 0;
+  return inputRpm - SyncSpeed(gear, outputRpm);
+}
+
 char ClutchName(int clutch) {
   return clutch >= 0 && clutch < CL_COUNT ? (char)('A' + clutch) : '-';
 }

@@ -22,6 +22,12 @@ namespace AnaConv {
 
 int32_t ToMv(int32_t c) { return (c * VREF_MV + ADC_FS / 2) / ADC_FS; }
 
+int32_t McuTempC(int32_t counts) {
+  // (1430 mV - V) / 4.3 mV + 25, rounded
+  int32_t num = (1430 - ToMv(counts)) * 10;
+  return (num >= 0 ? (num + 21) / 43 : (num - 21) / 43) + 25;
+}
+
 int32_t ToCounts(int32_t mv) {
   int32_t c = (mv * ADC_FS + VREF_MV / 2) / VREF_MV;
   return c < 0 ? 0 : (c > ADC_FS ? ADC_FS : c);

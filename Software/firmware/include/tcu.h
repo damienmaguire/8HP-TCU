@@ -48,6 +48,17 @@ enum TcuMode
    TCU_SAFE,       // fault: every coil at 0 A -> mechanical 6th + max line
 };
 
+/// Park lock as the TCU drives it (spot value parkSt). Not a sensor
+/// reading: park_in / notpark_in are separate.
+enum ParkState
+{
+   PARK_ENGAGED = 0,   // in P
+   PARK_RELEASING = 1, // leaving P: waiting for the source / P->N delay
+   PARK_RELEASED = 2,  // out, PZYL holding it out
+   PARK_ENGAGING = 3,  // N -> P delay running
+   PARK_UNHELD = 4,    // INIT / SAFE: PZYL and magnet off, lock not held out
+};
+
 enum Selector
 {
    SEL_P = 0,
@@ -142,6 +153,10 @@ struct TcuConfig
    int32_t tccOffRpm;     // open below this input speed (TBD)
    uint8_t tccMinGear;    // lowest gear with lock-up (TBD)
    int32_t tccRamp;       // apply ramp, mbar per 10 ms (TBD)
+
+   // DriveMode Track (drivemode.h): no Auto upshift on lift-off.
+   bool noLiftUpshift;
+   int32_t liftTqNm;      // input torque at or below this counts as lift-off
 };
 
 /// PumpFaultAct parameter: what the TCU does on a LIN pump fault class.
@@ -211,6 +226,8 @@ struct TcuOutputs
    bool parkWait;       // leaving P, waiting for motor speed or pressure
    bool tipAuto;        // Auto with a tip override running
    bool gearInWait;     // gear-in held: no pressure source yet
+   bool inertia;        // the running shift is in its inertia phase
+   uint8_t parkState;   // ParkState
 };
 
 class Tcu

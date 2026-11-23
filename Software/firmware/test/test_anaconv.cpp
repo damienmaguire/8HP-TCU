@@ -39,6 +39,10 @@ void TestAnaConv() {
   CHECK_EQ(ToMv(0), 0);
   CHECK_EQ(ToMv(4095), 3300);
   CHECK_EQ(ToCounts(3300), 4095);
+  // MCU die temperature, data sheet typical curve
+  CHECK_EQ(McuTempC(ToCounts(1430)), 25);
+  CHECK_EQ(McuTempC(ToCounts(1430 - 43 * 6)), 85); // 1.172 V
+  CHECK_EQ(McuTempC(ToCounts(1430 + 43 * 6)), -35);
   CHECK_EQ(ToCounts(1650), 2048);
   CHECK_EQ(ToCounts(-5), 0);
 

@@ -89,20 +89,51 @@ int Tx(uint8_t ecuType, const CanTxIn &in, CanFrame out[CANIF_MAX_TX]);
 /// Name for the log / web UI.
 const char *Name(uint8_t ecuType);
 
-/* F11 8HP45 engine torque intervention frame 0x0B0 (Ian, F11_VS_330E_DIFF
- * section 5). Structure [C]: DLC 8, 10 ms, BMW E2E (byte 0 CRC-8 poly
- * 0x1D init 0 over bytes 1..7, final XOR with K = 0x65; byte 1 low nibble
- * counter 0..14), 12-bit fields. Field positions, the second and third
- * fields and the Nm scale are [I]: the request is packed into byte 1 high
- * nibble + byte 2 as raw = 2 * (Nm + 2047), the 330e
- * CAN_RQ_TORQ_CRSH_GRB scale, clamped to 12 bits (so only -2047..0 Nm
- * fits; flagged for a live log). It only goes out with GearboxType F11,
- * F11TqTx on and CanTxEnable on, all off by default.
+/* F11 8HP45 engine torque intervention frame 0x0B0 (RQ_TORQ_CRSH_GRB),
+ * from Fred's log check F11_EGS_CAN_LOGCHECK.md section A. Ian is still
+ * confirming it against the firmware, so the whole layout is [I] here.
+ * PT-CAN2, 10 ms, DLC 8, Intel bit numbering:
+ *   bits 0-7    CRC-8 poly 0x1D, init 0, no final XOR, over Data ID low,
+ *               Data ID high, bytes 1..7. Data ID 0x0001 (same result as
+ *               the older "K = 0x65" form).
+ *   bits 8-11   alive counter 0..14 (15 skipped)
+ *   bits 12-23  aux torque: 0xFFF idle, 0xFFE while reducing, equal to
+ *               the target while raising (as logged)
+ *   bits 24-35  absolute crank-torque target, Nm = raw x 0.5 - 1023.5;
+ *               0xFFF = no request
+ *   bits 36-47  load / drag torque [P]: sent as 0x7FF = 0 Nm (not
+ *               modelled; the logged idle frame has 0x7FF)
+ *   bits 48-51  qualifier 0 none, 2 reduce / limit, 1 raise
+ *   bits 52-63  fill, all ones
+ * The target is absolute, not a delta: the caller passes the input torque
+ * plus the TCU's intervention. The companion 0x0A0 (RQ_TORQ_CRSH_GRB_2,
+ * Data ID 0x00A0) carries a gearbox input-torque ceiling (bits 32-43, same
+ * scale); it is not sent. Both stay off unless GearboxType = F11,
+ * F11TqTx = 1 and CanTxEnable = 1.
  */
 #define CANIF_F11_TQ_ID 0x0B0
-#define CANIF_F11_TQ_K 0x65
-uint8_t E2eCrc(const uint8_t d[8], uint8_t k);
-void PackF11Torque(int32_t reqNm, uint8_t counter, uint8_t d[8]);
+#define CANIF_F11_TQ_DATAID 0x0001
+#define CANIF_F11_TQ_NONE 0xFFF
+
+enum TqQualifier
+{
+   TQ_QUAL_NONE = 0,
+   TQ_QUAL_RAISE = 1,
+   TQ_QUAL_REDUCE = 2,
+};
+
+/// BMW E2E CRC-8 (poly 0x1D, init 0, no XOR) over Data ID + bytes 1..7.
+uint8_t E2eCrc(const uint8_t d[8], uint16_t dataId);
+/// Raw 12-bit value for a torque in Nm (0.5 Nm per bit, -1023.5 offset),
+/// clamped to 0..0xFFE so it can never read as "no request".
+uint16_t TqRaw(int32_t nm);
+/** Build 0x0B0. qual = TqQualifier; with TQ_QUAL_NONE the target is
+ * 0xFFF (no request) whatever targetNm is. */
+void PackF11Torque(uint8_t qual, int32_t targetNm, uint8_t counter, uint8_t d[8]);
+/** Turn the TCU's intervention (TcuOutputs::tqDelta, negative = reduce)
+ * into the absolute 0x0B0 target: input torque + delta, qualifier from
+ * the sign. Returns the qualifier; *targetNm is 0 with TQ_QUAL_NONE. */
+uint8_t F11TqTarget(int32_t inputNm, int32_t deltaNm, int32_t *targetNm);
 } // namespace CanIf
 
 #endif // CANIF_H

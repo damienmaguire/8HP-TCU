@@ -85,6 +85,13 @@ int32_t TempInputOhms(int32_t counts, int32_t rPullUp);
 /** Temperature from a resistance table (any monotonic order, n points).
  * Clamped at the ends. */
 int32_t TempFromOhms(int32_t ohms, const int32_t *rPts, const int32_t *tPts, int n);
+
+/** STM32F107 internal temperature sensor (ADC1_IN16), degC. Data sheet
+ * typical values: V25 = 1.43 V, slope 4.3 mV/degC, T = (V25 - V) / slope
+ * + 25. Not calibrated per part: V25 spreads 1.34..1.52 V, so the reading
+ * can be some 20 degC off. A die temperature, used as the board
+ * temperature (V4 has no board sensor). */
+int32_t McuTempC(int32_t counts);
 } // namespace AnaConv
 
 #endif // ANACONV_H

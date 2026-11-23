@@ -33,7 +33,8 @@
    2. Temporary parameters (id = 0)
    3. Display values
  */
-// Next param id (increase when adding a new parameter!): 204
+// Next param id (increase when adding a new parameter!): 214
+// Next value id: 2112. Retired ids are never reused (test_params.cpp).
 // (ids 9, 101, 103-105 and 108 were free slots and are used below; 102,
 // 106 and 107 were used by an unreleased draft and are left free. The V4
 // update dropped 1, 22-27, 34, 35, 40, 42, 53, 54, 69 and 70; they are
@@ -130,6 +131,16 @@
   PARAM_ENTRY(CAT_SHIFT, AutoUpRpm, "rpm", 500, 10000, 4000, 91)               \
   PARAM_ENTRY(CAT_SHIFT, AutoDownRpm, "rpm", 200, 8000, 1500, 92)              \
   PARAM_ENTRY(CAT_SHIFT, ManMaxRpm, "rpm", 1000, 10000, 6000, 133)             \
+  PARAM_ENTRY(CAT_DRIVE, DriveMode, DRIVEMODES, 0, 2, 0, 204)                 \
+  PARAM_ENTRY(CAT_DRIVE, SportUpOfs, "rpm", -2000, 3000, 300, 205)             \
+  PARAM_ENTRY(CAT_DRIVE, SportDnOfs, "rpm", -2000, 3000, 200, 206)             \
+  PARAM_ENTRY(CAT_DRIVE, SportTime, "%", 50, 100, 90, 207)                     \
+  PARAM_ENTRY(CAT_DRIVE, SportTccOfs, "rpm", 0, 3000, 200, 208)                \
+  PARAM_ENTRY(CAT_DRIVE, TrackRedline, "rpm", 1000, 10000, 5500, 209)          \
+  PARAM_ENTRY(CAT_DRIVE, TrackDnOfs, "rpm", -2000, 3000, 400, 210)             \
+  PARAM_ENTRY(CAT_DRIVE, TrackTime, "%", 50, 100, 80, 211)                     \
+  PARAM_ENTRY(CAT_DRIVE, TrackTccOfs, "rpm", 0, 3000, 300, 212)                \
+  PARAM_ENTRY(CAT_DRIVE, TrackLiftNm, "Nm", -200, 500, 10, 213)                \
   PARAM_ENTRY(CAT_SHIFT, ManMinRpm, "rpm", 0, 5000, 1000, 134)                 \
   PARAM_ENTRY(CAT_SHIFT, TqInterv, TQINTERV, 0, 2, 1, 93)                      \
   PARAM_ENTRY(CAT_SHIFT, TqRamp, "ms", 0, 1000, 100, 94)                       \
@@ -278,7 +289,39 @@
   VALUE_ENTRY(iPZYL, "mA", 2076)                                               \
   VALUE_ENTRY(parkMag, ONOFF, 2077)                                            \
   VALUE_ENTRY(ch7Act, CH7MODES, 2078)                                          \
-  VALUE_ENTRY(t15, ONOFF, 2079)
+  VALUE_ENTRY(t15, ONOFF, 2079)                                                \
+  VALUE_ENTRY(iPOS, "mA", 2080)                                                \
+  VALUE_ENTRY(itA, "mA", 2081)                                                 \
+  VALUE_ENTRY(itB, "mA", 2082)                                                 \
+  VALUE_ENTRY(itC, "mA", 2083)                                                 \
+  VALUE_ENTRY(itD, "mA", 2084)                                                 \
+  VALUE_ENTRY(itE, "mA", 2085)                                                 \
+  VALUE_ENTRY(itSYS, "mA", 2086)                                               \
+  VALUE_ENTRY(itCh7, "mA", 2087)                                               \
+  VALUE_ENTRY(itPOS, "mA", 2088)                                               \
+  VALUE_ENTRY(itPZYL, "mA", 2089)                                              \
+  VALUE_ENTRY(fA, "bits", 2090)                                                \
+  VALUE_ENTRY(fB, "bits", 2091)                                                \
+  VALUE_ENTRY(fC, "bits", 2092)                                                \
+  VALUE_ENTRY(fD, "bits", 2093)                                                \
+  VALUE_ENTRY(fE, "bits", 2094)                                                \
+  VALUE_ENTRY(fSYS, "bits", 2095)                                              \
+  VALUE_ENTRY(fCh7, "bits", 2096)                                              \
+  VALUE_ENTRY(fPOS, "bits", 2097)                                              \
+  VALUE_ENTRY(fPZYL, "bits", 2098)                                             \
+  VALUE_ENTRY(tBoard, "C", 2099)                                               \
+  VALUE_ENTRY(ratio, "x1000", 2100)                                            \
+  VALUE_ENTRY(slip, "rpm", 2101)                                               \
+  VALUE_ENTRY(selGear, GEARS, 2102)                                            \
+  VALUE_ENTRY(inertia, ONOFF, 2103)                                            \
+  VALUE_ENTRY(drvMode, DRIVEMODES, 2104)                                       \
+  VALUE_ENTRY(shiftMd, SHIFTMODES, 2105)                                       \
+  VALUE_ENTRY(pSysMeas, "mbar", 2106)                                          \
+  VALUE_ENTRY(lpBusFlt, ONOFF, 2107)                                           \
+  VALUE_ENTRY(parkSt, PARKSTATES, 2108)                                        \
+  VALUE_ENTRY(canLoss, ONOFF, 2109)                                            \
+  VALUE_ENTRY(tq0B0, "Nm", 2110)                                               \
+  VALUE_ENTRY(tqQual, TQQUALS, 2111)
 
 // Generate the version string. This must be formatted without spaces to meet
 // the format requirements of the "units".
@@ -300,6 +343,9 @@
 #define PUMPFAULTS "0=Report, 1=MotorSpeed, 2=Stop"
 #define CHGSRC "0=None, 1=Param, 2=Input"
 #define SHIFTMODES "0=Auto, 1=Manual, 2=VCU"
+#define DRIVEMODES "0=Normal, 1=Sport, 2=Track"
+#define PARKSTATES "0=Engaged, 1=Releasing, 2=Released, 3=Engaging"
+#define TQQUALS "0=None, 1=Raise, 2=Reduce"
 #define SHIFTERS "0=CAN, 1=Analog"
 #define ATFINPUTS "0=TempIn1, 1=TempIn2"
 #define GPOUTFUNCS "0=Off, 1=On, 2=StarterLock"
@@ -331,6 +377,7 @@
 #define CAT_ATF "ATF Temperature"
 #define CAT_VALVE "Valve Driver"
 #define CAT_SHIFT "Shift Control"
+#define CAT_DRIVE "Drive Modes"
 #define CAT_COMM "Communication"
 #define CAT_IO "Spare Outputs"
 #define CAT_LIN "LIN Oil Pump"

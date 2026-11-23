@@ -22,7 +22,11 @@
 #include "hwdefs.h"
 
 #define NUM_SAMPLES 12
-#define SAMPLE_TIME ADC_SMPR_SMP_7DOT5CYC
+/* 239.5 cycles: the internal temperature sensor needs >= 17.1 us of
+ * sampling (12 MHz ADC clock: 20 us). The other inputs are resistive
+ * dividers and read better with the longer time too. Scan of 5 channels
+ * x 12 samples = 1.3 ms. */
+#define SAMPLE_TIME ADC_SMPR_SMP_239DOT5CYC
 
 /* Stm32_TCU_V4 analogue inputs on ADC1 (libopeninv AnaIn, DMA scan).
  * VDDA / VREF+ = +3V3 through L2, so 4095 counts = 3.3 V (not a
@@ -33,6 +37,10 @@
  *  atf_temp2  PC2, ADC12_IN12: TempIn2 J1.33, 470R pull-up to 5 V, /2
  *             Which input the 8HP ATF sensor uses is open (Damien).
  *  ana_in     PC3, ADC12_IN13: J1.47 spare, /2, 0..6.6 V
+ *  mcu_temp   ADC1_IN16, the STM32 internal temperature sensor (tBoard).
+ *             libopeninv maps any non-ADC pin to IN16 and switches the
+ *             sensor on. PE15 is named here because it is the unused
+ *             dummypin; it is set to analogue input and still reads 0.
  *
  * The speed sensor pins spd_in_ana (PA0, ADC12_IN0) and spd_out_ana
  * (PA1, ADC12_IN1) are sampled by ADC2 at SPEED_TIMER_HZ, not by this
@@ -43,7 +51,8 @@
   ANA_IN_ENTRY(vbat, GPIOC, 0)                                                 \
   ANA_IN_ENTRY(atf_temp1, GPIOC, 1)                                            \
   ANA_IN_ENTRY(atf_temp2, GPIOC, 2)                                            \
-  ANA_IN_ENTRY(ana_in, GPIOC, 3)
+  ANA_IN_ENTRY(ana_in, GPIOC, 3)                                               \
+  ANA_IN_ENTRY(mcu_temp, GPIOE, 15)
 
 /* ADC2 injected inputs for the speed sensors (hwinit.cpp speed_adc_setup).
  * Next revision: the third input (n6, an internal shaft, safety cross-check

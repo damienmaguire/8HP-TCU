@@ -60,5 +60,6 @@ void TestAnaConv();
 void TestLinPump();
 void TestShifter();
 void TestCanIf();
+void TestParams();
 
 #endif // TEST_H_INCLUDED

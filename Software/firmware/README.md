@@ -199,6 +199,7 @@ pin map. `ChanPZYL` defaults to 8 (chip 2 OUT0) on that board and 255
 | `tcu.*` | Top-level mode machine, line pressure, faults, limp | §3, §5.5 |
 | `cal_330e.*`, `cal_f11.*`, `caltypes.*` | Generated calibration tables (330e, F11 8HP45) and the lookup code | JSON exports |
 | `calset.*` | Per-gearbox table set picked by `GearboxType`, channel 7 mode | `F11_VS_330E_DIFF.md` |
+| `drivemode.*` | DriveMode Sport / Track modifiers on the Normal config | |
 | `canif.*` | CAN1 frames per `EcuType` (handler table), F11 0x0B0 packer | |
 | `stm32_tcu.cpp`, `hwinit.cpp`, `terminal_prj.cpp` | Firmware glue: params, SPI, ADC2 speed sampling, LIN UART, PWM, CAN, terminal | ZombieVerter |
 
@@ -290,15 +291,24 @@ agreed (Q5). Values little endian.
   motor with the clutches open), byte 2 bit 0 waiting to leave P, bit 1
   gear-in waiting for a pressure source, bit 2 Auto tip override, byte 3
   LIN pump fault classes, bytes 4-5 channel 7 pressure (mbar).
-* TX 0x0B0, F11 engine torque intervention (`F11_VS_330E_DIFF.md` 5): only
-  with `GearboxType = F11`, `F11TqTx = 1` and `CanTxEnable = 1` (all off
-  by default; nothing goes to the car without Damien's say-so). BMW E2E
-  [C]: byte 0 CRC-8 (poly 0x1D, init 0, XOR K = 0x65) over bytes 1-7,
-  byte 1 low nibble counter 0..14. The request is packed as 12 bits in
-  byte 1 high nibble + byte 2, raw = 2 x (Nm + 2047), the 330e
-  `CAN_RQ_TORQ_CRSH_GRB` scale [I]; the other two 12-bit fields and bytes
-  6-7 are 0. **Flag:** that scale only fits -2047..0 Nm in 12 bits, and
-  the field positions are [I]; check against a live F11 log first.
+* TX 0x0B0, F11 engine torque intervention (`RQ_TORQ_CRSH_GRB`), layout
+  from Fred's log check `F11_EGS_CAN_LOGCHECK.md` section A; Ian is still
+  confirming it against the firmware, so it is **[I]** here. Only with
+  `GearboxType = F11`, `F11TqTx = 1` and `CanTxEnable = 1` (all off by
+  default; nothing goes to the car without Damien's say-so). 10 ms, DLC 8,
+  Intel bits: byte 0 CRC-8 (poly 0x1D, init 0, no XOR) over Data ID
+  0x0001 (lo, hi) + bytes 1-7 (the same as "CRC over bytes 1-7 XOR
+  0x65"); byte 1 low nibble alive counter 0..14; bits 12-23 aux torque
+  (0xFFF idle, 0xFFE while reducing, = target while raising, as logged);
+  **bits 24-35 absolute crank-torque target, Nm = raw x 0.5 - 1023.5,
+  0xFFF = no request**; bits 36-47 load torque, sent as 0 Nm (not
+  modelled, [P] in the log check); **bits 48-51 qualifier 0 none,
+  2 reduce, 1 raise**; the rest all ones. Idle frame bytes 2-7 =
+  `FF FF FF 7F F0 FF`, the logged idle. The target is absolute: input
+  torque `m_t` + the TCU's `tqDelta`; the sign of `tqDelta` picks the
+  qualifier (`tq0B0`, `tqQual` spot values). 0x0A0
+  (`RQ_TORQ_CRSH_GRB_2`, Data ID 0x00A0) is a gearbox **input-torque
+  ceiling** (444 Nm in 3rd-8th in the logs); it is not sent yet.
 * CAN2 log (only if `LogEnable = 1`), every 10 ms from `LogBaseId`
   (default 0x5F0): +0 pA pB pC pD, +1 pE pSys n_t n_ab, +2 iA iB iC iD (mA),
   +3 iE iSYS iK0 iPOS, +4 mode gear target zKZU zKAB engPhase interlock
@@ -442,9 +452,63 @@ parameters to set once the value is known:
 | `GearboxType` (id 9, was `Variant`) | 0 = 8HP75_330e (GA8P75HZ), 1 = 8HP45_F11 | 0 | Selects the per-gearbox data: EDS curves and fill items (`calset.cpp`), the gear-in role table (Ian QA2 Q1), the channel 7 default, whether the LIN pump exists (F11: bus forced off) and the F11 0x0B0 frame. |
 | `Ch7Mode` | 0 = Variant, 1 = TCC, 2 = K0, 3 = ForceOpen | 0 | Channel 7 (K0 / TCC slot): F11 lock-up, 330e K0 (held at `K0Press`, 0 = open), or always open on either gearbox. `ch7Act` shows the result. |
 | `ManualGear` | 0 = Selector, 1 = P, 2 = R, 3 = N, 4..11 = 1st..8th | 0 | Manual mode only: picks P / R / N or a gear in D instead of the selector. Gear-in is still to 1st (or R) through the engage logic, then the TCU steps one gear at a time, each step inside `ManMinRpm` / `ManMaxRpm` (it waits rather than force a step), with the engage output-speed limit, `TopGear`, the CAN-loss rules and the interlock unchanged. Tips are ignored while a gear is picked. |
+| `DriveMode` | 0 = Normal, 1 = Sport, 2 = Track | 0 | See "Drive modes" below. |
 | `EcuType` | 0 = None/VCU | 0 | Placeholder: which CAN1 protocol (`canif.cpp`). OEM engine ECUs will be added later. |
 | `ShifterType` | 0 = CAN, 1 = Analog | 0 | CAN: selector in byte 0 and tips in byte 6 of the `CanCmdId` frame (placeholder). Analog **placeholder mapping**: `park_in` high = P; `notpark_in` high = R/N/D from `ana_in` (below `ShAnaR` = R, below `ShAnaN` = N, else D); both or neither high, or `ana_in` outside `ShAnaMin..Max` = N plus a `SHIFTER` fault; `din1` = tip up, `din2` = tip down. Inputs must be stable for 20 ms. |
 | `ShiftMode` (replaces `GearSelMode`) | 0 = Auto, 1 = Manual, 2 = VCU | 0 | Auto: TCU shifts on `AutoUpRpm` / `AutoDownRpm`. Manual: one gear per tip; a tip down is refused if the lower gear would put the input above `ManMaxRpm`, a tip up if the higher gear would put it below `ManMinRpm`; the lugging downshift (`AutoDownRpm`) still happens on its own; interlock, `TopGear` and CAN-loss rules are unchanged. VCU: the gear request in byte 1 of the CAN frame (the old default). Tips (shifter or the 12 V up / down inputs, debounced over `Tip12Deb`, one gear per press) act in Manual, and in Auto only with `TipOverride` > 0: a tip shifts one gear and Auto stays off for that many ms. Never in VCU mode. |
+
+### Drive modes
+
+`DriveMode` (category "Drive Modes"). Normal is the calibration as it is.
+Sport and Track are **parameter-driven modifiers on the Normal tables**
+(`drivemode.cpp`), so they stay tunable:
+
+| Modifier | Sport | Track | Limits |
+|---|---|---|---|
+| Upshift speed | `SportUpOfs` +300 rpm on `AutoUpRpm` | at `TrackRedline` 5500 rpm only | never above `ManMaxRpm` |
+| Downshift speed | `SportDnOfs` +200 rpm on `AutoDownRpm` | `TrackDnOfs` +400 rpm | kept 500 rpm below the up point |
+| Shift time scale | `SportTime` 90 % | `TrackTime` 80 % | 50..100 %, quicker only |
+| Earlier TCC lock-up | `SportTccOfs` -200 rpm on `TccOnRpm` / `TccOffRpm` | `TrackTccOfs` -300 rpm | only where ch 7 is TCC (F11) |
+| No upshift on lift-off | - | Auto: no upshift at or below `TrackLiftNm` 10 Nm input torque | always upshifts at `ManMaxRpm` |
+
+**All Sport / Track defaults are placeholders**: not measured, not OEM,
+kept small on purpose. The time scale shortens the fill-equalise time, the
+torque / KAB ramps and the KAB hold points referenced to the fill end
+(`sas.cpp` `TScale`); it never touches the quick-fill pulse (clutch
+volume), sync detection, T_SYN, the GLS delays or the shift timeout. The
+interlock, line pressure, the gear-in rules, the tip rpm limits
+(`ManMinRpm` / `ManMaxRpm`), the CAN-loss rules and every other safety
+limit are not changed by any mode. The mode's up / down points do feed
+the lugging step-down (also in Manual and in CAN-loss hold, which still
+never upshifts). OEM Sport maps: `VariantCal::upMode` /
+`downMode` take per-mode shift tables; they are empty today (= Normal
+tables). Once Ian's ported A2L Sport maps are generated, point them there
+and set that mode's modifiers to neutral (0 rpm, 100 %).
+
+### Spot values (web interface, read-only)
+
+New ids from 2080 (ids are never reused; `test_params.cpp` checks that
+every id and name is unique, parameters are < 2000, values >= 2000, the
+retired ids stay free and no id changes its name).
+
+| Group | Values |
+|---|---|
+| Valves A-E, SYS, Ch7 (TCC/K0), POS, PZYL | commanded pressure `pA`..`pE`, `pSys`, `pCh7` (mbar; POS / PZYL are current-only); target current `itA`..`itPZYL` (mA, from the pressure / current command before slew and dither); setpoint `iA`..`iK0`, `iPOS`, `iPZYL` (mA, slewed); faults `fA`..`fPZYL` (bits: 1 OCP, 2 HHF, 4 OLF, 8 DPM, 16 chip OVT / reset / SPI) |
+| Temperatures | `atfTemp` sump, `tBoard` (STM32 die sensor, uncalibrated, about +-20 C), `lpTempRaw` pump (raw only) |
+| Speeds | `nIn` n_t, `nOut` n_ab, `nAux` n6 (rpm), `ratio` n_t / n_ab x 1000, `slip` n_t - sync of the current gear (rpm) |
+| Gear | `gear`, `target`, `selGear` (ManualGear / VCU request, else the TCU target; N in P/N, R in R), `opmode`, `zkzu`, `zkab`, `engphase`, `inertia`, `drvMode`, `shiftMd` |
+| Line pressure | `pSys` requested, `pSysMeas` measured (-1: no sensor on V4) |
+| LIN pump | `lpState`, `lpRpm`, `lpCurr`, `lpVolt`, `lpEb0`, `lpEb1`, `lpClass`, `lpBusFlt` |
+| Park | `parkSt` (0 Engaged, 1 Releasing, 2 Released, 3 Engaging, 4 Unheld = INIT / safe), `parkMag` |
+| CAN / supply | `canLoss`, `canAct`, `tq0B0` (Nm, absolute 0x0B0 target, 0 = none), `tqQual`, `t15` |
+
+Not available, so not added: **measured coil current** (the MAX22200 has
+no current read-back, only the fault flags above) and the **pump
+temperature in degC** (the OEM 0x33 curve, raw 12..199 -> 120..150 C, is
+flagged odd by Ian; `lpTempRaw` stays raw). For `tBoard` the ADC1 sample
+time went from 7.5 to 239.5 cycles (the sensor needs >= 17.1 us); the
+slow scan of the other inputs is now 1.3 ms, still far inside the 100 ms
+use.
 
 ## Open questions
 

@@ -44,6 +44,7 @@ Tcu::Tcu()
   out.target = GEAR_N;
   out.safeOutputs = true;
   out.tSyn = SAS_TSYN_NONE;
+  out.parkState = PARK_UNHELD;
 }
 
 int32_t Tcu::CommandCurrent(int cl, int32_t p, int32_t temp) const {
@@ -69,6 +70,8 @@ void Tcu::ForceSafe(TcuFault f) {
   out.pzylI = 0;
   out.parkMagnet = false;
   out.parkWait = false;
+  out.parkState = PARK_UNHELD;
+  out.inertia = false;
   out.gearInWait = false;
   out.tipAuto = false;
   tipLeft = 0;
@@ -162,8 +165,11 @@ int Tcu::ChooseTarget(const TcuInputs &in, bool manual) const {
       return g - 1;
     return g;
   }
-  // SHIFT_AUTO: upshift on input speed, downshift when lugging.
-  if (g < top && in.n_t > cfg.autoUpRpm)
+  // SHIFT_AUTO: upshift on input speed, downshift when lugging. Track
+  // (noLiftUpshift): no upshift with the driver off the throttle, except
+  // at the over-rev limit.
+  bool lift = cfg.noLiftUpshift && in.m_t <= cfg.liftTqNm;
+  if (g < top && in.n_t > cfg.autoUpRpm && (!lift || in.n_t >= cfg.manMaxRpm))
     return g + 1;
   if (lug)
     return g - 1;
@@ -246,6 +252,21 @@ void Tcu::ParkOutputs(const TcuInputs &in) {
                    (out.mode != TCU_PARK || relMs < cfg.parkMagMinMs);
 }
 
+static uint8_t ParkStateOf(uint8_t mode, uint8_t selector) {
+  switch (mode) {
+  case TCU_PARK:
+    return selector == SEL_P ? PARK_ENGAGED : PARK_RELEASING;
+  case TCU_NEUTRAL:
+    return selector == SEL_P ? PARK_ENGAGING : PARK_RELEASED;
+  case TCU_ENGAGE:
+  case TCU_DRIVE:
+  case TCU_SHIFT:
+    return PARK_RELEASED;
+  default:
+    return PARK_UNHELD;
+  }
+}
+
 void Tcu::Ch7(const TcuInputs &in) {
   int32_t p = 0;
   if (cfg.ch7Mode == CH7_K0) {
@@ -309,6 +330,7 @@ void Tcu::Tick10ms(const TcuInputs &in) {
 
   if (out.mode == TCU_SAFE) {
     ForceSafe((TcuFault)out.fault);
+    out.parkState = PARK_UNHELD;
     bool causesGone = !in.configError && !in.driverFault &&
                       !(cfg.uvLimit > 0 && in.vbat < cfg.uvLimit);
     if (in.faultClear && causesGone && in.n_ab < 50 &&
@@ -328,6 +350,7 @@ void Tcu::Tick10ms(const TcuInputs &in) {
     out.nMotReq = 0;
     out.pzylI = 0;
     out.parkMagnet = false;
+    out.parkState = PARK_UNHELD;
     out.safeOutputs = true;
     return;
   }
@@ -497,6 +520,7 @@ void Tcu::Tick10ms(const TcuInputs &in) {
       minLine = so.pSysMin;
       out.zKzu = so.zKzu;
       out.zKab = so.zKab;
+      out.inertia = so.inertia;
       out.gls = so.gls;
       int32_t tq = so.tqDelta;
       if (cfg.tqInterv == 0 || (cfg.tqInterv == 1 && !sas.IsUpshift()))
@@ -515,6 +539,7 @@ void Tcu::Tick10ms(const TcuInputs &in) {
     }
   }
   if (out.mode != TCU_SHIFT) {
+    out.inertia = false;
     out.zKzu = 0;
     out.zKab = 0;
     out.gls = 0;
@@ -545,6 +570,7 @@ void Tcu::Tick10ms(const TcuInputs &in) {
   out.engPhase = engage.Phase();
   out.parkRequest = out.mode == TCU_PARK && in.n_ab < 5;
   ParkOutputs(in);
+  out.parkState = ParkStateOf(out.mode, in.selector);
   Ch7(in);
 
   // ---- Interlock: last check before anything reaches the valves ------

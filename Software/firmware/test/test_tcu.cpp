@@ -23,6 +23,7 @@
 #include "gears.h"
 #include "tcu.h"
 #include "test.h"
+#include "drivemode.h"
 
 static TcuConfig Cfg() {
   TcuConfig c = {};
@@ -959,7 +960,190 @@ static void TestVariants() {
   CHECK_EQ(Cal::Curve(Cal::Active().clutch[CL_A].tsfcg, -30), 390);
 }
 
+/* DriveMode: Sport / Track modifiers on the Normal config. */
+static int ShiftTicks(int32_t timePct) {
+  Tcu t;
+  TcuConfig c = Cfg();
+  c.shiftMode = SHIFT_MANUAL;
+  c.autoDownRpm = 800;
+  c.sas.timePct = timePct;
+  t.Configure(c);
+  TcuInputs in = In();
+  t.Ready();
+  t.Tick10ms(in);
+  if (!EngageTo(t, in, SEL_D))
+    return -1;
+  in.n_ab = NabFor(1, 3000);
+  RunTicks(t, in, 5);
+  in.tipUp = true;
+  RunTicks(t, in, 1);
+  in.tipUp = false;
+  int n = 1;
+  while (t.Out().mode == TCU_SHIFT && n < 1000) {
+    if (!RunTicks(t, in, 1))
+      return -1;
+    n++;
+  }
+  return t.Out().gear == 2 ? n : -1;
+}
+
+static void TestDriveMode() {
+  TcuConfig n = Cfg();
+  // Normal: unchanged.
+  TcuConfig c = DriveModes::Apply(n, DriveModes::Neutral());
+  CHECK_EQ(c.autoUpRpm, n.autoUpRpm);
+  CHECK_EQ(c.autoDownRpm, n.autoDownRpm);
+  CHECK_EQ(c.tccOnRpm, n.tccOnRpm);
+  CHECK_EQ(c.tccOffRpm, n.tccOffRpm);
+  CHECK_EQ(c.sas.timePct, 100);
+  CHECK(!c.noLiftUpshift);
+
+  // Sport (the parameter defaults).
+  DriveModeMod sp = DriveModes::Neutral();
+  sp.upOfsRpm = 300;
+  sp.downOfsRpm = 200;
+  sp.timePct = 90;
+  sp.tccOfsRpm = 200;
+  c = DriveModes::Apply(n, sp);
+  CHECK_EQ(c.autoUpRpm, 4300);
+  CHECK_EQ(c.autoDownRpm, 1700);
+  CHECK_EQ(c.sas.timePct, 90);
+  CHECK_EQ(c.tccOnRpm, 1300);
+  CHECK_EQ(c.tccOffRpm, 1000);
+  // Safety limits are not touched.
+  CHECK_EQ(c.manMaxRpm, n.manMaxRpm);
+  CHECK_EQ(c.manMinRpm, n.manMinRpm);
+  CHECK_EQ(c.ilOpenLow, n.ilOpenLow);
+  CHECK_EQ(c.ilOpenHigh, n.ilOpenHigh);
+  CHECK_EQ(c.lineMax, n.lineMax);
+  CHECK_EQ(c.iMax, n.iMax);
+  CHECK_EQ(c.engageMaxNab, n.engageMaxNab);
+  CHECK_EQ(c.applyP, n.applyP);
+  CHECK_EQ(c.sas.pMax, n.sas.pMax);
+  CHECK_EQ(c.canLossMode, n.canLossMode);
+
+  // Clamps: time never below the floor or above 100 %, no up point over
+  // ManMaxRpm, the down point stays 500 rpm under the up point, the TCC
+  // thresholds stay >= 0 and ordered.
+  sp.timePct = 10;
+  sp.upOfsRpm = 9000;
+  sp.downOfsRpm = 9000;
+  sp.tccOfsRpm = 3000;
+  c = DriveModes::Apply(n, sp);
+  CHECK_EQ(c.sas.timePct, DRIVEMODE_TIME_MIN_PCT);
+  CHECK_EQ(c.autoUpRpm, n.manMaxRpm);
+  CHECK_EQ(c.autoDownRpm, n.manMaxRpm - 500);
+  CHECK_EQ(c.tccOffRpm, 0);
+  CHECK(c.tccOnRpm >= c.tccOffRpm);
+  sp.timePct = 150;
+  CHECK_EQ(DriveModes::Apply(n, sp).sas.timePct, 100);
+
+  // Track: up at the redline only.
+  DriveModeMod tr = DriveModes::Neutral();
+  tr.holdToRedline = true;
+  tr.redlineRpm = 5500;
+  tr.liftTqNm = 10;
+  tr.timePct = 80;
+  c = DriveModes::Apply(n, tr);
+  CHECK_EQ(c.autoUpRpm, 5500);
+  CHECK(c.noLiftUpshift);
+  tr.redlineRpm = 9000;
+  CHECK_EQ(DriveModes::Apply(n, tr).autoUpRpm, n.manMaxRpm);
+  tr.redlineRpm = 5500;
+
+  {
+    Tcu t;
+    TcuConfig tc = DriveModes::Apply(n, tr);
+    tc.shiftMode = SHIFT_AUTO;
+    t.Configure(tc);
+    TcuInputs in = In();
+    t.Ready();
+    t.Tick10ms(in);
+    CHECK(EngageTo(t, in, SEL_D));
+    in.n_ab = NabFor(1, 4500); // Normal would upshift here
+    CHECK(RunTicks(t, in, 100));
+    CHECK_EQ(t.Out().gear, 1);
+    CHECK_EQ(t.Out().mode, TCU_DRIVE);
+    in.n_ab = NabFor(1, 5700); // past the redline but lifted off
+    in.m_t = 0;
+    CHECK(RunTicks(t, in, 100));
+    CHECK_EQ(t.Out().gear, 1);
+    CHECK_EQ(t.Out().mode, TCU_DRIVE);
+    in.m_t = 100; // back on the throttle: upshift at the redline
+    bool up = false;
+    for (int i = 0; i < 400 && !up; i++) {
+      CHECK(RunTicks(t, in, 1));
+      up = t.Out().gear >= 2;
+    }
+    CHECK(up);
+  }
+  {
+    // Lifted off at the over-rev limit: it still upshifts.
+    Tcu t;
+    TcuConfig tc = DriveModes::Apply(n, tr);
+    tc.shiftMode = SHIFT_AUTO;
+    t.Configure(tc);
+    TcuInputs in = In();
+    t.Ready();
+    t.Tick10ms(in);
+    CHECK(EngageTo(t, in, SEL_D));
+    in.m_t = 0;
+    in.n_ab = NabFor(1, 6100);
+    bool up = false;
+    for (int i = 0; i < 400 && !up; i++) {
+      CHECK(RunTicks(t, in, 1));
+      up = t.Out().gear >= 2;
+    }
+    CHECK(up);
+  }
+
+  // Quicker shift with a lower time scale, same end gear.
+  int tNormal = ShiftTicks(100);
+  int tQuick = ShiftTicks(60);
+  CHECK(tNormal > 0);
+  CHECK(tQuick > 0);
+  CHECK(tQuick < tNormal);
+  CHECK_EQ(ShiftTicks(0), tNormal); // 0 = cal as is
+
+  // Shift tables: no OEM Sport / Track tables yet, so every mode uses the
+  // Normal ones; an out-of-range mode falls back to Normal.
+  Cal::Select(CALVAR_330E);
+  for (int m = 0; m < DM_COUNT; m++) {
+    Cal::SelectMode(m);
+    CHECK(Cal::Up() == Cal::Active().up);
+    CHECK(Cal::Down() == Cal::Active().down);
+  }
+  Cal::SelectMode(7);
+  CHECK_EQ(Cal::ActiveMode(), DM_NORMAL);
+}
+
+/* parkSt spot value. */
+static void TestParkState() {
+  Tcu t;
+  t.Configure(Cfg());
+  TcuInputs in = In();
+  CHECK_EQ(t.Out().parkState, PARK_UNHELD); // INIT
+  t.Ready();
+  in.selector = SEL_N;
+  CHECK(RunTicks(t, in, 2));
+  CHECK_EQ(t.Out().parkState, PARK_RELEASED);
+  in.selector = SEL_P;
+  CHECK(RunTicks(t, in, 1));
+  CHECK_EQ(t.Out().parkState, PARK_ENGAGING);
+  CHECK(RunTicks(t, in, 300));
+  CHECK_EQ(t.Out().mode, TCU_PARK);
+  CHECK_EQ(t.Out().parkState, PARK_ENGAGED);
+  in.selector = SEL_N; // no pressure source: the release waits
+  CHECK(RunTicks(t, in, 3));
+  CHECK_EQ(t.Out().parkState, PARK_RELEASING);
+  t.ForceSafe(TF_DRIVER);
+  CHECK_EQ(t.Out().parkState, PARK_UNHELD);
+  CHECK(!t.Out().inertia);
+}
+
 void TestTcu() {
+  TestDriveMode();
+  TestParkState();
   TestManualGear();
   TestTipOverride();
   TestPark();

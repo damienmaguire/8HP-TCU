@@ -55,6 +55,7 @@
 		<Unit filename="include/cal_f11.h" />
 		<Unit filename="include/calset.h" />
 		<Unit filename="include/canif.h" />
+		<Unit filename="include/drivemode.h" />
 		<Unit filename="include/caltypes.h" />
 		<Unit filename="include/digio_prj.h" />
 		<Unit filename="include/eds.h" />
@@ -76,6 +77,7 @@
 		<Unit filename="src/cal_f11.cpp" />
 		<Unit filename="src/calset.cpp" />
 		<Unit filename="src/canif.cpp" />
+		<Unit filename="src/drivemode.cpp" />
 		<Unit filename="src/caltypes.cpp" />
 		<Unit filename="src/anaconv.cpp" />
 		<Unit filename="src/eds.cpp" />

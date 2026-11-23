@@ -44,6 +44,16 @@
 #define VALVE_MAX_CHIPS 2
 #define VALVE_NOT_FITTED 0xFF
 
+/// Per-valve fault flags of the last PollFaults() (ValveFlags()).
+enum ValveFlag
+{
+   VALVE_F_OCP = 0x01,  // over-current
+   VALVE_F_HHF = 0x02,  // hit current not reached
+   VALVE_F_OLF = 0x04,  // open load
+   VALVE_F_DPM = 0x08,  // plunger movement not detected
+   VALVE_F_CHIP = 0x10, // whole chip: over-temperature, reset (UVM) or SPI echo
+};
+
 class ValveOut
 {
 public:
@@ -76,6 +86,8 @@ public:
    static uint16_t CriticalMask();
    /// Chip status flags of the last poll (STATUS[7:0]) for logging.
    uint8_t ChipFlags(uint8_t idx) const { return flags[idx]; }
+   /// ValveFlag bits of one valve from the last poll (0 if not fitted).
+   uint8_t ValveFlags(EdsValve v) const { return vflags[v]; }
    /// True if a chip reset itself (UVM) or the SPI echo check failed.
    bool ChipLost() const { return lost; }
 
@@ -83,6 +95,7 @@ private:
    Max22200 *chips[VALVE_MAX_CHIPS];
    uint8_t map[EDS_COUNT];
    uint8_t flags[VALVE_MAX_CHIPS];
+   uint8_t vflags[EDS_COUNT];
    bool ok;
    bool lost;
 };

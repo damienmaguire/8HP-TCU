@@ -113,6 +113,7 @@ struct SasConfig
    int32_t syncBand;    // |ndSyn| below this counts as synchronous, rpm
    int32_t glsGainPct;  // scale on the OEM GLS gains, 0 = GLS off
    int32_t rampMaxDownMs; // timeout ramp for downshifts (no OEM value in the down set)
+   int32_t timePct;     // DriveMode shift time scale, % (100 or 0 = cal as is)
 };
 
 struct SasOutputs

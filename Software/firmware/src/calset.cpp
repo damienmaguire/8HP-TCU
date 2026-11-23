@@ -22,13 +22,16 @@
 static const VariantCal variants[CALVAR_COUNT] = {
     // 8HP75 330e: the reference set.
     {"8HP75_330e", calClutch, calEds, calUp, calDown, calEngage, calPsys,
-     &calGlobal, CH7_K0, true, 0, true},
+     &calGlobal, CH7_K0, true, 0, true,
+     {calUp, 0, 0}, {calDown, 0, 0}},
     // 8HP45 F11: own EDS curves and fill items, the rest shared [I].
     {"8HP45_F11", calF11Clutch, calF11Eds, calUp, calDown, calEngage, calPsys,
-     &calGlobal, CH7_TCC, false, 0x0B0, false},
+     &calGlobal, CH7_TCC, false, 0x0B0, false,
+     {calUp, 0, 0}, {calDown, 0, 0}},
 };
 
 static const VariantCal *active = &variants[CALVAR_330E];
+static int activeMode = DM_NORMAL;
 
 namespace Cal {
 
@@ -41,6 +44,22 @@ const VariantCal &Variant(int id) {
 void Select(int id) { active = &Variant(id); }
 
 const VariantCal &Active() { return *active; }
+
+void SelectMode(int mode) {
+  activeMode = mode >= 0 && mode < DM_COUNT ? mode : DM_NORMAL;
+}
+
+int ActiveMode() { return activeMode; }
+
+const UpShiftCal *Up() {
+  const UpShiftCal *t = active->upMode[activeMode];
+  return t ? t : active->up;
+}
+
+const DownShiftCal *Down() {
+  const DownShiftCal *t = active->downMode[activeMode];
+  return t ? t : active->down;
+}
 
 uint8_t Ch7Effective(uint8_t mode, int variant) {
   if (mode == CH7_VARIANT || mode > CH7_OPEN)

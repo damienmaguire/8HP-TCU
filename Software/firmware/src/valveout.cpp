@@ -23,8 +23,10 @@ ValveOut::ValveOut() : ok(false), lost(false) {
     chips[i] = 0;
     flags[i] = 0;
   }
-  for (int v = 0; v < EDS_COUNT; v++)
+  for (int v = 0; v < EDS_COUNT; v++) {
     map[v] = VALVE_NOT_FITTED;
+    vflags[v] = 0;
+  }
 }
 
 void ValveOut::AttachChip(uint8_t idx, Max22200 *chip) {
@@ -98,6 +100,8 @@ void ValveOut::AllOff() {
 
 uint16_t ValveOut::PollFaults() {
   uint16_t valves = 0;
+  for (int v = 0; v < EDS_COUNT; v++)
+    vflags[v] = 0;
   for (int c = 0; c < VALVE_MAX_CHIPS; c++) {
     if (!chips[c])
       continue;
@@ -108,12 +112,19 @@ uint16_t ValveOut::PollFaults() {
       lost = true;
     uint8_t chFault = f.ocp | f.hhf | f.olf | f.dpm;
     // Over-temperature and a lost chip affect every channel of that chip.
-    if ((f.status & MAX22200_ST_OVT) || chipLost)
+    bool wholeChip = (f.status & MAX22200_ST_OVT) || chipLost;
+    if (wholeChip)
       chFault = 0xFF;
     for (int v = 0; v < EDS_COUNT; v++) {
       uint8_t g = map[v];
-      if (g != VALVE_NOT_FITTED && (g >> 3) == c && (chFault & (1u << (g & 7))))
+      if (g == VALVE_NOT_FITTED || (g >> 3) != c)
+        continue;
+      uint8_t bit = 1u << (g & 7);
+      if (chFault & bit)
         valves |= 1u << v;
+      vflags[v] = (f.ocp & bit ? VALVE_F_OCP : 0) | (f.hhf & bit ? VALVE_F_HHF : 0) |
+                  (f.olf & bit ? VALVE_F_OLF : 0) | (f.dpm & bit ? VALVE_F_DPM : 0) |
+                  (wholeChip ? VALVE_F_CHIP : 0);
     }
   }
   return valves;

@@ -57,6 +57,15 @@ enum Ch7Mode
    CH7_OPEN = 3,    // always open (both gearboxes, e.g. an EV with no use for it)
 };
 
+/// DriveMode parameter. Normal = the cal as it is.
+enum DriveMode
+{
+   DM_NORMAL = 0,
+   DM_SPORT = 1,
+   DM_TRACK = 2,
+   DM_COUNT
+};
+
 struct VariantCal
 {
    const char *name;
@@ -74,6 +83,12 @@ struct VariantCal
                                 // index differs and is not mapped)
    bool posConfirmed;           // POS valve seen in this variant's software
                                 // (F11: no, an 8th curve may be POS [I])
+   /* Shift tables per DriveMode. [DM_NORMAL] is up / down above; Sport and
+    * Track are 0 today, which means "use the Normal tables" plus the
+    * DriveMode parameter modifiers (drivemode.h). When Ian ports the OEM
+    * SP / SPORT maps, generate them and point these at them. */
+   const UpShiftCal *upMode[DM_COUNT];
+   const DownShiftCal *downMode[DM_COUNT];
 };
 
 namespace Cal
@@ -84,6 +99,12 @@ const VariantCal &Variant(int id);
 void Select(int id);
 /// The active variant's tables.
 const VariantCal &Active();
+/// Make a DriveMode the active one (its shift tables, see upMode).
+void SelectMode(int mode);
+int ActiveMode();
+/// Shift tables of the active variant and DriveMode [CAL_NUM_PAIRS].
+const UpShiftCal *Up();
+const DownShiftCal *Down();
 /// Channel 7 mode after resolving CH7_VARIANT.
 uint8_t Ch7Effective(uint8_t mode, int variant);
 } // namespace Cal

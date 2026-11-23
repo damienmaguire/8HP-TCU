@@ -82,6 +82,11 @@ static void TestRatiosAndSteps() {
   CHECK_EQ(Gears::RatioX1000(GEAR_R), 3306);
   CHECK_EQ(Gears::SyncSpeed(1, 1000), 4714);
   CHECK_EQ(Gears::SyncSpeed(8, 3000), 2001);
+  // Spot values ratio and slip
+  CHECK_EQ(Gears::MeasuredRatioX1000(4714, 1000), 4714);
+  CHECK_EQ(Gears::MeasuredRatioX1000(3000, 50), 0);
+  CHECK_EQ(Gears::SlipRpm(1, 4800, 1000), 86);
+  CHECK_EQ(Gears::SlipRpm(GEAR_N, 4800, 1000), 0);
   // Adjacent steps only (v1)
   CHECK_EQ(Gears::NextStep(1, 2), 2);
   CHECK_EQ(Gears::NextStep(1, 8), 2);

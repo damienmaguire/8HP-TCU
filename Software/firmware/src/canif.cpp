@@ -135,22 +135,49 @@ int Tx(uint8_t t, const CanTxIn &in, CanFrame out[CANIF_MAX_TX]) {
 
 const char *Name(uint8_t t) { return H(t).name; }
 
-uint8_t E2eCrc(const uint8_t d[8], uint8_t k) {
-  return (uint8_t)(Lin::Crc8(&d[1], 7) ^ k);
+uint8_t E2eCrc(const uint8_t d[8], uint16_t dataId) {
+  uint8_t buf[9];
+  buf[0] = dataId & 0xFF;
+  buf[1] = dataId >> 8;
+  for (int i = 1; i < 8; i++)
+    buf[i + 1] = d[i];
+  return Lin::Crc8(buf, 9); // same CRC-8 as the LIN pump: 0x1D, init 0
 }
 
-void PackF11Torque(int32_t reqNm, uint8_t counter, uint8_t d[8]) {
-  int32_t raw = 2 * (reqNm + 2047);
+uint16_t TqRaw(int32_t nm) {
+  // raw = (Nm + 1023.5) / 0.5 = 2 Nm + 2047
+  int32_t raw = 2 * nm + 2047;
   if (raw < 0)
     raw = 0;
-  if (raw > 0xFFF)
-    raw = 0xFFF;
-  for (int i = 0; i < 8; i++)
-    d[i] = 0;
-  d[1] = (uint8_t)((counter % 15) | ((raw & 0x0F) << 4));
-  d[2] = (uint8_t)(raw >> 4);
-  // Fields 2 and 3 (bytes 3-5) and bytes 6-7 left at 0 [I: not decoded].
-  d[0] = E2eCrc(d, CANIF_F11_TQ_K);
+  if (raw > 0xFFE)
+    raw = 0xFFE;
+  return (uint16_t)raw;
+}
+
+void PackF11Torque(uint8_t qual, int32_t targetNm, uint8_t counter, uint8_t d[8]) {
+  if (qual != TQ_QUAL_RAISE && qual != TQ_QUAL_REDUCE)
+    qual = TQ_QUAL_NONE;
+  uint16_t tgt = qual == TQ_QUAL_NONE ? CANIF_F11_TQ_NONE : TqRaw(targetNm);
+  uint16_t aux = qual == TQ_QUAL_REDUCE ? 0xFFE
+                 : qual == TQ_QUAL_RAISE ? tgt : 0xFFF;
+  uint16_t load = 0x7FF; // 0 Nm, as in the logged idle frame
+  d[1] = (uint8_t)((counter % 15) | ((aux & 0x0F) << 4));
+  d[2] = (uint8_t)(aux >> 4);
+  d[3] = (uint8_t)(tgt & 0xFF);
+  d[4] = (uint8_t)((tgt >> 8) | ((load & 0x0F) << 4));
+  d[5] = (uint8_t)(load >> 4);
+  d[6] = (uint8_t)(qual | 0xF0);
+  d[7] = 0xFF;
+  d[0] = E2eCrc(d, CANIF_F11_TQ_DATAID);
+}
+
+uint8_t F11TqTarget(int32_t inputNm, int32_t deltaNm, int32_t *targetNm) {
+  if (deltaNm == 0) {
+    *targetNm = 0;
+    return TQ_QUAL_NONE;
+  }
+  *targetNm = inputNm + deltaNm;
+  return deltaNm < 0 ? TQ_QUAL_REDUCE : TQ_QUAL_RAISE;
 }
 
 } // namespace CanIf

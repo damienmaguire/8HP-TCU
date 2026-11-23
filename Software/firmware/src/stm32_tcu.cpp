@@ -57,6 +57,7 @@
 #include "anaconv.h"
 #include "calset.h"
 #include "canif.h"
+#include "drivemode.h"
 #include "eds.h"
 #include "linpump.h"
 #include "max22200.h"
@@ -130,6 +131,8 @@ static bool configError = false;
 // Latest decoded CAN1 input (canif.h; EcuType picks the protocol).
 static volatile CanRx canRx = {SEL_N, 0, 0, 0, 0};
 static uint8_t f11TqCounter = 0;
+static uint8_t f11TqQual = 0; // 0x0B0 qualifier and absolute target, Nm
+static int32_t f11TqNm = 0;
 static volatile uint32_t msSinceRx = 0xFFFF;
 
 static const Param::PARAM_NUM chanParams[EDS_COUNT] = {
@@ -213,7 +216,25 @@ static void ConfigureTcu() {
   c.tccOffRpm = Param::GetInt(Param::TccOffRpm);
   c.tccMinGear = Param::GetInt(Param::TccMinGear);
   c.tccRamp = Param::GetInt(Param::TccRamp);
-  tcu.Configure(c);
+  // DriveMode: Sport / Track are modifiers on this Normal set
+  // (drivemode.h). Their defaults are placeholders.
+  int dm = Param::GetInt(Param::DriveMode);
+  DriveModeMod m = DriveModes::Neutral();
+  if (dm == DM_SPORT) {
+    m.upOfsRpm = Param::GetInt(Param::SportUpOfs);
+    m.downOfsRpm = Param::GetInt(Param::SportDnOfs);
+    m.timePct = Param::GetInt(Param::SportTime);
+    m.tccOfsRpm = Param::GetInt(Param::SportTccOfs);
+  } else if (dm == DM_TRACK) {
+    m.downOfsRpm = Param::GetInt(Param::TrackDnOfs);
+    m.timePct = Param::GetInt(Param::TrackTime);
+    m.tccOfsRpm = Param::GetInt(Param::TrackTccOfs);
+    m.holdToRedline = true;
+    m.redlineRpm = Param::GetInt(Param::TrackRedline);
+    m.liftTqNm = Param::GetInt(Param::TrackLiftNm);
+  }
+  Cal::SelectMode(dm);
+  tcu.Configure(DriveModes::Apply(c, m));
 }
 
 static void ConfigureSpeed() {
@@ -472,7 +493,7 @@ static void SendStatus(const TcuOutputs &o, int32_t temp) {
   if (Param::GetBool(Param::F11TqTx) &&
       Param::GetInt(Param::GearboxType) == CALVAR_F11) {
     uint8_t d[8];
-    CanIf::PackF11Torque(o.tqDelta, f11TqCounter, d);
+    CanIf::PackF11Torque(f11TqQual, f11TqNm, f11TqCounter, d);
     f11TqCounter = (uint8_t)((f11TqCounter + 1) % 15);
     can1->Send(CANIF_F11_TQ_ID, d, 8);
   }
@@ -749,6 +770,41 @@ static void Ms10Task() {
   Param::SetInt(Param::coast, o.coast);
   Param::SetInt(Param::canAct, canOk);
   Param::SetInt(Param::shFault, shifter.Fault());
+
+  // Spot values (read-only, web UI).
+  static const EdsValve sv[9] = {EDS_A, EDS_B, EDS_C, EDS_D, EDS_E,
+                                 EDS_SYS, EDS_K0, EDS_POS, EDS_PZYL};
+  for (int i = 0; i < 9; i++) {
+    // Target = what the pressure or current command asks for (before the
+    // slew and dither); iX above is the slewed setpoint. The MAX22200
+    // has no current read-back, so there is no measured current.
+    Param::SetInt((Param::PARAM_NUM)(Param::itA + i), eds.Target(sv[i]) / 10);
+    Param::SetInt((Param::PARAM_NUM)(Param::fA + i), valves.ValveFlags(sv[i]));
+  }
+  Param::SetInt(Param::iPOS, eds.Setpoint(EDS_POS) / 10);
+  Param::SetInt(Param::ratio, Gears::MeasuredRatioX1000(in.n_t, in.n_ab));
+  Param::SetInt(Param::slip, Gears::SlipRpm(o.gear, in.n_t, in.n_ab));
+  // Selected gear: the ManualGear / VCU request, else the TCU's own target.
+  int sel = o.target;
+  if (in.manualGear)
+    sel = in.manualGear;
+  else if (Param::GetInt(Param::ShiftMode) == SHIFT_VCU && in.gearReq)
+    sel = in.gearReq;
+  if (in.selector == SEL_P || in.selector == SEL_N)
+    sel = GEAR_N;
+  else if (in.selector == SEL_R)
+    sel = GEAR_R;
+  Param::SetInt(Param::selGear, sel);
+  Param::SetInt(Param::inertia, o.inertia);
+  Param::SetInt(Param::drvMode, Param::GetInt(Param::DriveMode));
+  Param::SetInt(Param::shiftMd, Param::GetInt(Param::ShiftMode));
+  Param::SetInt(Param::pSysMeas, in.pMeas); // -1: no sensor on V4
+  Param::SetInt(Param::lpBusFlt, linActive && (linPump.Classes() & LPC_COMM) != 0);
+  Param::SetInt(Param::parkSt, o.parkState);
+  Param::SetInt(Param::canLoss, !in.canOk);
+  f11TqQual = CanIf::F11TqTarget(in.m_t, o.tqDelta, &f11TqNm);
+  Param::SetInt(Param::tq0B0, f11TqNm);
+  Param::SetInt(Param::tqQual, f11TqQual);
 }
 
 static void Ms100Task() {
@@ -788,6 +844,7 @@ static void Ms100Task() {
     atfTemp = Param::GetInt(Param::AtfFixed);
   }
   Param::SetInt(Param::atfTemp, atfTemp);
+  Param::SetInt(Param::tBoard, AnaConv::McuTempC(AnaIn::mcu_temp.Get()));
 
   if (driversUp) {
     uint16_t f = valves.PollFaults();

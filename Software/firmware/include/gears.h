@@ -97,6 +97,11 @@ int NextStep(int from, int to);
 /// Synchronous input speed for a gear: n_ab * ratio. Returns rpm.
 int32_t SyncSpeed(int gear, int32_t outputRpm);
 
+/// Measured ratio n_t / n_ab x 1000, 0 below 100 rpm output (no reading).
+int32_t MeasuredRatioX1000(int32_t inputRpm, int32_t outputRpm);
+/// Slip in a gear: n_t - SyncSpeed(gear, n_ab). 0 in N or another non-gear.
+int32_t SlipRpm(int gear, int32_t inputRpm, int32_t outputRpm);
+
 /// True for 1..8 and R.
 bool IsDriveGear(int gear);
 

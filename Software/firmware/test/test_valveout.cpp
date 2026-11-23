@@ -93,10 +93,17 @@ void TestValveOut() {
   CHECK(f & ValveOut::CriticalMask());
   CHECK(!(ValveOut::CriticalMask() & (1u << EDS_PZYL)));
   CHECK(!v.ChipLost());
+  // Per-valve flags for the spot values
+  CHECK_EQ(v.ValveFlags(EDS_C), VALVE_F_OCP);
+  CHECK_EQ(v.ValveFlags(EDS_PZYL), VALVE_F_OLF);
+  CHECK_EQ(v.ValveFlags(EDS_A), 0);
   CHECK_EQ(v.PollFaults(), 0); // cleared
+  CHECK_EQ(v.ValveFlags(EDS_C), 0);
 
   // Over-temperature flags every valve on that chip
   bus.reg[1][0] |= MAX22200_ST_OVT;
   f = v.PollFaults();
   CHECK_EQ(f, 1u << EDS_PZYL);
+  CHECK_EQ(v.ValveFlags(EDS_PZYL), VALVE_F_CHIP);
+  CHECK_EQ(v.ValveFlags(EDS_C), 0); // other chip
 }
