@@ -45,9 +45,18 @@
   ANA_IN_ENTRY(atf_temp2, GPIOC, 2)                                            \
   ANA_IN_ENTRY(ana_in, GPIOC, 3)
 
-/* ADC2 injected inputs for the speed sensors (hwinit.cpp speed_adc_setup). */
+/* ADC2 injected inputs for the speed sensors (hwinit.cpp speed_adc_setup).
+ * Next revision: the third input (n6, an internal shaft, safety cross-check
+ * only) probably on PA2 = ADC12_IN2 (Bob, not final). */
+#if HW_HAS_SPD3
+#define SPEED_ANA_LIST                                                         \
+  SPEED_ANA_ENTRY(spd_in_ana, GPIOA, 0)                                        \
+  SPEED_ANA_ENTRY(spd_out_ana, GPIOA, 1)                                       \
+  SPEED_ANA_ENTRY(spd_aux_ana, GPIOA, 2)
+#else
 #define SPEED_ANA_LIST                                                         \
   SPEED_ANA_ENTRY(spd_in_ana, GPIOA, 0)                                        \
   SPEED_ANA_ENTRY(spd_out_ana, GPIOA, 1)
+#endif
 
 #endif // ANAIN_PRJ_H_INCLUDED

@@ -59,5 +59,6 @@ void TestValveOut();
 void TestAnaConv();
 void TestLinPump();
 void TestShifter();
+void TestCanIf();
 
 #endif // TEST_H_INCLUDED

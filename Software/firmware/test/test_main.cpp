@@ -34,7 +34,7 @@ int main() {
       {"engage", TestEngage},       {"speedsens", TestSpeedSens},
       {"tcu", TestTcu},             {"valveout", TestValveOut},
       {"anaconv", TestAnaConv},     {"linpump", TestLinPump},
-      {"shifter", TestShifter},
+      {"shifter", TestShifter},     {"canif", TestCanIf},
   };
   for (const Suite &s : suites) {
     int before = g_failures;

@@ -7,13 +7,13 @@ CXX      ?= g++
 OPT      ?= -O1 -g
 CXXFLAGS  = $(OPT) -std=c++17 -Wall -Wextra -pedantic -I../include -MMD -MP
 BINARY    = test_tcu
-CORE      = caltypes.o cal_330e.o gears.o interlock.o max22200.o eds.o sas.o \
+CORE      = caltypes.o cal_330e.o cal_f11.o calset.o canif.o gears.o interlock.o max22200.o eds.o sas.o \
             engage.o speedsens.o tcu.o valveout.o anaconv.o linpump.o \
             shifter.o
 TESTS     = test_main.o test_gears.o test_interlock.o test_lookup.o test_eds.o \
             test_max22200.o test_sas.o test_engage.o test_speedsens.o \
             test_tcu.o test_valveout.o test_anaconv.o test_linpump.o \
-            test_shifter.o
+            test_shifter.o test_canif.o
 VPATH     = ../src
 
 all: $(BINARY)

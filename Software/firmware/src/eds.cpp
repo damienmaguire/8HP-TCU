@@ -17,7 +17,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "eds.h"
-#include "cal_330e.h"
+#include "calset.h"
 #include "caltypes.h"
 
 static bool IsRising(EdsValve v) {
@@ -43,7 +43,7 @@ int32_t Eds::PressureToCurrent(EdsValve v, int32_t p_mbar) {
     return 0;
   if (p_mbar < 0)
     p_mbar = 0;
-  return Cal::Curve(calEds[v], p_mbar);
+  return Cal::Curve(Cal::Active().eds[v], p_mbar);
 }
 
 int32_t Eds::TempCorrection(EdsValve v, int32_t i_0p1mA, int32_t atfTemp) {
@@ -51,7 +51,7 @@ int32_t Eds::TempCorrection(EdsValve v, int32_t i_0p1mA, int32_t atfTemp) {
     return 0;
   // The correction maps have their current axis in mA.
   const CalMap &m =
-      IsRising(v) ? calGlobal.kieds_rising : calGlobal.kieds_falling;
+      IsRising(v) ? Cal::Active().global->kieds_rising : Cal::Active().global->kieds_falling;
   return Cal::Map(m, i_0p1mA / 10, atfTemp);
 }
 

@@ -17,7 +17,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "engage.h"
-#include "cal_330e.h"
+#include "calset.h"
 #include "caltypes.h"
 #include "gears.h"
 
@@ -80,7 +80,7 @@ bool Engage::Start(int g, const EngageConfig &c) {
 /* Quick fill then fill-equalise, the same per-element data the shifts use. */
 int32_t Engage::FillPressure(int cl, int32_t tIn, int32_t fillTotal,
                              const EngageInputs &in) const {
-  const ClutchFillCal &c = calClutch[cl];
+  const ClutchFillCal &c = Cal::Active().clutch[cl];
   int32_t tsf = Cal::Curve(c.tsfcg, in.temp);
   if (tIn < tsf && tIn < fillTotal)
     return Cal::Map(c.psfcgmt, in.temp, in.m_t);
@@ -90,7 +90,7 @@ int32_t Engage::FillPressure(int cl, int32_t tIn, int32_t fillTotal,
 void Engage::Tick(const EngageInputs &in) {
   if (!Active())
     return;
-  const EngageCal &e = calEngage[idx];
+  const EngageCal &e = Cal::Active().engage[idx];
 
   if (fillV1 < 0) {
     // Fill times are taken once, at the start.
@@ -101,8 +101,8 @@ void Engage::Tick(const EngageInputs &in) {
     // The V2 fill time is counted from the end of this delay [I].
     tvV2 = Cal::Curve(e.tvkzucgv2, in.temp);
     // A zero fill time (KL_TFV1 at speed) still needs the quick fill.
-    int32_t q1 = Cal::Curve(calClutch[clV1].tsfcg, in.temp);
-    int32_t q2 = Cal::Curve(calClutch[clV2].tsfcg, in.temp);
+    int32_t q1 = Cal::Curve(Cal::Active().clutch[clV1].tsfcg, in.temp);
+    int32_t q2 = Cal::Curve(Cal::Active().clutch[clV2].tsfcg, in.temp);
     if (fillV1 < q1)
       fillV1 = q1;
     if (fillV2 < q2)
@@ -142,10 +142,10 @@ void Engage::Tick(const EngageInputs &in) {
 
   // Power-flow element starts once both others are closing.
   int32_t delay = Cal::Curve(e.tvkzu, in.n_ab);
-  int32_t tsf = Cal::Curve(calClutch[clPower].tsfcg, in.temp);
+  int32_t tsf = Cal::Curve(Cal::Active().clutch[clPower].tsfcg, in.temp);
   // B is kept at fill pressure in neutral (OEM). When B is the last clutch
   // in (330e) it stays there while V1/V2 fill instead of being dumped.
-  int32_t preFill = clPower == CL_B ? Cal::Curve(calClutch[CL_B].pfcg, in.temp) : 0;
+  int32_t preFill = clPower == CL_B ? Cal::Curve(Cal::Active().clutch[CL_B].pfcg, in.temp) : 0;
 
   switch (phase) {
   case ENG_FILL:

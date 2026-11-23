@@ -103,6 +103,7 @@ int FindData(const uint8_t *buf, int n, uint8_t pid);
 // TCU-side bits of the status word (OEM ctl_IEP_Status numbering [C])
 #define LINPUMP_ST_LINCHK (1u << 3)   // LIN checksum error
 #define LINPUMP_ST_ALIVE (1u << 4)    // alive counter stuck or jumped
+#define LINPUMP_ST_NODELIV (1u << 5)  // run commanded, pump not turning [I: bit]
 #define LINPUMP_ST_NORX (1u << 7)     // no valid 0x32 for LinBusFault
 #define LINPUMP_ST_CRC8 (1u << 9)     // two bad CRC-8 in a row
 #define LINPUMP_ST_SWVER (1u << 13)   // SW version is not IEP85 [I: bit]
@@ -124,7 +125,8 @@ enum LinPumpClass
    LPC_TEMPORARY = 1,
    LPC_PERMANENT = 2,
    LPC_COMM = 4,
-   LPC_BUS = 8, // KFC_IEPBUS: no valid 0x32 for LinBusFault
+   LPC_BUS = 8,       // KFC_IEPBUS: no valid 0x32 for LinBusFault
+   LPC_DELIVERY = 16, // "pump not delivering" symptom (KL_TVERZSYMIEP)
 };
 
 struct LinPumpConfig
@@ -133,6 +135,14 @@ struct LinPumpConfig
    uint16_t slotMs;      // schedule slot (10 ms [I])
    uint16_t busFaultMs;  // no valid 0x32 this long -> bus fault (1800 [C])
    uint16_t diagDelayMs; // diagnosis blocked after a clear (400 [C])
+   uint16_t startBlankMs; // status ignored after switch-on (about 1 s [I])
+   uint16_t armMs;       // "not delivering" check armed this long after
+                         // the run command (KL_TVERZSYMIEP 1000 [C])
+   uint16_t symMaxMs;    // ... and set if still not turning by this time
+                         // (KL_TMAXSYMIEP 1500 [C])
+   int32_t delivRpm;     // reported speed that counts as delivering [I]
+   bool processRx;       // false: replies are decoded but never raise a
+                         // fault class (the 0x30 does not depend on them)
 };
 
 struct LinPumpStatus
@@ -182,8 +192,12 @@ public:
    const LinPumpStatus &Status() const { return st; }
    /// OEM-style status word (EB0 << 16 | EB1 << 24 | own bits).
    uint32_t StatusWord() const;
-   /// Fault classes (LinPumpClass bits); 0 during the post-clear delay.
+   /// Fault classes (LinPumpClass bits); 0 during the post-clear delay,
+   /// the start-up blank and with processRx off.
    uint8_t Classes() const;
+   /// ms the pump has been commanded to run and reporting at least
+   /// delivRpm (0 when not). Used by the gear-in rule.
+   uint32_t DeliveringMs() const { return tDeliv; }
    uint16_t LinChecksumErrors() const { return linChkErrors; }
    uint16_t CrcErrors() const { return crcErrors; }
    uint16_t AliveErrors() const { return aliveErrors; }
@@ -206,6 +220,10 @@ private:
    bool clearPending;    // send 0x02 in the next 0x30
    uint32_t tDiagBlock;  // ms left with diagnosis blocked
    uint32_t tNoValid;    // ms since the last valid 0x32
+   uint32_t tStartBlank; // ms left of the start-up blank
+   uint32_t tRun;        // ms since the run command
+   uint32_t tDeliv;      // ms delivering (see DeliveringMs)
+   uint32_t tLow;        // ms not turning since the check was armed
    uint32_t ownBits;
    uint8_t badCrc;       // consecutive bad CRC-8 on 0x32
    int8_t lastAlive[3];  // per response frame, -1 = none yet
@@ -213,11 +231,15 @@ private:
    uint16_t linChkErrors, crcErrors, aliveErrors, txErrors;
 };
 
-/* When to run the pump (330e strategy [C values, I for how they combine]):
- * input speed below LinPumpRpm (500, hysteresis LinPumpHyst 50), sump
- * LinTempMin..LinTempMax (0..125 degC) and system pressure below LinPMax
- * (20 bar). After the rule drops, the pump keeps running for LinOffDelay
- * (OEM D_t_IEP_ShutdownDelay 800 ms [I: use]).
+/* When to run the pump (330e strategy, Ian section 11 Q9b [C values, I
+ * for how they combine]): on below LinPumpRpm (NS_HYBRID_IEP 500 rpm), off
+ * above LinPumpRpm + LinPumpHyst (550), sump LinTempMin..LinTempMax
+ * (0..125 degC), system pressure below LinPMax (P_SYS_SCHWELLE_IEP 20 bar).
+ * Below LinTempMin it may still run down to LinColdMin (-15 degC) for at
+ * most LinColdMs (5 s, TEMP_TIEF_NOTLAUF_IEP / T_MAXCGETRTIEF_NOTLAUF_IEP);
+ * the cold allowance comes back once the sump is above LinTempMin. P does
+ * not switch it off. After the rule drops, the pump keeps running for
+ * LinOffDelay (D_t_IEP_ShutdownDelay 800 ms [I: use]).
  */
 enum LinPumpReq
 {
@@ -232,12 +254,14 @@ struct LinRuleConfig
    int32_t tempMin, tempMax;   // degC
    int32_t pMaxMbar;           // no run at or above this system pressure
    int32_t offDelayMs;
+   int32_t coldMin;            // degC, cold allowance lower limit
+   int32_t coldMaxMs;          // ms of cold running allowed (0 = none)
 };
 
 class LinPumpRule
 {
 public:
-   LinPumpRule() : cfg(), on(false), speedOn(false), tOff(0) {}
+   LinPumpRule() : cfg(), on(false), speedOn(false), tOff(0), tCold(0) {}
    void Configure(const LinRuleConfig &c) { cfg = c; }
    /// Every 10 ms. Returns true while the pump should run.
    bool Update(uint8_t req, int32_t n_t, int32_t sumpC, int32_t pSysMbar);
@@ -247,6 +271,7 @@ private:
    LinRuleConfig cfg;
    bool on, speedOn;
    int32_t tOff;
+   int32_t tCold; // ms of cold running used
 };
 
 #endif // LINPUMP_H

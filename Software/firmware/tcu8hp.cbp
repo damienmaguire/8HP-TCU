@@ -52,6 +52,9 @@
 		<Unit filename="include/anain_prj.h" />
 		<Unit filename="include/anaconv.h" />
 		<Unit filename="include/cal_330e.h" />
+		<Unit filename="include/cal_f11.h" />
+		<Unit filename="include/calset.h" />
+		<Unit filename="include/canif.h" />
 		<Unit filename="include/caltypes.h" />
 		<Unit filename="include/digio_prj.h" />
 		<Unit filename="include/eds.h" />
@@ -70,6 +73,9 @@
 		<Unit filename="include/tcu.h" />
 		<Unit filename="include/valveout.h" />
 		<Unit filename="src/cal_330e.cpp" />
+		<Unit filename="src/cal_f11.cpp" />
+		<Unit filename="src/calset.cpp" />
+		<Unit filename="src/canif.cpp" />
 		<Unit filename="src/caltypes.cpp" />
 		<Unit filename="src/anaconv.cpp" />
 		<Unit filename="src/eds.cpp" />

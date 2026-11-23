@@ -26,6 +26,43 @@
  * Damien. See also digio_prj.h, anain_prj.h and README "Pin map".
  */
 
+/* Board revision. 4 = Stm32_TCU_V4 (default, what is built today).
+ * 5 = Bob's next revision. Its pins are not final, so everything it adds
+ * is behind the HW_HAS_* switches below with TBD placeholders, and a
+ * HW_REV=5 build stops with #error until the TBD pins are filled in.
+ * What the next revision adds (Bob, pins TBD unless given):
+ *  - a second MAX22200 on SPI1 with its own CSB (TBD); PZYL on its OUT0
+ *    (global channel 8, ChanPZYL);
+ *  - a third speed input (n6), probably PA2 = ADC12_IN2;
+ *  - 12 V shift up / down inputs (TBD);
+ *  - terminal 15 (ignition) input (TBD).
+ */
+#ifndef HW_REV
+#define HW_REV 4
+#endif
+
+#if HW_REV >= 5
+#define HW_HAS_MAX2 1
+#define HW_HAS_SPD3 1
+#define HW_HAS_SHIFT12V 1
+#define HW_HAS_T15 1
+/* TBD pins: set these from Bob's final V5 pin map. */
+#if !defined(MAX_CS1_PORT) || !defined(MAX_CS1_PIN)
+#error "HW_REV 5: MAX22200 #2 chip select pin is TBD (MAX_CS1_PORT / MAX_CS1_PIN)"
+#endif
+#if !defined(SHIFT_UP_PORT) || !defined(SHIFT_UP_PIN) || !defined(SHIFT_DN_PORT) || !defined(SHIFT_DN_PIN)
+#error "HW_REV 5: 12 V shift up / down input pins are TBD (SHIFT_UP_* / SHIFT_DN_*)"
+#endif
+#if !defined(T15_PORT) || !defined(T15_PIN)
+#error "HW_REV 5: terminal 15 input pin is TBD (T15_PORT / T15_PIN)"
+#endif
+#else
+#define HW_HAS_MAX2 0
+#define HW_HAS_SPD3 0
+#define HW_HAS_SHIFT12V 0
+#define HW_HAS_T15 0
+#endif
+
 #define USART_BAUDRATE 115200
 #define PERIPH_CLK ((uint32_t)36000000)
 
@@ -69,6 +106,8 @@
 #define SPEED_ADC_RCC RCC_ADC2
 #define SPEED_ADC_CH_IN 0
 #define SPEED_ADC_CH_OUT 1
+#define SPEED_ADC_CH_AUX 2 // next revision: n6 on PA2 (ADC12_IN2), probably
+#define SPEED_NUM (HW_HAS_SPD3 ? 3 : 2)
 #define SPEED_TRIG_TIMER TIM1
 #define SPEED_TRIG_RCC RCC_TIM1
 #define SPEED_TIMER_HZ 40000u // ADC2 samples per second per sensor

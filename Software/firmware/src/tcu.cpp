@@ -17,7 +17,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "tcu.h"
-#include "cal_330e.h"
+#include "calset.h"
 #include "caltypes.h"
 #include "eds.h"
 
@@ -37,7 +37,8 @@ static int32_t Max(int32_t a, int32_t b) { return a > b ? a : b; }
 Tcu::Tcu()
     : cfg(), out(), dntFilt(0), lastNt(0), ndSynFilt(0), lastNdSyn(0),
       tqRamp(0), tqRampStep(0), gearErrMs(0), firstTick(true),
-      fromPark(false) {
+      fromPark(false), pnMs(0), npMs(0), relMs(-1), tipLeft(0),
+      fromDrive(false), tccLocked(false) {
   out.mode = TCU_INIT;
   out.gear = GEAR_N;
   out.target = GEAR_N;
@@ -63,6 +64,15 @@ void Tcu::ForceSafe(TcuFault f) {
   out.tqDelta = 0;
   out.tqHold = false;
   out.canLossHold = false;
+  out.pCh7 = 0;
+  out.nMotReq = 0;
+  out.pzylI = 0;
+  out.parkMagnet = false;
+  out.parkWait = false;
+  out.gearInWait = false;
+  out.tipAuto = false;
+  tipLeft = 0;
+  tccLocked = false;
   tqRamp = 0;
   out.gear = GEAR_LIMP; // what the hydraulics fall into with no current
   out.target = GEAR_LIMP;
@@ -72,7 +82,7 @@ void Tcu::SetNeutral(const TcuInputs &in) {
   for (int c = 0; c < CL_COUNT; c++)
     out.p[c] = 0;
   // OEM neutral keeps B at fill pressure, ready for 1st or R [C].
-  out.p[CL_B] = Cal::Curve(calClutch[CL_B].pfcg, in.temp);
+  out.p[CL_B] = Cal::Curve(Cal::Active().clutch[CL_B].pfcg, in.temp);
 }
 
 void Tcu::HoldGear(int gear) {
@@ -85,10 +95,10 @@ int32_t Tcu::LinePressure(const TcuInputs &in, int32_t minP) const {
   int32_t p;
   int g = out.gear;
   if ((out.mode == TCU_DRIVE || out.mode == TCU_SHIFT) && Gears::IsDriveGear(g)) {
-    const CalMap &m = calPsys[g == GEAR_R ? 0 : g];
+    const CalMap &m = Cal::Active().psys[g == GEAR_R ? 0 : g];
     p = Cal::Map(m, in.m_t, in.n_mot);
   } else {
-    p = Cal::Map(calGlobal.psysn, in.n_mot, in.n_ab);
+    p = Cal::Map(Cal::Active().global->psysn, in.n_mot, in.n_ab);
   }
   p = Max(p, minP) + cfg.lineOffset;
   if (p > cfg.lineMax)
@@ -104,7 +114,7 @@ bool Tcu::GearPlausible(const TcuInputs &in, int gear) const {
   return Abs(ratio - want) * 100 <= want * cfg.gearCheckPct;
 }
 
-int Tcu::ChooseTarget(const TcuInputs &in) const {
+int Tcu::ChooseTarget(const TcuInputs &in, bool manual) const {
   int g = out.gear;
   int top = cfg.topGear < 1 ? 1 : (cfg.topGear > 8 ? 8 : cfg.topGear);
   if (g == GEAR_R || !Gears::IsDriveGear(g))
@@ -127,12 +137,23 @@ int Tcu::ChooseTarget(const TcuInputs &in) const {
       return g; // 0 = hold
     return r > top ? top : r;
   }
-  if (cfg.shiftMode == SHIFT_MANUAL) {
+  if (manual) {
     // Driver tips, one gear per tip, inside the rpm limits. The interlock
     // and the shift sequences are the same as in Auto. A tip that would
     // over-rev (down) or lug (up) the input is ignored, not queued.
     if (lug)
       return g - 1;
+    if (in.manualGear >= 1 && in.manualGear <= 8) {
+      // ManualGear picked a gear: step towards it one gear at a time, each
+      // step only inside the same rpm limits as a tip. A gear the limits
+      // do not allow yet is waited for, not forced.
+      int want = in.manualGear > top ? top : in.manualGear;
+      if (want > g && Gears::SyncSpeed(g + 1, in.n_ab) >= cfg.manMinRpm)
+        return g + 1;
+      if (want < g && Gears::SyncSpeed(g - 1, in.n_ab) <= cfg.manMaxRpm)
+        return g - 1;
+      return g;
+    }
     if (in.tipUp && g < top &&
         Gears::SyncSpeed(g + 1, in.n_ab) >= cfg.manMinRpm)
       return g + 1;
@@ -173,6 +194,78 @@ SasInputs Tcu::MakeSasInputs(const TcuInputs &in) {
   }
   out.tSyn = s.tSyn;
   return s;
+}
+
+/// Leaving P: true when the motor turns fast enough or the measured line
+/// pressure is high enough to release the park lock.
+static bool ParkReleaseOk(const TcuConfig &cfg, const TcuInputs &in) {
+  if (cfg.parkRelRpm <= 0)
+    return true;
+  return in.n_mot >= cfg.parkRelRpm || (in.pMeas >= 0 && in.pMeas >= cfg.parkRelP);
+}
+
+/* N -> P delay KL_TVPARKSPCGNP [C]: 1000 / 500 / 300 / 150 ms at -30 / -15 /
+ * 0 / 40 degC. From a drive range the OEM uses KL_TVPSEIN instead. */
+static const int32_t npT[4] = {-30, -15, 0, 40};
+static const int32_t npMsTab[4] = {1000, 500, 300, 150};
+/* PZYL cold offset [C values, I: PSV = PZYL]: +190 / 170 / 50 / 0 mA at
+ * -30 / -20 / 0 / 20 degC, in 0.1 mA. */
+static const int32_t pzT[4] = {-30, -20, 0, 20};
+static const int32_t pzOfs[4] = {1900, 1700, 500, 0};
+
+bool Tcu::PressureSource(const TcuInputs &in) const {
+  if (cfg.gearInPumpMs <= 0 && cfg.gearInMotRpm <= 0)
+    return true;
+  if (cfg.gearInPumpMs > 0 && in.pumpDeliverMs >= cfg.gearInPumpMs)
+    return true;
+  return cfg.gearInMotRpm > 0 && in.n_mot >= cfg.gearInMotRpm;
+}
+
+void Tcu::ParkOutputs(const TcuInputs &in) {
+  if (relMs >= 0 && relMs < 0x7FFFFFF)
+    relMs += TCU_TICK_MS;
+  bool leavingP = out.mode == TCU_PARK && in.selector != SEL_P;
+  int32_t req = 0;
+  if (leavingP && cfg.parkRelRpm > 0)
+    req = cfg.parkRelRpm; // spin the motor (clutches open) for the release
+  if (relMs >= 0 && relMs < cfg.parkRelHoldMs && cfg.parkRelRpm > 0)
+    req = Max(req, cfg.parkRelRpm); // and hold it for T_NMINEMPAUS
+  if (in.pumpFault && cfg.pumpFaultAct == PUMPFAULT_MOTOR &&
+      (out.mode == TCU_PARK || out.mode == TCU_NEUTRAL))
+    req = Max(req, cfg.pumpFaultRpm);
+  out.nMotReq = req;
+
+  // PZYL energised while the lock is being released and while it is out
+  // (not in P); park magnet on after the release for parkMagMinMs ..
+  // parkMagMaxMs [C times, I sequence].
+  bool released = out.mode != TCU_PARK || (leavingP && pnMs > 0);
+  out.pzylI = cfg.parkCtrl && released
+                  ? cfg.pzylI + Cal::Interp(pzT, pzOfs, 4, in.temp)
+                  : 0;
+  out.parkMagnet = cfg.parkCtrl && relMs >= 0 && relMs < cfg.parkMagMaxMs &&
+                   (out.mode != TCU_PARK || relMs < cfg.parkMagMinMs);
+}
+
+void Tcu::Ch7(const TcuInputs &in) {
+  int32_t p = 0;
+  if (cfg.ch7Mode == CH7_K0) {
+    p = cfg.k0P;
+  } else if (cfg.ch7Mode == CH7_TCC) {
+    // Lock-up only in a steady drive gear, never during a shift, gear-in
+    // or in N/P. Opens at once, applies along tccRamp [I: TBD values].
+    bool can = out.mode == TCU_DRIVE && Gears::IsDriveGear(out.gear) &&
+               out.gear != GEAR_R && out.gear >= cfg.tccMinGear;
+    if (!can)
+      tccLocked = false;
+    else if (tccLocked ? in.n_t < cfg.tccOffRpm : in.n_t >= cfg.tccOnRpm)
+      tccLocked = !tccLocked;
+    if (tccLocked) {
+      p = cfg.tccRamp > 0 ? out.pCh7 + cfg.tccRamp : cfg.tccP;
+      if (p > cfg.tccP)
+        p = cfg.tccP;
+    }
+  }
+  out.pCh7 = p;
 }
 
 void Tcu::StartShift(const TcuInputs &in, int next) {
@@ -231,6 +324,10 @@ void Tcu::Tick10ms(const TcuInputs &in) {
     for (int c = 0; c < CL_COUNT; c++)
       out.p[c] = 0;
     out.pSys = 0;
+    out.pCh7 = 0;
+    out.nMotReq = 0;
+    out.pzylI = 0;
+    out.parkMagnet = false;
     out.safeOutputs = true;
     return;
   }
@@ -238,6 +335,21 @@ void Tcu::Tick10ms(const TcuInputs &in) {
   out.tqHold = false;
   int32_t shiftTq = 0;
   bool canHold = !in.canOk && cfg.canLossMode == CANLOSS_HOLD;
+
+  // Manual shifting: always in Manual; in Auto for tipOverrideMs after a
+  // tip (the 12 V up/down inputs or the shifter tips). Never in VCU mode.
+  bool tip = in.tipUp || in.tipDown;
+  if (cfg.shiftMode == SHIFT_AUTO && cfg.tipOverrideMs > 0 && tip &&
+      out.mode == TCU_DRIVE)
+    tipLeft = cfg.tipOverrideMs;
+  else if (tipLeft > 0 && (out.mode == TCU_DRIVE || out.mode == TCU_SHIFT))
+    tipLeft -= TCU_TICK_MS;
+  else if (out.mode != TCU_DRIVE && out.mode != TCU_SHIFT)
+    tipLeft = 0;
+  if (cfg.shiftMode != SHIFT_AUTO)
+    tipLeft = 0;
+  out.tipAuto = tipLeft > 0;
+  bool manual = cfg.shiftMode == SHIFT_MANUAL || out.tipAuto;
 
   // ---- Mode logic ---------------------------------------------------
   bool wantN = in.selector == SEL_N || in.selector == SEL_P;
@@ -247,15 +359,56 @@ void Tcu::Tick10ms(const TcuInputs &in) {
 
   switch (out.mode) {
   case TCU_PARK:
-  case TCU_NEUTRAL:
     out.gear = out.target = GEAR_N;
-    out.mode = in.selector == SEL_P ? TCU_PARK : TCU_NEUTRAL;
-    if (out.mode == TCU_PARK)
-      fromPark = true;
+    fromPark = true;
     SetNeutral(in);
     allowed = CLUTCH_BIT(CL_B);
-    // No gear-in without the VCU frames.
-    if (!wantN && in.canOk && in.n_ab <= cfg.engageMaxNab &&
+    out.parkWait = false;
+    if (in.selector == SEL_P) {
+      pnMs = 0;
+      break;
+    }
+    // Leaving P: the lock comes out only with the motor turning or enough
+    // measured pressure (11 Q9d), then T_VPARKSPPN to N.
+    minLine = cfg.parkRelP;
+    if (!ParkReleaseOk(cfg, in)) {
+      out.parkWait = true;
+      pnMs = 0;
+      break;
+    }
+    pnMs += TCU_TICK_MS;
+    if (pnMs >= cfg.pnDelayMs) {
+      pnMs = 0;
+      relMs = 0;
+      npMs = 0;
+      out.mode = TCU_NEUTRAL;
+    }
+    break;
+  case TCU_NEUTRAL:
+    out.gear = out.target = GEAR_N;
+    SetNeutral(in);
+    allowed = CLUTCH_BIT(CL_B);
+    out.gearInWait = false;
+    if (in.selector == SEL_P) {
+      // N -> P after the OEM delay (from a drive range KL_TVPSEIN).
+      npMs += TCU_TICK_MS;
+      int32_t d = fromDrive ? Cal::Curve(Cal::Active().global->tvpsein, in.temp)
+                            : Cal::Interp(npT, npMsTab, 4, in.temp);
+      if (npMs >= d) {
+        npMs = 0;
+        fromDrive = false;
+        out.mode = TCU_PARK;
+        fromPark = true;
+      }
+      break;
+    }
+    npMs = 0;
+    fromDrive = false;
+    // No gear-in without the VCU frames, without a pressure source, or
+    // (PumpFaultAct = Stop) with a pump fault.
+    out.gearInWait = !wantN && (!PressureSource(in) ||
+                                (in.pumpFault && cfg.pumpFaultAct == PUMPFAULT_STOP));
+    if (!wantN && in.canOk && in.n_ab <= cfg.engageMaxNab && !out.gearInWait &&
         engage.Start(wantDir, cfg.engage)) {
       out.mode = TCU_ENGAGE;
       out.target = (uint8_t)wantDir;
@@ -265,14 +418,16 @@ void Tcu::Tick10ms(const TcuInputs &in) {
   case TCU_ENGAGE:
     if (wantN || out.target != wantDir) {
       engage.Abort();
+      fromDrive = in.selector == SEL_P;
       out.mode = TCU_NEUTRAL;
       SetNeutral(in);
       allowed = CLUTCH_BIT(CL_B);
       break;
     }
-    minLine = out.target == GEAR_R ? calGlobal.p_sysmin_r : calGlobal.p_sysmin_d;
+    minLine = out.target == GEAR_R ? Cal::Active().global->p_sysmin_r : Cal::Active().global->p_sysmin_d;
+    minLine = Max(minLine, cfg.gearInMinP); // P_SYSMINIEP 8 bar
     if (fromPark)
-      minLine = Max(minLine, calGlobal.p_sysminpsaus); // park release needs 17 bar
+      minLine = Max(minLine, Cal::Active().global->p_sysminpsaus); // park release needs 17 bar
     {
       // Line pressure is adequate if the command can reach the OEM minimum
       // for gear-in (it cannot if LineMax is set below it).
@@ -294,6 +449,7 @@ void Tcu::Tick10ms(const TcuInputs &in) {
   case TCU_DRIVE: {
     if (wantN || (out.gear == GEAR_R) != (wantDir == GEAR_R)) {
       // N, P or a change of direction: release everything and go via N.
+      fromDrive = in.selector == SEL_P;
       out.mode = TCU_NEUTRAL;
       out.gear = out.target = GEAR_N;
       SetNeutral(in);
@@ -302,7 +458,7 @@ void Tcu::Tick10ms(const TcuInputs &in) {
     }
     HoldGear(out.gear);
     allowed = Gears::ClutchMask(out.gear);
-    int tgt = ChooseTarget(in);
+    int tgt = ChooseTarget(in, manual);
     out.target = (uint8_t)tgt;
     // Shifts need the VCU frames, except the downshifts CanLossMode 1
     // makes as the car slows.
@@ -325,6 +481,7 @@ void Tcu::Tick10ms(const TcuInputs &in) {
     if (in.selector == SEL_N || in.selector == SEL_P) {
       // Leaving the shift for neutral is always safe: open everything.
       sas.Abort();
+      fromDrive = in.selector == SEL_P;
       out.mode = TCU_NEUTRAL;
       out.gear = out.target = GEAR_N;
       SetNeutral(in);
@@ -387,6 +544,8 @@ void Tcu::Tick10ms(const TcuInputs &in) {
     out.pSys = cfg.lineMax;
   out.engPhase = engage.Phase();
   out.parkRequest = out.mode == TCU_PARK && in.n_ab < 5;
+  ParkOutputs(in);
+  Ch7(in);
 
   // ---- Interlock: last check before anything reaches the valves ------
   InterlockInput il;

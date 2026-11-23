@@ -16,12 +16,16 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+#include "calset.h"
+#include "caltypes.h"
+#include "eds.h"
+#include "engage.h"
 #include "gears.h"
 #include "tcu.h"
 #include "test.h"
 
 static TcuConfig Cfg() {
-  TcuConfig c;
+  TcuConfig c = {};
   c.sas.pMax = 12750;
   c.sas.syncBand = 30;
   c.sas.glsGainPct = 100;
@@ -56,6 +60,29 @@ static TcuConfig Cfg() {
   c.ilOpenHigh = 7900;
   c.iMax = 8500;
   c.tempCorrection = true;
+  // Ian 11/12 defaults, with the two waits that need the motor or pump
+  // turned off (the older tests run with the motor at 0 rpm in N).
+  c.parkRelRpm = 0;
+  c.parkRelP = 17000;
+  c.parkRelHoldMs = 2000;
+  c.pnDelayMs = 150;
+  c.parkCtrl = false;
+  c.pzylI = 5500;
+  c.parkMagMinMs = 100;
+  c.parkMagMaxMs = 1000;
+  c.gearInMinP = 8000;
+  c.gearInPumpMs = 0;
+  c.gearInMotRpm = 0;
+  c.pumpFaultAct = PUMPFAULT_REPORT;
+  c.pumpFaultRpm = 600;
+  c.tipOverrideMs = 0;
+  c.ch7Mode = CH7_K0;
+  c.k0P = 0;
+  c.tccP = 6000;
+  c.tccOnRpm = 1500;
+  c.tccOffRpm = 1200;
+  c.tccMinGear = 2;
+  c.tccRamp = 500;
   return c;
 }
 
@@ -554,7 +581,391 @@ static void TestAuto() {
   CHECK(up);
 }
 
+/* ManualGear dropdown: the TCU steps to the picked gear one gear at a time,
+ * each step inside the tip limits; gear-in goes through the usual engage. */
+static void TestManualGear() {
+  Tcu t;
+  TcuConfig c = Cfg();
+  c.shiftMode = SHIFT_MANUAL;
+  t.Configure(c);
+  TcuInputs in = In();
+  t.Ready();
+  t.Tick10ms(in);
+  in.manualGear = 4;
+  CHECK(EngageTo(t, in, SEL_D));
+  CHECK_EQ(t.Out().gear, GEAR_1); // gear-in is always to 1st
+  // Too slow for 2nd (below ManMinRpm): waits in 1st
+  in.n_ab = NabFor(2, 800);
+  CHECK(RunTicks(t, in, 50));
+  CHECK_EQ(t.Out().gear, 1);
+  // Fast enough: climbs to 4th and stops there
+  for (int i = 0; i < 2000 && !(t.Out().gear == 4 && t.Out().mode == TCU_DRIVE); i++) {
+    int g = t.Out().mode == TCU_DRIVE ? t.Out().gear : t.Out().target;
+    if (t.Out().mode == TCU_DRIVE)
+      in.n_ab = NabFor(g, 4500);
+    CHECK(RunTicks(t, in, 1));
+  }
+  CHECK_EQ(t.Out().gear, 4);
+  CHECK(RunTicks(t, in, 50));
+  CHECK_EQ(t.Out().gear, 4);
+  // Pick 2nd while 2nd would over-rev: holds 4th, then 3rd is fine
+  in.manualGear = 2;
+  in.n_ab = NabFor(3, 6500);
+  CHECK(RunTicks(t, in, 30));
+  CHECK_EQ(t.Out().gear, 4);
+  // Tips are ignored while a gear is picked
+  in.tipUp = true;
+  CHECK(RunTicks(t, in, 1));
+  in.tipUp = false;
+  CHECK_EQ(t.Out().gear, 4);
+  CHECK_EQ(t.Out().mode, TCU_DRIVE);
+  in.n_ab = NabFor(2, 3000);
+  for (int i = 0; i < 2000 && !(t.Out().gear == 2 && t.Out().mode == TCU_DRIVE); i++)
+    CHECK(RunTicks(t, in, 1));
+  CHECK_EQ(t.Out().gear, 2);
+  // Above the output speed limit no gear-in from N
+  CHECK(RunTicks(t, in, 1));
+  in.selector = SEL_N;
+  CHECK(RunTicks(t, in, 5));
+  CHECK_EQ(t.Out().mode, TCU_NEUTRAL);
+  in.selector = SEL_D;
+  CHECK(RunTicks(t, in, 20));
+  CHECK_EQ(t.Out().mode, TCU_NEUTRAL); // n_ab above EngageMaxRpm
+  CHECK_EQ(t.Out().fault, TF_NONE);
+  CHECK(t.Out().interlock == 0);
+}
+
+/* Auto with tip override: a tip shifts one gear and holds Auto off for
+ * TipOverride ms; VCU mode ignores tips. */
+static void TestTipOverride() {
+  Tcu t;
+  TcuConfig c = Cfg();
+  c.shiftMode = SHIFT_AUTO;
+  c.tipOverrideMs = 2000;
+  t.Configure(c);
+  TcuInputs in = In();
+  t.Ready();
+  t.Tick10ms(in);
+  CHECK(EngageTo(t, in, SEL_D));
+  in.n_ab = NabFor(1, 3000); // below AutoUpRpm: Auto stays in 1st
+  CHECK(RunTicks(t, in, 20));
+  CHECK_EQ(t.Out().gear, 1);
+  in.tipUp = true;
+  CHECK(RunTicks(t, in, 1));
+  in.tipUp = false;
+  CHECK(t.Out().tipAuto);
+  CHECK(Settle(t, in));
+  CHECK_EQ(t.Out().gear, 2);
+  // High speed in 2nd: Auto would upshift, the override holds 2nd
+  in.n_ab = NabFor(2, 4500);
+  CHECK(RunTicks(t, in, 100));
+  CHECK_EQ(t.Out().gear, 2);
+  // Override runs out: Auto upshifts again
+  bool up = false;
+  for (int i = 0; i < 400 && !up; i++) {
+    CHECK(RunTicks(t, in, 1));
+    up = t.Out().gear >= 3;
+  }
+  CHECK(up);
+  CHECK(!t.Out().tipAuto);
+
+  // VCU mode: tips do nothing
+  Tcu v;
+  c.shiftMode = SHIFT_VCU;
+  v.Configure(c);
+  TcuInputs vi = In();
+  v.Ready();
+  v.Tick10ms(vi);
+  CHECK(EngageTo(v, vi, SEL_D));
+  vi.n_ab = NabFor(1, 4500);
+  vi.tipUp = true;
+  CHECK(RunTicks(v, vi, 1));
+  vi.tipUp = false;
+  CHECK(RunTicks(v, vi, 50));
+  CHECK_EQ(v.Out().gear, 1);
+  CHECK(!v.Out().tipAuto);
+}
+
+/* Park lock (Ian 11 Q9d / 12.1): release only with the motor at 700 rpm or
+ * 17 bar measured, P -> N 150 ms, motor speed held 2 s after, N -> P delay
+ * over temperature, PZYL and magnet with ParkCtrl. */
+static void TestPark() {
+  Tcu t;
+  TcuConfig c = Cfg();
+  c.parkRelRpm = 700;
+  c.parkCtrl = true;
+  t.Configure(c);
+  TcuInputs in = In();
+  in.temp = 40;
+  in.pMeas = -1;
+  in.selector = SEL_P;
+  t.Ready();
+  CHECK(RunTicks(t, in, 14)); // N -> P at 40 degC: 150 ms
+  CHECK_EQ(t.Out().mode, TCU_NEUTRAL);
+  CHECK(RunTicks(t, in, 2));
+  CHECK_EQ(t.Out().mode, TCU_PARK);
+  CHECK_EQ(t.Out().pzylI, 0);
+  CHECK(!t.Out().parkMagnet);
+  // Selector to N with the motor stopped: wait, ask for 700 rpm
+  in.selector = SEL_N;
+  in.n_mot = 0;
+  for (int i = 0; i < 50; i++) {
+    t.Tick10ms(in);
+    in.n_mot = 0;
+  }
+  CHECK_EQ(t.Out().mode, TCU_PARK);
+  CHECK(t.Out().parkWait);
+  CHECK_EQ(t.Out().nMotReq, 700);
+  CHECK_EQ(t.Out().pSys, 17000); // line held at P_SYSMINPSAUS
+  // Motor up: release takes 150 ms with PZYL on, then N
+  in.n_mot = 720;
+  for (int i = 0; i < 14; i++)
+    t.Tick10ms(in);
+  CHECK_EQ(t.Out().mode, TCU_PARK);
+  CHECK_EQ(t.Out().pzylI, 5500); // 550 mA, no cold offset at 40 degC
+  t.Tick10ms(in);
+  CHECK_EQ(t.Out().mode, TCU_NEUTRAL);
+  CHECK(t.Out().parkMagnet);
+  CHECK_EQ(t.Out().nMotReq, 700);
+  // Magnet off after 1 s, motor request after 2 s
+  in.n_mot = 0;
+  for (int i = 0; i < 100; i++)
+    t.Tick10ms(in);
+  CHECK(!t.Out().parkMagnet);
+  CHECK_EQ(t.Out().nMotReq, 700);
+  CHECK_EQ(t.Out().pzylI, 5500);
+  for (int i = 0; i < 100; i++)
+    t.Tick10ms(in);
+  CHECK_EQ(t.Out().nMotReq, 0);
+  // Back to P cold: N -> P 1000 ms at -30, PZYL off in P
+  in.temp = -30;
+  in.selector = SEL_P;
+  for (int i = 0; i < 99; i++)
+    t.Tick10ms(in);
+  CHECK_EQ(t.Out().mode, TCU_NEUTRAL);
+  CHECK_EQ(t.Out().pzylI, 5500 + 1900); // cold offset +190 mA
+  t.Tick10ms(in);
+  CHECK_EQ(t.Out().mode, TCU_PARK);
+  CHECK_EQ(t.Out().pzylI, 0);
+  // Measured pressure alone also releases
+  in.selector = SEL_R;
+  in.pMeas = 17500;
+  for (int i = 0; i < 16; i++)
+    t.Tick10ms(in);
+  CHECK(t.Out().mode != TCU_PARK);
+  // ParkCtrl off: no PZYL, no magnet, the wait still applies
+  Tcu u;
+  c.parkCtrl = false;
+  u.Configure(c);
+  TcuInputs ui = In();
+  ui.pMeas = -1;
+  ui.selector = SEL_P;
+  u.Ready();
+  for (int i = 0; i < 30; i++)
+    u.Tick10ms(ui);
+  ui.selector = SEL_D;
+  for (int i = 0; i < 30; i++)
+    u.Tick10ms(ui);
+  CHECK_EQ(u.Out().mode, TCU_PARK);
+  CHECK_EQ(u.Out().pzylI, 0);
+  ui.n_mot = 800;
+  for (int i = 0; i < 16; i++)
+    u.Tick10ms(ui);
+  CHECK(u.Out().mode != TCU_PARK);
+  CHECK(!u.Out().parkMagnet);
+}
+
+/* Gear-in source (11 Q9d [I]) and the pump fault reactions. */
+static void TestGearInSource() {
+  Tcu t;
+  TcuConfig c = Cfg();
+  c.gearInPumpMs = 1000;
+  c.gearInMotRpm = 100;
+  t.Configure(c);
+  TcuInputs in = In();
+  t.Ready();
+  t.Tick10ms(in);
+  in.selector = SEL_D;
+  for (int i = 0; i < 20; i++)
+    t.Tick10ms(in);
+  CHECK_EQ(t.Out().mode, TCU_NEUTRAL);
+  CHECK(t.Out().gearInWait);
+  in.pumpDeliverMs = 999;
+  t.Tick10ms(in);
+  CHECK_EQ(t.Out().mode, TCU_NEUTRAL);
+  in.pumpDeliverMs = 1000;
+  t.Tick10ms(in);
+  CHECK_EQ(t.Out().mode, TCU_ENGAGE);
+  CHECK(!t.Out().gearInWait);
+  // Motor turning is enough on its own
+  Tcu m;
+  m.Configure(c);
+  TcuInputs mi = In();
+  m.Ready();
+  m.Tick10ms(mi);
+  mi.selector = SEL_R;
+  mi.n_mot = 150;
+  m.Tick10ms(mi);
+  CHECK_EQ(m.Out().mode, TCU_ENGAGE);
+
+  // Pump fault, Motor: ask for 600 rpm in N; Stop: no gear-in
+  Tcu f;
+  c.gearInPumpMs = c.gearInMotRpm = 0;
+  c.pumpFaultAct = PUMPFAULT_MOTOR;
+  f.Configure(c);
+  TcuInputs fi = In();
+  fi.pumpFault = true;
+  f.Ready();
+  f.Tick10ms(fi);
+  CHECK_EQ(f.Out().nMotReq, 600);
+  c.pumpFaultAct = PUMPFAULT_STOP;
+  f.Configure(c);
+  fi.selector = SEL_D;
+  for (int i = 0; i < 10; i++)
+    f.Tick10ms(fi);
+  CHECK_EQ(f.Out().mode, TCU_NEUTRAL);
+  CHECK_EQ(f.Out().nMotReq, 0);
+  fi.pumpFault = false;
+  f.Tick10ms(fi);
+  CHECK_EQ(f.Out().mode, TCU_ENGAGE);
+  c.pumpFaultAct = PUMPFAULT_REPORT;
+  f.Configure(c);
+  fi.pumpFault = true;
+  for (int i = 0; i < 5; i++)
+    f.Tick10ms(fi);
+  CHECK_EQ(f.Out().nMotReq, 0);
+  CHECK(f.Out().mode != TCU_SAFE);
+}
+
+/* Channel 7: K0 held at K0Press, TCC lock-up only in a steady gear,
+ * force-open always 0. */
+static void TestCh7() {
+  Tcu t;
+  TcuConfig c = Cfg();
+  c.ch7Mode = CH7_TCC;
+  c.shiftMode = SHIFT_MANUAL;
+  c.autoDownRpm = 800; // keep the lugging step-down out of the way
+  t.Configure(c);
+  TcuInputs in = In();
+  t.Ready();
+  t.Tick10ms(in);
+  CHECK_EQ(t.Out().pCh7, 0);
+  CHECK(EngageTo(t, in, SEL_D));
+  in.n_ab = NabFor(1, 3000);
+  CHECK(RunTicks(t, in, 20));
+  CHECK_EQ(t.Out().pCh7, 0); // 1st is below TccMinGear 2
+  in.n_ab = NabFor(1, 1900); // 2nd will sync below TccOnRpm
+  CHECK(RunTicks(t, in, 2));
+  in.tipUp = true;
+  CHECK(RunTicks(t, in, 1));
+  in.tipUp = false;
+  CHECK_EQ(t.Out().mode, TCU_SHIFT);
+  CHECK_EQ(t.Out().pCh7, 0); // never during a shift
+  CHECK(Settle(t, in));
+  CHECK(RunTicks(t, in, 5));
+  CHECK_EQ(t.Out().pCh7, 0); // below TccOnRpm
+  in.n_ab = NabFor(2, 2000);
+  CHECK(RunTicks(t, in, 2)); // one tick for n_t to follow
+  CHECK_EQ(t.Out().pCh7, 500); // ramp 500 mbar per 10 ms
+  CHECK(RunTicks(t, in, 20));
+  CHECK_EQ(t.Out().pCh7, 6000);
+  in.n_ab = NabFor(2, 1300); // inside the hysteresis
+  CHECK(RunTicks(t, in, 2));
+  CHECK_EQ(t.Out().pCh7, 6000);
+  in.n_ab = NabFor(2, 1100);
+  CHECK(RunTicks(t, in, 2));
+  CHECK_EQ(t.Out().pCh7, 0); // opens at once
+  in.selector = SEL_N;
+  CHECK(RunTicks(t, in, 2));
+  CHECK_EQ(t.Out().pCh7, 0);
+
+  c.ch7Mode = CH7_K0;
+  c.k0P = 0;
+  t.Configure(c);
+  CHECK(RunTicks(t, in, 1));
+  CHECK_EQ(t.Out().pCh7, 0);
+  c.ch7Mode = CH7_OPEN;
+  t.Configure(c);
+  CHECK(RunTicks(t, in, 1));
+  CHECK_EQ(t.Out().pCh7, 0);
+  t.ForceSafe(TF_DRIVER);
+  CHECK_EQ(t.Out().pCh7, 0);
+}
+
+/* Variant tables: GearboxType picks the EDS curves and fill items; the
+ * shift tables are shared. */
+static void TestVariants() {
+  const VariantCal &e = Cal::Variant(CALVAR_330E);
+  const VariantCal &f = Cal::Variant(CALVAR_F11);
+  CHECK_EQ(Cal::Variant(99).ch7Default, CH7_K0); // unknown -> 330e
+  CHECK(e.linPump);
+  CHECK(!f.linPump);
+  CHECK_EQ(f.torqueTxId, 0x0B0);
+  CHECK_EQ(e.torqueTxId, 0);
+  CHECK(e.up == f.up && e.down == f.down && e.engage == f.engage);
+  CHECK(e.clutch != f.clutch && e.eds != f.eds);
+  CHECK_EQ(Cal::Ch7Effective(CH7_VARIANT, CALVAR_F11), CH7_TCC);
+  CHECK_EQ(Cal::Ch7Effective(CH7_VARIANT, CALVAR_330E), CH7_K0);
+  CHECK_EQ(Cal::Ch7Effective(CH7_OPEN, CALVAR_F11), CH7_OPEN);
+  CHECK_EQ(Cal::Ch7Effective(CH7_OPEN, CALVAR_330E), CH7_OPEN);
+  CHECK_EQ(Cal::Ch7Effective(CH7_TCC, CALVAR_330E), CH7_TCC);
+
+  // Clutch A start current: F11 ~176 mA, 330e ~240.6 mA [C]
+  Cal::Select(CALVAR_F11);
+  CHECK_EQ(Eds::PressureToCurrent(EDS_A, 10), 1760);
+  CHECK_EQ(Eds::PressureToCurrent(EDS_B, 300), 2350);
+  CHECK_EQ(Eds::PressureToCurrent(EDS_K0, 280), 3070); // TCC curve
+  CHECK_EQ(Eds::PressureToCurrent(EDS_SYS, 3904), 8500);
+  CHECK_EQ(Eds::PressureToCurrent(EDS_C, 14625), 500);
+  // F11 fill items (F11_8HP45_SHIFT_CLUTCH.md 3.1)
+  CHECK_EQ(Cal::Curve(Cal::Active().clutch[CL_A].tsfcg, -30), 360);
+  CHECK_EQ(Cal::Curve(Cal::Active().clutch[CL_A].pfcg, 40), 800);
+  CHECK_EQ(Cal::Curve(Cal::Active().clutch[CL_D].pfcg, 40), 1000);
+  CHECK_EQ(Cal::Curve(Cal::Active().clutch[CL_E].pfcg, 40), 1150);
+  CHECK_EQ(Cal::Curve(Cal::Active().clutch[CL_B].tsfcg, -30), 490);
+  CHECK_EQ(Cal::Map(Cal::Active().clutch[CL_B].psfcgmt, 40, 59), 5000);
+  // F11 gear-in through the whole TCU with the F11 tables: last clutch C
+  // for 1st, D for R
+  CHECK_EQ(Engage::PowerFlowClutch(GEAR_1, ENG_VAR_F11), CL_C);
+  CHECK_EQ(Engage::PowerFlowClutch(GEAR_R, ENG_VAR_F11), CL_D);
+  CHECK_EQ(Engage::PowerFlowClutch(GEAR_1, ENG_VAR_330E), CL_B);
+  CHECK_EQ(Engage::PowerFlowClutch(GEAR_R, ENG_VAR_330E), CL_B);
+  for (int dir = 0; dir < 2; dir++) {
+    Tcu t;
+    TcuConfig c = Cfg();
+    c.engage.variant = ENG_VAR_F11;
+    c.ch7Mode = CH7_TCC;
+    c.shiftMode = SHIFT_AUTO;
+    t.Configure(c);
+    TcuInputs in = In();
+    t.Ready();
+    t.Tick10ms(in);
+    CHECK(EngageTo(t, in, dir ? SEL_R : SEL_D));
+    CHECK_EQ(t.Out().gear, dir ? GEAR_R : GEAR_1);
+    if (!dir) {
+      in.n_ab = NabFor(1, 4500);
+      CHECK(Settle(t, in));
+      bool up = false;
+      for (int i = 0; i < 400 && !up; i++) {
+        CHECK(RunTicks(t, in, 1));
+        up = t.Out().gear >= 2;
+      }
+      CHECK(up);
+    }
+    CHECK_EQ(t.Out().fault, TF_NONE);
+  }
+  Cal::Select(CALVAR_330E);
+  CHECK_EQ(Eds::PressureToCurrent(EDS_A, 10), 2406);
+  CHECK_EQ(Cal::Curve(Cal::Active().clutch[CL_A].tsfcg, -30), 390);
+}
+
 void TestTcu() {
+  TestManualGear();
+  TestTipOverride();
+  TestPark();
+  TestGearInSource();
+  TestCh7();
+  TestVariants();
   TestManual();
   TestAuto();
   TestEngageAndShift();

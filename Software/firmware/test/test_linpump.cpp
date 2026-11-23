@@ -28,8 +28,8 @@ static void Resp(uint8_t id, const uint8_t d[8], uint8_t out[9], bool enh = true
 
 /// A valid 0x32: op point op, alive cnt.
 static void Status32(uint8_t op, uint8_t cnt, uint8_t out[9], uint8_t eb0 = 0,
-                     uint8_t eb1 = 0) {
-  uint8_t d[8] = {eb0, eb1, op, 0x40, 25, 135, 0, (uint8_t)(cnt & 0x0F)};
+                     uint8_t eb1 = 0, bool stopped = false) {
+  uint8_t d[8] = {eb0, eb1, op, (uint8_t)(stopped ? 0 : 0x40), 25, 135, 0, (uint8_t)(cnt & 0x0F)};
   d[6] = Lin::Crc8(&d[2], 1);
   Resp(LINPUMP_ID_STATUS, d, out);
 }
@@ -40,6 +40,7 @@ struct Bus {
   uint8_t alive32, alive33, alive34;
   bool answer;
   uint8_t eb0;
+  bool stopped; // report 0 rpm
 };
 
 /// Run the master for ms; the fake pump answers every poll with valid
@@ -60,7 +61,7 @@ static void Run(LinPump &p, Bus &b, int ms, bool active, bool run, int32_t oil) 
     if (s.id == LINPUMP_ID_STATUS) {
       b.n32++;
       if (b.answer) {
-        Status32(run ? 0x55 : 0xAA, ++b.alive32, r, b.eb0);
+        Status32(run ? 0x55 : 0xAA, ++b.alive32, r, b.eb0, 0, b.stopped);
         CHECK(p.OnResponse(s.id, r, 9));
       }
     } else if (s.id == LINPUMP_ID_AUX1) {
@@ -149,7 +150,7 @@ void TestLinPump() {
   // Slot time is a parameter
   {
     LinPump p;
-    LinPumpConfig c = {true, 15, 1800, 400};
+    LinPumpConfig c = {true, 15, 1800, 400, 1000, 1000, 1500, 100, true};
     p.Configure(c);
     Bus b = {};
     Run(p, b, 900, true, false, 40);
@@ -233,7 +234,7 @@ void TestLinPump() {
     LinPump p;
     Bus b = {};
     b.answer = true;
-    Run(p, b, 500, true, true, 40); // past the 400 ms post-clear block
+    Run(p, b, 1100, true, true, 40); // past the 1 s start-up blank
     uint8_t r[9];
     uint8_t cnt = b.alive32;
     // Wrong LIN checksum: dropped
@@ -261,7 +262,7 @@ void TestLinPump() {
     LinPump p;
     Bus b = {};
     b.answer = true;
-    Run(p, b, 500, true, true, 40);
+    Run(p, b, 1100, true, true, 40);
     uint8_t r[9];
     uint8_t cnt = b.alive32;
     // One repeat is accepted, the second repeat in a row is a fault
@@ -301,6 +302,8 @@ void TestLinPump() {
     b.eb0 = 0x40;
     Run(p, b, 300, true, true, 40);
     CHECK_EQ(p.Classes(), 0); // inside the 400 ms after the start-up clear
+    Run(p, b, 600, true, true, 40);
+    CHECK_EQ(p.Classes(), 0); // status ignored for the first 1 s (Q5)
     Run(p, b, 200, true, true, 40);
     CHECK_EQ(p.Classes(), LPC_PERMANENT);
     CHECK_EQ(p.Status().eb0, 0x40);
@@ -321,7 +324,7 @@ void TestLinPump() {
     LinPump p;
     Bus b = {};
     b.answer = true;
-    Run(p, b, 500, true, true, 40);
+    Run(p, b, 1100, true, true, 40);
     uint8_t d[8] = {0, 0, 0x41, 0x47, 0x00, 0, 0, (uint8_t)(++b.alive34 & 15)};
     uint8_t r[9];
     Resp(LINPUMP_ID_AUX2, d, r);
@@ -352,7 +355,7 @@ void TestLinPump() {
   // 800 ms off delay
   {
     LinPumpRule r;
-    LinRuleConfig c = {500, 50, 0, 125, 20000, 800};
+    LinRuleConfig c = {500, 50, 0, 125, 20000, 800, -15, 0};
     r.Configure(c);
     CHECK(!r.Update(LINREQ_OFF, 0, 40, 5000));
     CHECK(r.Update(LINREQ_FORCE, 3000, 200, 30000));
@@ -367,7 +370,7 @@ void TestLinPump() {
     CHECK(!r.Update(LINREQ_AUTO, 520, 40, 5000)); // above 500 from off
     CHECK(r.Update(LINREQ_AUTO, -300, 40, 5000)); // reverse
     LinPumpRule q;
-    LinRuleConfig c0 = {500, 50, 0, 125, 20000, 0};
+    LinRuleConfig c0 = {500, 50, 0, 125, 20000, 0, -15, 0};
     q.Configure(c0);
     CHECK(!q.Update(LINREQ_AUTO, 0, -1, 5000));   // too cold
     CHECK(q.Update(LINREQ_AUTO, 0, 0, 5000));
@@ -375,5 +378,70 @@ void TestLinPump() {
     CHECK(!q.Update(LINREQ_AUTO, 0, 126, 5000));  // too hot
     CHECK(q.Update(LINREQ_AUTO, 0, 40, 19999));
     CHECK(!q.Update(LINREQ_AUTO, 0, 40, 20000));  // pressure high enough
+  }
+
+  // Ian section 11: AA -> 55 at once (no settle), alive counter not reset
+  // by a bus restart, "not delivering" check 1000/1500 ms, replies optional.
+  {
+    LinPump p;
+    Bus b = {};
+    b.answer = true;
+    Run(p, b, 21, true, true, 40);
+    CHECK_EQ(b.cmd[0], LINPUMP_OP_RUN); // first frame already 55
+    Run(p, b, 40, true, true, 40);
+    uint8_t before = b.cmd[7];
+    Run(p, b, 50, false, false, 40); // bus off
+    Run(p, b, 1, true, true, 40);    // back on: next 0x30 goes on counting
+    CHECK_EQ(b.cmd[7], (uint8_t)((before + 1) & 0x0F));
+    CHECK(p.DeliveringMs() == 0);
+    Run(p, b, 1200, true, true, 40);
+    CHECK(p.DeliveringMs() > 1000);
+    CHECK_EQ(p.Classes(), 0);
+  }
+  {
+    LinPump p;
+    Bus b = {};
+    b.answer = true;
+    b.stopped = true; // pump answers but reports 0 rpm
+    Run(p, b, 1490, true, true, 40);
+    CHECK(!(p.StatusWord() & LINPUMP_ST_NODELIV));
+    Run(p, b, 20, true, true, 40);
+    CHECK(p.StatusWord() & LINPUMP_ST_NODELIV);
+    CHECK(p.Classes() & LPC_DELIVERY);
+    b.stopped = false;
+    Run(p, b, 100, true, true, 40);
+    CHECK(!(p.StatusWord() & LINPUMP_ST_NODELIV));
+    // Idle (AA) never raises it
+    LinPump q;
+    Bus c = {};
+    c.answer = true;
+    c.stopped = true;
+    Run(q, c, 3000, true, false, 40);
+    CHECK(!(q.StatusWord() & LINPUMP_ST_NODELIV));
+  }
+  {
+    LinPump p;
+    LinPumpConfig cfg = {true, 10, 1800, 400, 1000, 1000, 1500, 100, false};
+    p.Configure(cfg);
+    Bus b = {};
+    b.answer = true;
+    b.eb0 = 0x40;
+    Run(p, b, 2000, true, true, 40);
+    CHECK_EQ(p.Status().eb0, 0x40); // still decoded
+    CHECK_EQ(p.Classes(), 0);       // but never a fault class
+  }
+  // Cold allowance: down to -15 degC for at most 5 s, back once warm
+  {
+    LinPumpRule r;
+    LinRuleConfig c = {500, 50, 0, 125, 20000, 0, -15, 5000};
+    r.Configure(c);
+    CHECK(!r.Update(LINREQ_AUTO, 0, -16, 5000));
+    int ticks = 0;
+    while (r.Update(LINREQ_AUTO, 0, -10, 5000) && ticks < 1000)
+      ticks++;
+    CHECK_EQ(ticks, 500);
+    CHECK(!r.Update(LINREQ_AUTO, 0, -10, 5000));
+    CHECK(r.Update(LINREQ_AUTO, 0, 1, 5000));
+    CHECK(r.Update(LINREQ_AUTO, 0, -10, 5000)); // allowance back
   }
 }

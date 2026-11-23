@@ -104,6 +104,53 @@ struct TcuConfig
    int32_t ilOpenHigh;    // C/D/E open above this, 0.1 mA (Ian: 790 mA)
    int32_t iMax;          // coil current ceiling, 0.1 mA (same as the EDS layer)
    bool tempCorrection;   // EDS temperature correction on (same as the EDS layer)
+
+   // Park lock (Ian, 330E_LIN_OIL_PUMP.md 11 Q9d / 12.1). Leaving P waits
+   // until the motor turns at parkRelRpm or the measured line pressure is
+   // parkRelP; the motor speed is asked for (nMotReq) while waiting and
+   // for parkRelHoldMs after the release. parkRelRpm = 0 skips the wait.
+   int32_t parkRelRpm;    // KL_NMINEMPARKSP_LLS_HAS 700 rpm [C]
+   int32_t parkRelP;      // P_SYSMINPSAUS 17000 mbar [C]
+   int32_t parkRelHoldMs; // T_NMINEMPAUS_LLS_HAS 2000 ms [C]
+   int32_t pnDelayMs;     // P -> N state delay, T_VPARKSPPN 150 ms [C]
+   bool parkCtrl;         // drive PZYL and the park magnet (off = stub)
+   int32_t pzylI;         // PZYL current while released, 0.1 mA (I_EDSPSV
+                          // 550 mA [C]; cold offset added, I: PSV = PZYL)
+   int32_t parkMagMinMs;  // park magnet on at least (100 ms [C])
+   int32_t parkMagMaxMs;  // and at most (1000 ms [C]) per release
+
+   // Gear-in (11 Q9d): minimum line pressure, and a pressure source: the
+   // pump has delivered for gearInPumpMs or the motor turns at gearInMotRpm
+   // [I]. Both 0 = no source check.
+   int32_t gearInMinP;    // P_SYSMINIEP 8000 mbar [C]
+   int32_t gearInPumpMs;  // 1000 ms [I]
+   int32_t gearInMotRpm;  // [I]
+
+   // LIN pump fault reaction (11 Q9a), PumpFaultAct.
+   uint8_t pumpFaultAct;  // PumpFaultAction
+   int32_t pumpFaultRpm;  // minimum motor speed to ask for (500-700 [I])
+
+   // Shift up / down inputs in Auto: a tip shifts one gear and keeps
+   // Auto off for this long (0 = tips ignored in Auto).
+   int32_t tipOverrideMs;
+
+   // Channel 7 (K0 / TCC slot), see calset.h Ch7Mode.
+   uint8_t ch7Mode;       // resolved: CH7_TCC, CH7_K0 or CH7_OPEN
+   int32_t k0P;           // K0 mode pressure, mbar (0 = open: no engine)
+   int32_t tccP;          // TCC lock-up pressure, mbar (TBD)
+   int32_t tccOnRpm;      // lock above this input speed (TBD)
+   int32_t tccOffRpm;     // open below this input speed (TBD)
+   uint8_t tccMinGear;    // lowest gear with lock-up (TBD)
+   int32_t tccRamp;       // apply ramp, mbar per 10 ms (TBD)
+};
+
+/// PumpFaultAct parameter: what the TCU does on a LIN pump fault class.
+enum PumpFaultAction
+{
+   PUMPFAULT_REPORT = 0, // report only (default)
+   PUMPFAULT_MOTOR = 1,  // ask the VCU for pumpFaultRpm in P/N (clutches
+                         // open) so the mechanical pump makes pressure
+   PUMPFAULT_STOP = 2,   // no new gear-in until the fault is gone
 };
 
 enum CanLossMode
@@ -130,6 +177,11 @@ struct TcuInputs
    bool driverFault;  // a pressure valve driver reported a fault
    bool configError;  // valve map invalid
    bool faultClear;   // request to leave TCU_SAFE (only at standstill)
+   uint8_t manualGear; // SHIFT_MANUAL: gear picked with ManualGear, 1..8,
+                       // 0 = none (tips only)
+   int32_t pMeas;     // measured line pressure, mbar, < 0 = no sensor
+   int32_t pumpDeliverMs; // LIN pump delivering this long, ms (0 = not)
+   bool pumpFault;    // LIN pump reports a fault class
 };
 
 struct TcuOutputs
@@ -152,6 +204,13 @@ struct TcuOutputs
    bool coast;          // the running shift is a coast (negative torque) shift
    int32_t tSyn;        // predicted ms to sync, for logging
    int32_t gls;         // GLS correction, mbar
+   int32_t pCh7;        // channel 7 (K0 / TCC) pressure, mbar
+   int32_t nMotReq;     // minimum motor speed asked of the VCU, rpm (0 = none)
+   int32_t pzylI;       // park cylinder valve current, 0.1 mA
+   bool parkMagnet;     // park-hold magnet on
+   bool parkWait;       // leaving P, waiting for motor speed or pressure
+   bool tipAuto;        // Auto with a tip override running
+   bool gearInWait;     // gear-in held: no pressure source yet
 };
 
 class Tcu
@@ -173,7 +232,10 @@ private:
    void SetNeutral(const TcuInputs &in);
    void HoldGear(int gear);
    int32_t LinePressure(const TcuInputs &in, int32_t minP) const;
-   int ChooseTarget(const TcuInputs &in) const;
+   int ChooseTarget(const TcuInputs &in, bool manual) const;
+   void ParkOutputs(const TcuInputs &in);
+   void Ch7(const TcuInputs &in);
+   bool PressureSource(const TcuInputs &in) const;
    void StartShift(const TcuInputs &in, int next);
    SasInputs MakeSasInputs(const TcuInputs &in);
    bool GearPlausible(const TcuInputs &in, int gear) const;
@@ -191,6 +253,12 @@ private:
    int32_t gearErrMs;
    bool firstTick;
    bool fromPark;      // engaging out of P: hold 17 bar line for the park release
+   int32_t pnMs;       // ms into the P -> N release
+   int32_t npMs;       // ms into the N -> P delay
+   int32_t relMs;      // ms since the last park release (-1 = none yet)
+   int32_t tipLeft;    // ms of tip override left (Auto)
+   bool fromDrive;     // the N -> P delay started from a drive range
+   bool tccLocked;
 };
 
 #endif // TCU_H

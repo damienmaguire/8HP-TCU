@@ -76,12 +76,18 @@ static const uint8_t schedule[6] = {LINPUMP_ID_CMD, LINPUMP_ID_STATUS,
 LinPump::LinPump()
     : cfg(), state(LP_OFF), st(), tSlot(0), slotIdx(0), txAlive(0),
       oilRaw(0), extraFlags(0), clearPending(false), tDiagBlock(0),
-      tNoValid(0), ownBits(0), badCrc(0), linChkErrors(0), crcErrors(0),
+      tNoValid(0), tStartBlank(0), tRun(0), tDeliv(0), tLow(0), ownBits(0),
+      badCrc(0), linChkErrors(0), crcErrors(0),
       aliveErrors(0), txErrors(0) {
   cfg.enhanced = true;
   cfg.slotMs = 10;
   cfg.busFaultMs = 1800;
   cfg.diagDelayMs = 400;
+  cfg.startBlankMs = 1000;
+  cfg.armMs = 1000;
+  cfg.symMaxMs = 1500;
+  cfg.delivRpm = 100;
+  cfg.processRx = true;
   st.supplymV = 14000;
   for (int i = 0; i < 3; i++) {
     lastAlive[i] = -1;
@@ -117,17 +123,44 @@ bool LinPump::Tick1ms(bool active, bool run, int32_t oilTempC, LinSlot *slot) {
       state = LP_OFF;
       tSlot = 0;
       slotIdx = 0;
+      st.seen32 = false; // old replies do not count after a restart
     }
+    tRun = tDeliv = tLow = 0;
     return false;
   }
   if (state == LP_OFF) {
     // Bus comes up: start the schedule and clear the pump errors once,
-    // as the OEM does at ignition on.
+    // as the OEM does at ignition on. The alive counter is not reset: it
+    // starts at 0 after power-on only (Ian, Q11 [C]).
     ClearErrors();
     tSlot = 0;
     slotIdx = 0;
+    tStartBlank = cfg.startBlankMs;
   }
+  // AA -> 55 directly, no settle phase (Ian, Q5 [C]).
   state = run ? LP_RUN : LP_IDLE;
+  if (tStartBlank)
+    tStartBlank--;
+
+  // "Pump not delivering": the check is armed armMs after the run
+  // command; the symptom is set when the pump has then reported less than
+  // delivRpm for (symMaxMs - armMs) without a break.
+  if (run) {
+    if (tRun < 0xFFFFFFu)
+      tRun++;
+    bool turning = st.seen32 && st.rpm >= cfg.delivRpm && tNoValid < cfg.busFaultMs;
+    tDeliv = turning ? (tDeliv < 0xFFFFFFu ? tDeliv + 1 : tDeliv) : 0;
+    if (tRun >= cfg.armMs) {
+      if (turning) {
+        tLow = 0;
+        ownBits &= ~LINPUMP_ST_NODELIV;
+      } else if (++tLow >= (uint32_t)(cfg.symMaxMs > cfg.armMs ? cfg.symMaxMs - cfg.armMs : 1)) {
+        ownBits |= LINPUMP_ST_NODELIV;
+      }
+    }
+  } else {
+    tRun = tDeliv = tLow = 0;
+  }
   int32_t t = oilTempC + 50;
   oilRaw = (uint8_t)(t < 0 ? 0 : (t > 255 ? 255 : t));
 
@@ -240,7 +273,7 @@ uint32_t LinPump::StatusWord() const {
 }
 
 uint8_t LinPump::Classes() const {
-  if (state == LP_OFF || tDiagBlock)
+  if (state == LP_OFF || tDiagBlock || tStartBlank || !cfg.processRx)
     return 0;
   uint32_t w = StatusWord();
   uint8_t c = 0;
@@ -252,6 +285,8 @@ uint8_t LinPump::Classes() const {
     c |= LPC_COMM;
   if (w & LINPUMP_ST_NORX)
     c |= LPC_BUS;
+  if (w & LINPUMP_ST_NODELIV)
+    c |= LPC_DELIVERY;
   return c;
 }
 
@@ -269,8 +304,15 @@ bool LinPumpRule::Update(uint8_t req, int32_t n_t, int32_t sumpC,
   if (n_t < 0)
     n_t = -n_t;
   speedOn = speedOn ? n_t < cfg.onRpm + cfg.hystRpm : n_t < cfg.onRpm;
-  bool want = speedOn && sumpC >= cfg.tempMin && sumpC <= cfg.tempMax &&
-              pSys < cfg.pMaxMbar;
+  bool tempOk = sumpC >= cfg.tempMin && sumpC <= cfg.tempMax;
+  if (sumpC >= cfg.tempMin) {
+    tCold = 0; // warm again: the cold allowance is back
+  } else if (sumpC >= cfg.coldMin && tCold < cfg.coldMaxMs && speedOn &&
+             pSys < cfg.pMaxMbar) {
+    tempOk = true; // cold run, counted below
+    tCold += 10;
+  }
+  bool want = speedOn && tempOk && pSys < cfg.pMaxMbar;
   if (want) {
     on = true;
     tOff = 0;

@@ -115,15 +115,17 @@ uint8_t max_spi_transfer(uint8_t tx) {
  */
 void speed_adc_setup(void) {
   gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_ANALOG,
-                GPIO0 | GPIO1);
+                GPIO0 | GPIO1 | (HW_HAS_SPD3 ? GPIO2 : 0));
   adc_power_off(SPEED_ADC);
   adc_enable_scan_mode(SPEED_ADC);
   adc_set_single_conversion_mode(SPEED_ADC);
   adc_set_right_aligned(SPEED_ADC);
   adc_set_sample_time(SPEED_ADC, SPEED_ADC_CH_IN, ADC_SMPR_SMP_7DOT5CYC);
   adc_set_sample_time(SPEED_ADC, SPEED_ADC_CH_OUT, ADC_SMPR_SMP_7DOT5CYC);
-  uint8_t ch[2] = {SPEED_ADC_CH_IN, SPEED_ADC_CH_OUT};
-  adc_set_injected_sequence(SPEED_ADC, 2, ch);
+  adc_set_sample_time(SPEED_ADC, SPEED_ADC_CH_AUX, ADC_SMPR_SMP_7DOT5CYC);
+  // Third input (n6) on the next revision only (HW_HAS_SPD3).
+  uint8_t ch[3] = {SPEED_ADC_CH_IN, SPEED_ADC_CH_OUT, SPEED_ADC_CH_AUX};
+  adc_set_injected_sequence(SPEED_ADC, SPEED_NUM, ch);
   adc_enable_external_trigger_injected(SPEED_ADC, ADC_CR2_JEXTSEL_TIM1_TRGO);
   adc_enable_eoc_interrupt_injected(SPEED_ADC);
   adc_power_on(SPEED_ADC);

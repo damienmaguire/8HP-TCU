@@ -48,7 +48,21 @@
  * lin_nslp  PD11, LIN transceiver SLP_N (high = awake). REV: no LIN
  *           transceiver on V4; UART4 PC10/PC11 is kept free for it.
  * led_out   PE2, active low.
+ *
+ * Next revision (HW_REV 5, pins TBD in hwdefs.h, DIG_IO_NEXT below):
+ *  max_cs1   CSB of the second MAX22200 (same SPI1, CMD and ENABLE [I])
+ *  shift_up / shift_dn  12 V shift up / down inputs, active high [I]
+ *  t15_in    terminal 15 (ignition on), active high [I]
  */
+#if HW_REV >= 5
+#define DIG_IO_NEXT                                                            \
+  DIG_IO_ENTRY(max_cs1, MAX_CS1_PORT, MAX_CS1_PIN, PinMode::OUTPUT)            \
+  DIG_IO_ENTRY(shift_up, SHIFT_UP_PORT, SHIFT_UP_PIN, PinMode::INPUT_FLT)      \
+  DIG_IO_ENTRY(shift_dn, SHIFT_DN_PORT, SHIFT_DN_PIN, PinMode::INPUT_FLT)      \
+  DIG_IO_ENTRY(t15_in, T15_PORT, T15_PIN, PinMode::INPUT_FLT)
+#else
+#define DIG_IO_NEXT
+#endif
 #define DIG_IO_LIST                                                            \
   DIG_IO_ENTRY(max_cs0, GPIOA, GPIO4, PinMode::OUTPUT)                         \
   DIG_IO_ENTRY(max_cmd, GPIOE, GPIO8, PinMode::OUTPUT)                         \
@@ -65,6 +79,7 @@
   DIG_IO_ENTRY(notpark_in, GPIOD, GPIO7, PinMode::INPUT_FLT)                   \
   DIG_IO_ENTRY(lin_nslp, GPIOD, GPIO11, PinMode::OUTPUT) /* REV */             \
   DIG_IO_ENTRY(led_out, GPIOE, GPIO2, PinMode::OUTPUT)   /* active low */      \
+  DIG_IO_NEXT                                                                  \
   DIG_IO_ENTRY(dummypin, GPIOE, GPIO15, PinMode::INPUT_PD)
 
 #endif // PinMode_PRJ_H_INCLUDED

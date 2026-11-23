@@ -28,7 +28,7 @@ static void Upd(Shifter &s, const ShifterRaw &r, int n) {
 void TestShifter() {
   // CAN shifter: selector and tips from the command frame
   Shifter s;
-  ShifterConfig c = {SHIFTER_CAN, 1500, 3000, 200, 6000};
+  ShifterConfig c = {SHIFTER_CAN, 1500, 3000, 200, 6000, 2};
   s.Configure(c);
   ShifterRaw r = {};
   r.canSelector = SEL_D;
@@ -138,4 +138,59 @@ void TestShifter() {
     downs += a.TipDown();
   }
   CHECK_EQ(downs, 1);
+
+  // 12 V shift inputs: debounced (3 samples), one tip per press, a
+  // bouncing contact gives no extra tips, works with either ShifterType.
+  {
+    Shifter z;
+    ShifterConfig zc = {SHIFTER_CAN, 1500, 3000, 200, 6000, 3};
+    z.Configure(zc);
+    ShifterRaw q = {};
+    int ups = 0, downs = 0;
+    const bool bounce[] = {1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 0, 0, 0};
+    for (unsigned i = 0; i < sizeof(bounce); i++) {
+      q.up12 = bounce[i];
+      z.Update(q);
+      ups += z.TipUp();
+      downs += z.TipDown();
+    }
+    CHECK_EQ(ups, 1);
+    CHECK_EQ(downs, 0);
+    // Two short samples only: not taken
+    q.down12 = true;
+    z.Update(q);
+    z.Update(q);
+    q.down12 = false;
+    z.Update(q);
+    CHECK(!z.TipDown());
+    // A held press: one tip
+    q.down12 = true;
+    for (int i = 0; i < 50; i++) {
+      z.Update(q);
+      downs += z.TipDown();
+    }
+    CHECK_EQ(downs, 1);
+    q.down12 = false;
+    for (int i = 0; i < 5; i++)
+      z.Update(q);
+    // Both at once: ignored
+    q.up12 = q.down12 = true;
+    for (int i = 0; i < 5; i++) {
+      z.Update(q);
+      CHECK(!z.TipUp() && !z.TipDown());
+    }
+    // Analog shifter type: still active
+    zc.type = SHIFTER_ANALOG;
+    Shifter w;
+    w.Configure(zc);
+    ShifterRaw a = {};
+    a.parkIn = true;
+    a.up12 = true;
+    ups = 0;
+    for (int i = 0; i < 5; i++) {
+      w.Update(a);
+      ups += w.TipUp();
+    }
+    CHECK_EQ(ups, 1);
+  }
 }

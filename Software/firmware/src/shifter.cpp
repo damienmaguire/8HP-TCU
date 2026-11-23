@@ -22,12 +22,14 @@
 Shifter::Shifter()
     : cfg(), selector(SEL_N), candSel(SEL_N), candBad(false), selCount(0),
       upRaw(false), downRaw(false), upStable(false), downStable(false),
-      upCount(2), downCount(2), tipUp(false), tipDown(false), fault(false) {
+      upCount(2), downCount(2), up12(), down12(), tipUp(false),
+      tipDown(false), fault(false) {
   cfg.type = SHIFTER_CAN;
   cfg.anaRMax = 1500;
   cfg.anaNMax = 3000;
   cfg.anaMin = 200;
   cfg.anaMax = 6000;
+  cfg.tip12Samples = 3;
 }
 
 uint8_t Shifter::Decode(const ShifterRaw &r, bool *bad) const {
@@ -51,15 +53,16 @@ uint8_t Shifter::Decode(const ShifterRaw &r, bool *bad) const {
   return SEL_D;
 }
 
-/// Two equal samples in a row before a new level is taken.
-static bool Debounce(bool raw, bool *last, bool *stable, uint8_t *count) {
+/// n equal samples in a row before a new level is taken (n >= 1).
+static bool Debounce(bool raw, bool *last, bool *stable, uint8_t *count,
+                     uint8_t n = 2) {
   if (raw != *last) {
     *last = raw;
     *count = 1;
-  } else if (*count < 2) {
+  } else if (*count < n) {
     (*count)++;
   }
-  if (*count >= 2 && *stable != raw) {
+  if (*count >= n && *stable != raw) {
     *stable = raw;
     return raw; // rising edge of the stable level
   }
@@ -85,6 +88,13 @@ void Shifter::Update(const ShifterRaw &r) {
   bool dn = cfg.type == SHIFTER_CAN ? r.canTipDown : r.din2;
   tipUp = Debounce(up, &upRaw, &upStable, &upCount);
   tipDown = Debounce(dn, &downRaw, &downStable, &downCount);
+  // 12 V shift up / down inputs (next board): separate debounce, one tip
+  // per press on the rising edge, same as a shifter tip.
+  uint8_t n = cfg.tip12Samples < 1 ? 1 : cfg.tip12Samples;
+  if (Debounce(r.up12, &up12.last, &up12.stable, &up12.count, n))
+    tipUp = true;
+  if (Debounce(r.down12, &down12.last, &down12.stable, &down12.count, n))
+    tipDown = true;
   if (tipUp && tipDown)
     tipUp = tipDown = false; // both at once: ignore
 }

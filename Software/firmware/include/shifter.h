@@ -40,6 +40,13 @@
  * Every input must be stable for two 10 ms samples before it is taken
  * (the board RC is only about 1.1 ms). A tip gives one request on the
  * rising edge; holding it does not repeat.
+ *
+ * 12 V shift up / down inputs (Bob's next revision, pins TBD, see
+ * hwdefs.h HW_HAS_SHIFT12V): debounced over Tip12Deb samples of 10 ms,
+ * edge-triggered, one gear per press, in addition to the shifter tips
+ * above and whatever ShifterType is. Whether a tip does anything is up
+ * to the TCU: Manual mode, or Auto with TipOverride set; never in VCU
+ * mode; always inside the shift limits and the interlock.
  */
 
 enum ShifterType
@@ -57,6 +64,8 @@ struct ShifterRaw
    // Analog
    bool din1, din2, parkIn, notParkIn;
    int32_t anaMv; // ana_in at the connector (after undoing the /2), mV
+   // 12 V shift inputs (next board; false where not fitted)
+   bool up12, down12;
 };
 
 struct ShifterConfig
@@ -66,6 +75,7 @@ struct ShifterConfig
    int32_t anaNMax;   // mV, below this N (else D)
    int32_t anaMin;    // mV, below this the input is faulty
    int32_t anaMax;    // mV, above this the input is faulty
+   uint8_t tip12Samples; // 12 V shift inputs: equal 10 ms samples needed
 };
 
 class Shifter
@@ -91,6 +101,12 @@ private:
    uint8_t selCount;
    bool upRaw, downRaw, upStable, downStable;
    uint8_t upCount, downCount;
+   struct Deb
+   {
+      bool last, stable;
+      uint8_t count;
+   };
+   Deb up12, down12;
    bool tipUp, tipDown, fault;
 };
 

@@ -43,7 +43,7 @@ LDFLAGS   = -Llibopencm3/lib -T$(LDSCRIPT) -march=armv7 -nostartfiles \
             -Wl,--gc-sections,-Map,$(MAPFILE)
 
 # Hardware-free control code (also built by the host tests)
-CORE_OBJS = caltypes.o cal_330e.o gears.o interlock.o max22200.o eds.o sas.o \
+CORE_OBJS = caltypes.o cal_330e.o cal_f11.o calset.o canif.o gears.o interlock.o max22200.o eds.o sas.o \
             engage.o speedsens.o tcu.o valveout.o anaconv.o linpump.o \
             shifter.o
 # Firmware glue and libopeninv
@@ -106,13 +106,19 @@ cal:
 	@test -n "$(CAL_JSON)" || (echo "set CAL_JSON=/path/to/330e_sas_eds_cal.json"; exit 1)
 	python3 tools/gen_cal.py $(CAL_JSON) --set $(CAL_SET)
 
+# F11 8HP45 set (EDS curves and fill items; the rest is shared with the 330e):
+#   make cal-f11 F11_JSON=/path/to/f11_sas_eds_cal.json CAL_JSON=/path/to/330e_sas_eds_cal.json
+cal-f11:
+	@test -n "$(F11_JSON)" -a -n "$(CAL_JSON)" || (echo "set F11_JSON=... and CAL_JSON=..."; exit 1)
+	python3 tools/gen_cal.py --variant f11 $(F11_JSON) --base $(CAL_JSON)
+
 clean:
 	@printf "  CLEAN   $(OUT_DIR)\n"
 	$(Q)rm -rf $(OUT_DIR)
 	@printf "  CLEAN   firmware images\n"
 	$(Q)rm -f $(BINARY) $(BINARY).bin $(BINARY).hex $(MAPFILE)
 
-.PHONY: directories get-deps images clean cal Test cleanTest
+.PHONY: directories get-deps images clean cal cal-f11 Test cleanTest
 
 get-deps:
 ifneq ($(shell test -s libopencm3/lib/lib$(OPENCM3_LIB).a && echo -n yes),yes)

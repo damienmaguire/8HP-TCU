@@ -17,7 +17,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "sas.h"
-#include "cal_330e.h"
+#include "calset.h"
 #include "caltypes.h"
 
 #define SAS_TICK_MS 10
@@ -94,7 +94,7 @@ bool SasShift::Start(int f, int t, int offClutch, int onClutch,
   active = true;
 
   if (up) {
-    const UpShiftCal &u = calUp[pair];
+    const UpShiftCal &u = Cal::Active().up[pair];
     out.pSysMin = u.p_sysmin;
     // KAB times are referenced to the end of the KZU fill, which is
     // T_VKZU + total fill time. Work it out once at the start.
@@ -102,8 +102,8 @@ bool SasShift::Start(int f, int t, int offClutch, int onClutch,
     EnterKzu(KZU_WAIT);
     EnterKab(KAB_DELAY);
   } else {
-    const DownShiftCal &d = calDown[pair];
-    const ClutchFillCal &cl = calClutch[onCl];
+    const DownShiftCal &d = Cal::Active().down[pair];
+    const ClutchFillCal &cl = Cal::Active().clutch[onCl];
     out.pSysMin = d.p_sysmin;
     tFillEnd = 0;
     // End of the KZU quick fill ("Ende SF"), the reference for the KAB
@@ -170,7 +170,7 @@ int32_t SasShift::GlsStep(const SasInputs &in, int32_t kp, int32_t ki) {
   if (cfg.glsGainPct <= 0)
     return 0;
   int32_t err = (glsTarget - in.dnt) * glsDir; // rpm/s, + = too slow
-  int32_t hi = calGlobal.p_maxobgls, lo = -calGlobal.p_maxungls;
+  int32_t hi = Cal::Active().global->p_maxobgls, lo = -Cal::Active().global->p_maxungls;
   // Anti-windup: the integrator alone may not exceed the output clamp.
   int64_t accHi = (int64_t)hi * GLS_SHIFT, accLo = (int64_t)lo * GLS_SHIFT;
   int64_t acc = (int64_t)glsAcc + (int64_t)ki * err;
@@ -212,7 +212,7 @@ int32_t SasShift::GlsUpdate(const SasInputs &in) {
   bool crit;
   const CalMap *wts;
   if (up) {
-    const UpShiftCal &u = calUp[pair];
+    const UpShiftCal &u = Cal::Active().up[pair];
     kzuRa1 = out.zKzu == KZU_RAMP1 || out.zKzu == KZU_RAMP2 || out.zKzu == KZU_RAMP3;
     crit = in.ndSynIst >= Cal::Curve(u.ndglsposhs, in.m_t) ||
            in.ndSynIst <= Cal::Curve(u.ndglsneghs, in.m_t);
@@ -229,7 +229,7 @@ int32_t SasShift::GlsUpdate(const SasInputs &in) {
       ki = u.ki_glskzu;
     }
   } else {
-    const DownShiftCal &d = calDown[pair];
+    const DownShiftCal &d = Cal::Active().down[pair];
     kzuRa1 = out.zKzu == KZU_RAMP1 || out.zKzu == KZU_HOLD_SYNC ||
              out.zKzu == KZU_CLOSE_DOWN;
     crit = Abs(in.ndSynIst) >= d.nd_glsrs;
@@ -268,8 +268,8 @@ int32_t SasShift::GlsUpdate(const SasInputs &in) {
 }
 
 void SasShift::TickUpKzu(const SasInputs &in) {
-  const UpShiftCal &u = calUp[pair];
-  const ClutchFillCal &cl = calClutch[onCl];
+  const UpShiftCal &u = Cal::Active().up[pair];
+  const ClutchFillCal &cl = Cal::Active().clutch[onCl];
   int32_t p = out.pKzu;
 
   switch (out.zKzu) {
@@ -360,7 +360,7 @@ void SasShift::TickUpKzu(const SasInputs &in) {
 }
 
 void SasShift::TickUpKab(const SasInputs &in) {
-  const UpShiftCal &u = calUp[pair];
+  const UpShiftCal &u = Cal::Active().up[pair];
   int32_t p = out.pKab;
 
   switch (out.zKab) {
@@ -434,7 +434,7 @@ void SasShift::TickUpKab(const SasInputs &in) {
 }
 
 void SasShift::TickDownKab(const SasInputs &in) {
-  const DownShiftCal &d = calDown[pair];
+  const DownShiftCal &d = Cal::Active().down[pair];
   int32_t p = out.pKab;
   int32_t pShift = Cal::Map(d.pkab, in.n_t, in.m_t);
 
@@ -509,8 +509,8 @@ void SasShift::TickDownKab(const SasInputs &in) {
 }
 
 void SasShift::TickDownKzu(const SasInputs &in) {
-  const DownShiftCal &d = calDown[pair];
-  const ClutchFillCal &cl = calClutch[onCl];
+  const DownShiftCal &d = Cal::Active().down[pair];
+  const ClutchFillCal &cl = Cal::Active().clutch[onCl];
   int32_t p = out.pKzu;
 
   switch (out.zKzu) {
@@ -580,8 +580,8 @@ void SasShift::Tick(const SasInputs &in) {
 
   // Timeout: shift taking longer than KL_TMAXCG -> close the on-coming
   // clutch to max and vent the off-going one.
-  int32_t tMax = up ? Cal::Curve(calUp[pair].tmaxcg, in.temp)
-                    : Cal::Curve(calDown[pair].tmaxcg, in.temp);
+  int32_t tMax = up ? Cal::Curve(Cal::Active().up[pair].tmaxcg, in.temp)
+                    : Cal::Curve(Cal::Active().down[pair].tmaxcg, in.temp);
   if (!out.timedOut && tShift > tMax && out.zKzu != KZU_IDLE) {
     out.timedOut = true;
     EnterKzu(KZU_TIMEOUT);
@@ -596,7 +596,7 @@ void SasShift::Tick(const SasInputs &in) {
                   (out.zKzu == KZU_RAMP3 && syncPhase == 0) ||
                   out.zKab == KAB_TAKEOVER;
     // Torque intervention during the inertia phase (KF_MEHAUPTxy).
-    out.tqDelta = out.inertia ? Cal::Map(calUp[pair].mehaupt, in.n_t, in.m_t) : 0;
+    out.tqDelta = out.inertia ? Cal::Map(Cal::Active().up[pair].mehaupt, in.n_t, in.m_t) : 0;
   } else {
     TickDownKab(in);
     TickDownKzu(in);
@@ -604,7 +604,7 @@ void SasShift::Tick(const SasInputs &in) {
       out.inertia = false;
     // Downshift intervention after sync (KF_MENACHxy, torque reduction).
     out.tqDelta = (out.zKzu == KZU_CLOSE_DOWN)
-                      ? Cal::Map(calDown[pair].menach, in.n_t, in.m_t)
+                      ? Cal::Map(Cal::Active().down[pair].menach, in.n_t, in.m_t)
                       : 0;
   }
 

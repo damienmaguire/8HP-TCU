@@ -55,6 +55,8 @@
 #include <new>
 
 #include "anaconv.h"
+#include "calset.h"
+#include "canif.h"
 #include "eds.h"
 #include "linpump.h"
 #include "max22200.h"
@@ -64,17 +66,27 @@
 #include "valveout.h"
 
 /// MAX22200 pins on the STM32: one chip on V4, CSB on PA4, CMD on PE8.
+/// The next revision adds a second chip on the same SPI1 with its own CSB
+/// (max_cs1, pin TBD, HW_HAS_MAX2).
 class StmMaxBus : public Max22200Bus
 {
 public:
    void Select(uint8_t dev, bool active) override
    {
-      if (dev != 0)
-         return; // V4 has one chip
-      if (active)
-         DigIo::max_cs0.Clear();
-      else
-         DigIo::max_cs0.Set();
+      if (dev == 0) {
+         if (active)
+            DigIo::max_cs0.Clear();
+         else
+            DigIo::max_cs0.Set();
+      }
+#if HW_HAS_MAX2
+      else if (dev == 1) {
+         if (active)
+            DigIo::max_cs1.Clear();
+         else
+            DigIo::max_cs1.Set();
+      }
+#endif
    }
    void SetCmd(bool high) override
    {
@@ -93,29 +105,31 @@ static CanHardware *can1;
 static CanHardware *can2;
 static StmMaxBus maxBus;
 static Max22200 max0(maxBus, 0);
+#if HW_HAS_MAX2
+static Max22200 max1(maxBus, 1); // next revision: PZYL on its OUT0 (ch 8)
+#endif
 static ValveOut valves;
 static Eds eds;
 static Tcu tcu;
 static Shifter shifter;
 static LinPump linPump;
 static LinPumpRule linRule;
-// Speed sensors: ISS (index 0, PA0) and OSS (index 1, PA1). No pin for an
-// aux sensor on V4 (TeethAux is kept as a parameter only).
-static SpeedSensor spdIn, spdOut;
-static AdcEdge spdEdge[2];
+// Speed sensors: ISS n_t (index 0, PA0), OSS n_ab (index 1, PA1) and, on
+// the next revision, n6 (index 2, PA2 probably). All 60 ppr, 30 rpm
+// minimum on both gearboxes [C]. n6 is an internal shaft the OEM uses
+// only as a level-2 cross-check; shifting runs on n_t / n_ab (Ian 12.2).
+static SpeedSensor spdIn, spdOut, spdAux;
+static AdcEdge spdEdge[3];
 static volatile uint32_t spdSamples = 0;
-static uint32_t spdLastEdge[2];
-static volatile uint16_t spdMin[2] = {4095, 4095}, spdMax[2] = {0, 0};
+static uint32_t spdLastEdge[3];
+static volatile uint16_t spdMin[3] = {4095, 4095, 4095}, spdMax[3] = {0, 0, 0};
 static bool driversUp = false;
 static bool driverFault = false;
 static bool configError = false;
 
-// Latest command frame from the VCU (placeholder layout, see README).
-static volatile uint8_t rxSelector = SEL_N;
-static volatile uint8_t rxGearReq = 0;
-static volatile int16_t rxTorque = 0;
-static volatile int16_t rxMotorRpm = 0;
-static volatile uint8_t rxTips = 0; // byte 6: bit 0 tip up, bit 1 tip down
+// Latest decoded CAN1 input (canif.h; EcuType picks the protocol).
+static volatile CanRx canRx = {SEL_N, 0, 0, 0, 0};
+static uint8_t f11TqCounter = 0;
 static volatile uint32_t msSinceRx = 0xFFFF;
 
 static const Param::PARAM_NUM chanParams[EDS_COUNT] = {
@@ -139,7 +153,7 @@ static void ConfigureEds() {
 }
 
 static void ConfigureTcu() {
-  TcuConfig c;
+  TcuConfig c = {};
   c.sas.pMax = Param::GetInt(Param::ShiftPMax);
   c.sas.syncBand = Param::GetInt(Param::SyncBand);
   c.sas.glsGainPct = Param::GetInt(Param::GlsGain);
@@ -175,6 +189,30 @@ static void ConfigureTcu() {
   // Must match ConfigureEds() so the interlock sees the real targets.
   c.iMax = Param::GetInt(Param::IMaxCoil) * 10;
   c.tempCorrection = Param::GetBool(Param::TempCorr);
+  c.parkRelRpm = Param::GetInt(Param::ParkRelRpm);
+  c.parkRelP = Param::GetInt(Param::ParkRelP);
+  c.parkRelHoldMs = Param::GetInt(Param::ParkRelHold);
+  c.pnDelayMs = Param::GetInt(Param::ParkPNDelay);
+  c.parkCtrl = Param::GetBool(Param::ParkCtrl);
+  c.pzylI = Param::GetInt(Param::PzylCurrent) * 10;
+  c.parkMagMinMs = Param::GetInt(Param::ParkMagMin);
+  c.parkMagMaxMs = Param::GetInt(Param::ParkMagMax);
+  c.gearInMinP = Param::GetInt(Param::GearInMinP);
+  // A pump that cannot run (disabled, F11) counts as never delivering.
+  c.gearInPumpMs = Param::GetInt(Param::GearInPumpMs);
+  c.gearInMotRpm = Param::GetInt(Param::GearInMotRpm);
+  c.pumpFaultAct = Param::GetInt(Param::PumpFaultAct);
+  c.pumpFaultRpm = Param::GetInt(Param::PumpFaultRpm);
+  c.tipOverrideMs = Param::GetInt(Param::TipOverride);
+  int variant = Param::GetInt(Param::GearboxType);
+  Cal::Select(variant);
+  c.ch7Mode = Cal::Ch7Effective(Param::GetInt(Param::Ch7Mode), variant);
+  c.k0P = Param::GetInt(Param::K0Press);
+  c.tccP = Param::GetInt(Param::TccPress);
+  c.tccOnRpm = Param::GetInt(Param::TccOnRpm);
+  c.tccOffRpm = Param::GetInt(Param::TccOffRpm);
+  c.tccMinGear = Param::GetInt(Param::TccMinGear);
+  c.tccRamp = Param::GetInt(Param::TccRamp);
   tcu.Configure(c);
 }
 
@@ -183,15 +221,17 @@ static void ConfigureSpeed() {
   uint16_t mn = Param::GetInt(Param::SpdMinRpm);
   spdIn.Configure(SPEED_TIMER_HZ, Param::GetInt(Param::TeethIn), to, mn);
   spdOut.Configure(SPEED_TIMER_HZ, Param::GetInt(Param::TeethOut), to, mn);
+  spdAux.Configure(SPEED_TIMER_HZ, Param::GetInt(Param::TeethAux), to, mn);
   uint16_t lo = AnaConv::ToCounts(Param::GetInt(Param::SpdAdcLo));
   uint16_t hi = AnaConv::ToCounts(Param::GetInt(Param::SpdAdcHi));
-  for (int i = 0; i < 2; i++)
+  for (int i = 0; i < SPEED_NUM; i++)
     spdEdge[i].Configure(lo, hi);
 }
 
 static void ConfigureShifter() {
   ShifterConfig c;
   c.type = Param::GetInt(Param::ShifterType);
+  c.tip12Samples = Param::GetInt(Param::Tip12Deb) / 10;
   c.anaRMax = Param::GetInt(Param::ShAnaR);
   c.anaNMax = Param::GetInt(Param::ShAnaN);
   c.anaMin = Param::GetInt(Param::ShAnaMin);
@@ -205,6 +245,11 @@ static void ConfigureLin() {
   c.slotMs = Param::GetInt(Param::LinSlotMs);
   c.busFaultMs = Param::GetInt(Param::LinBusFault);
   c.diagDelayMs = 400; // D_t_DiagDelayAfterClearErr_LINIEP [C]
+  c.startBlankMs = 1000; // Ian Q5: ignore status for about 1 s [I]
+  c.armMs = Param::GetInt(Param::LinArmMs);
+  c.symMaxMs = Param::GetInt(Param::LinSymMax);
+  c.delivRpm = Param::GetInt(Param::LinDelivRpm);
+  c.processRx = Param::GetBool(Param::LinRxCheck);
   linPump.Configure(c);
   LinRuleConfig r;
   r.onRpm = Param::GetInt(Param::LinPumpRpm);
@@ -213,6 +258,8 @@ static void ConfigureLin() {
   r.tempMax = Param::GetInt(Param::LinTempMax);
   r.pMaxMbar = Param::GetInt(Param::LinPMax);
   r.offDelayMs = Param::GetInt(Param::LinOffDelay);
+  r.coldMin = Param::GetInt(Param::LinColdMin);
+  r.coldMaxMs = Param::GetInt(Param::LinColdMs);
   linRule.Configure(r);
 }
 
@@ -222,7 +269,11 @@ static void ConfigureValveMap() {
     valves.SetMap((EdsValve)v, ch == CHAN_NOT_FITTED ? VALVE_NOT_FITTED : (uint8_t)ch);
   }
   valves.AttachChip(0, &max0); // V4: one MAX22200
+#if HW_HAS_MAX2
+  valves.AttachChip(1, &max1);
+#else
   valves.AttachChip(1, 0);
+#endif
 }
 
 /// Bring the MAX22200s up. Every channel stays off until the TCU asks.
@@ -271,10 +322,11 @@ extern "C" void adc1_2_isr(void) {
   if (!(ADC_SR(SPEED_ADC) & ADC_SR_JEOC))
     return;
   ADC_SR(SPEED_ADC) &= ~ADC_SR_JEOC;
-  uint16_t v[2] = {(uint16_t)ADC_JDR1(SPEED_ADC), (uint16_t)ADC_JDR2(SPEED_ADC)};
+  uint16_t v[3] = {(uint16_t)ADC_JDR1(SPEED_ADC), (uint16_t)ADC_JDR2(SPEED_ADC),
+                   (uint16_t)ADC_JDR3(SPEED_ADC)};
   uint32_t n = ++spdSamples;
-  SpeedSensor *sens[2] = {&spdIn, &spdOut};
-  for (int i = 0; i < 2; i++) {
+  SpeedSensor *sens[3] = {&spdIn, &spdOut, &spdAux};
+  for (int i = 0; i < SPEED_NUM; i++) {
     if (v[i] < spdMin[i])
       spdMin[i] = v[i];
     if (v[i] > spdMax[i])
@@ -387,56 +439,43 @@ extern "C" void tim4_isr(void) { scheduler->Run(); }
 // CAN
 
 static bool CanCallback(uint32_t id, uint32_t data[2], uint8_t dlc) {
-  if (id == (uint32_t)Param::GetInt(Param::CanCmdId) && dlc >= 6) {
-    /* Placeholder VCU command frame (little endian), see README:
-     *  byte 0  selector 0=P 1=R 2=N 3=D
-     *  byte 1  gear request 0 = hold, 1..8
-     *  byte 2-3 actual motor torque, Nm, signed
-     *  byte 4-5 motor speed, rpm, signed
-     *  byte 6  (ShifterType = CAN) bit 0 tip up, bit 1 tip down, held
-     *          while the lever is held. Optional: DLC 6 means no tips.
-     */
-    uint8_t *b = (uint8_t *)data;
-    rxSelector = b[0] & 3;
-    rxGearReq = b[1];
-    rxTorque = (int16_t)(b[2] | (b[3] << 8));
-    rxMotorRpm = (int16_t)(b[4] | (b[5] << 8));
-    rxTips = dlc >= 7 ? (b[6] & 3) : 0;
-    msSinceRx = 0;
-    return true;
-  }
-  return false;
+  CanRx rx;
+  if (!CanIf::Rx(Param::GetInt(Param::EcuType), Param::GetInt(Param::CanCmdId),
+                 id, (const uint8_t *)data, dlc, &rx))
+    return false;
+  canRx.selector = rx.selector;
+  canRx.gearReq = rx.gearReq;
+  canRx.torque = rx.torque;
+  canRx.motorRpm = rx.motorRpm;
+  canRx.tips = rx.tips;
+  msSinceRx = 0;
+  return true;
 }
 
 static void SetCanFilters() {
-  can1->RegisterUserMessage(Param::GetInt(Param::CanCmdId));
+  uint32_t ids[CANIF_MAX_RX_IDS];
+  int n = CanIf::RxIds(Param::GetInt(Param::EcuType),
+                       Param::GetInt(Param::CanCmdId), ids);
+  for (int i = 0; i < n; i++)
+    can1->RegisterUserMessage(ids[i]);
 }
 
+/// Status frames for the selected EcuType (canif.cpp), and the F11
+/// 0x0B0 torque frame if switched on. Only called with CanTxEnable on.
 static void SendStatus(const TcuOutputs &o, int32_t temp) {
-  /* Placeholder TCU status frame (little endian), see README:
-   *  byte 0  engaged gear (0 = N, 1..8, 9 = R)
-   *  byte 1  mode (opmode)
-   *  byte 2  target gear
-   *  byte 3  fault
-   *  byte 4-5 torque intervention request, Nm, signed (0 = none)
-   *  byte 6  ATF temperature + 40 degC
-   *  byte 7  bit 0 shifting, bit 1 park request, bit 2 safe state,
-   *          bit 3 hold motor torque near 0 (gear-in), bit 4 CAN-loss
-   *          gear hold, bit 5 coast shift
-   */
-  uint8_t b[8];
-  b[0] = o.gear;
-  b[1] = o.mode;
-  b[2] = o.target;
-  b[3] = o.fault;
-  b[4] = o.tqDelta & 0xFF;
-  b[5] = (o.tqDelta >> 8) & 0xFF;
-  int32_t t = temp + 40;
-  b[6] = t < 0 ? 0 : (t > 255 ? 255 : t);
-  b[7] = (o.mode == TCU_SHIFT ? 1 : 0) | (o.parkRequest ? 2 : 0) |
-         (o.safeOutputs ? 4 : 0) | (o.tqHold ? 8 : 0) |
-         (o.canLossHold ? 16 : 0) | (o.coast ? 32 : 0);
-  can1->Send(Param::GetInt(Param::CanStatId), b, 8);
+  CanTxIn in = {&o, temp, linPump.Classes(),
+                (uint32_t)Param::GetInt(Param::CanStatId)};
+  CanFrame f[CANIF_MAX_TX];
+  int n = CanIf::Tx(Param::GetInt(Param::EcuType), in, f);
+  for (int i = 0; i < n; i++)
+    can1->Send(f[i].id, f[i].data, f[i].dlc);
+  if (Param::GetBool(Param::F11TqTx) &&
+      Param::GetInt(Param::GearboxType) == CALVAR_F11) {
+    uint8_t d[8];
+    CanIf::PackF11Torque(o.tqDelta, f11TqCounter, d);
+    f11TqCounter = (uint8_t)((f11TqCounter + 1) % 15);
+    can1->Send(CANIF_F11_TQ_ID, d, 8);
+  }
 }
 
 static void Put16(uint8_t *b, int i, int32_t v) {
@@ -491,9 +530,15 @@ static void Ms10Task() {
 
   // Shifter: CAN fields of the command frame, or the V4 inputs.
   ShifterRaw raw;
-  raw.canSelector = canOk ? rxSelector : (uint8_t)SEL_N;
-  raw.canTipUp = canOk && (rxTips & 1);
-  raw.canTipDown = canOk && (rxTips & 2);
+  raw.canSelector = canOk ? canRx.selector : (uint8_t)SEL_N;
+  raw.canTipUp = canOk && (canRx.tips & 1);
+  raw.canTipDown = canOk && (canRx.tips & 2);
+#if HW_HAS_SHIFT12V
+  raw.up12 = DigIo::shift_up.Get();
+  raw.down12 = DigIo::shift_dn.Get();
+#else
+  raw.up12 = raw.down12 = false; // V4: no 12 V shift inputs
+#endif
   raw.din1 = DigIo::din1.Get();
   raw.din2 = DigIo::din2.Get();
   raw.parkIn = DigIo::park_in.Get();
@@ -506,14 +551,24 @@ static void Ms10Task() {
   if (fromParam)
     in.selector = Param::GetInt(Param::SelectorSet);
   else if (canShifter && !canOk)
-    in.selector = rxSelector; // last frame; CAN-loss rules below
+    in.selector = canRx.selector; // last frame; CAN-loss rules below
   else
     in.selector = shifter.Selector();
   in.tipUp = !fromParam && shifter.TipUp();
   in.tipDown = !fromParam && shifter.TipDown();
-  in.gearReq = fromParam ? Param::GetInt(Param::GearSet) : rxGearReq;
-  in.m_t = fromParam ? Param::GetInt(Param::TorqueSet) : rxTorque;
-  in.n_mot = fromParam ? Param::GetInt(Param::MotorRpmSet) : rxMotorRpm;
+  in.gearReq = fromParam ? Param::GetInt(Param::GearSet) : canRx.gearReq;
+  in.m_t = fromParam ? Param::GetInt(Param::TorqueSet) : canRx.torque;
+  in.n_mot = fromParam ? Param::GetInt(Param::MotorRpmSet) : canRx.motorRpm;
+  // ManualGear (Manual mode): the dropdown picks P / R / N or a gear in
+  // D. The TCU still does the gear-in, the shift limits, the input-speed
+  // checks and the interlock; the CAN-loss rules below still win.
+  int mg = Param::GetInt(Param::ManualGear);
+  if (Param::GetInt(Param::ShiftMode) == SHIFT_MANUAL && mg > 0) {
+    static const uint8_t mgSel[4] = {SEL_N, SEL_P, SEL_R, SEL_N};
+    in.selector = mg <= 3 ? mgSel[mg] : (uint8_t)SEL_D;
+    in.manualGear = mg >= 4 ? (uint8_t)(mg - 3) : 0;
+    in.tipUp = in.tipDown = false;
+  }
   if (!fromParam && !canOk) {
     // No VCU. CanLossMode 1 (default, Damien 2026-11-23): keep the last
     // selector so the TCU holds the gear (no upshifts, LineMax, step down
@@ -540,6 +595,12 @@ static void Ms10Task() {
   in.driverFault = driverFault;
   in.configError = configError;
   in.faultClear = false;
+  in.pMeas = -1; // no line pressure sensor on V4
+  // LIN pump: delivering time and faults (diagnosis blanked below the
+  // load-off voltage, as the OEM does [C]).
+  bool uv = Param::GetInt(Param::UvLimit) > 0 && vbatmV < Param::GetInt(Param::UvLimit);
+  in.pumpDeliverMs = linActive ? (int32_t)linPump.DeliveringMs() : 0;
+  in.pumpFault = linActive && !uv && linPump.Classes() != 0;
   if (Param::GetBool(Param::FaultClear)) {
     Param::SetInt(Param::FaultClear, 0);
     linPump.ClearErrors(); // one 0x30 with the clear flag
@@ -564,16 +625,21 @@ static void Ms10Task() {
 
   // Aux oil pump (330e run rule, Ian's 330E_LIN_OIL_PUMP.md section 7).
   // The F11 8HP45 has no LIN pump [C], so the bus stays off for it.
-  linActive = Param::GetBool(Param::LinPumpEnable) &&
-              Param::GetInt(Param::GearboxType) == ENG_VAR_330E;
+  // Charging plug in: LIN to sleep (CDD_LINBusStartStop.st_chargingPlug
+  // [C]). Source: a parameter for now; the input is TBD (no pin yet).
+  bool plug = Param::GetInt(Param::ChgPlugSrc) == 1 && Param::GetBool(Param::ChgPlugSet);
+  linActive = Param::GetBool(Param::LinPumpEnable) && !plug &&
+              Cal::Variant(Param::GetInt(Param::GearboxType)).linPump;
   linOilC = atfTemp;
   linWanted = linActive && linRule.Update(Param::GetInt(Param::LinPumpReq),
                                           in.n_t, atfTemp, o.pSys);
 
-  // Discrete outputs. Park-hold magnet: its sequence is not known yet, so
-  // it stays off except for the bench test at standstill in P or N.
+  // Discrete outputs. Park-hold magnet (NCV8402, PC7): driven by the park
+  // sequence when ParkCtrl is on (Ian 12.1, 100 ms .. 1 s after a release),
+  // plus the bench test at standstill in P or N.
   bool standstillPN = in.n_ab == 0 && (o.mode == TCU_PARK || o.mode == TCU_NEUTRAL);
-  if (Param::GetBool(Param::ParkHoldTest) && standstillPN && !o.safeOutputs)
+  if (!o.safeOutputs && (o.parkMagnet ||
+                         (Param::GetBool(Param::ParkHoldTest) && standstillPN)))
     DigIo::park_hold.Set();
   else
     DigIo::park_hold.Clear();
@@ -598,11 +664,15 @@ static void Ms10Task() {
     for (int c = 0; c < CL_COUNT; c++)
       eds.SetPressure((EdsValve)c, o.p[c], atfTemp);
     eds.SetPressure(EDS_SYS, o.pSys, atfTemp);
-    eds.SetPressure(EDS_K0, 0, atfTemp); // K0 open: no engine on an EV
+    // Channel 7: K0 (330e) or TCC lock-up (F11) or held open (Ch7Mode).
+    // The curve is the active variant's (330e K0 / F11 TCC).
+    eds.SetPressure(EDS_K0, o.pCh7, atfTemp);
+    // POS: position valve, switch-over at 420 mA (I_EDSPOSV [C]); when to
+    // switch it is not known, so it is a plain current command.
     eds.SetCurrent(EDS_POS, Param::GetInt(Param::PosCurrent) * 10);
-    // Park-lock cylinder valve: stub until its sequence is known (and not
-    // on a V4 channel by default).
-    eds.SetCurrent(EDS_PZYL, 0);
+    // PZYL (park-lock cylinder valve = the old PREL [I]): from the park
+    // sequence with ParkCtrl on, else 0. Not on a V4 channel by default.
+    eds.SetCurrent(EDS_PZYL, o.pzylI);
 
     // Bench valve test: only at standstill in P or N.
     if (Param::GetBool(Param::ValveTest) && in.n_ab == 0 &&
@@ -639,7 +709,23 @@ static void Ms10Task() {
   Param::SetInt(Param::engphase, o.engPhase);
   Param::SetInt(Param::nIn, in.n_t);
   Param::SetInt(Param::nOut, in.n_ab);
-  Param::SetInt(Param::nAux, 0); // no aux speed sensor on V4
+  // n6 (next revision only). The OEM cross-check needs the per-gear
+  // D_k_n6 factors, which are not all known yet (TBD), so it is shown only.
+  Param::SetInt(Param::nAux, HW_HAS_SPD3 ? spdAux.Rpm() : 0);
+  Param::SetInt(Param::nMotReq, o.nMotReq);
+  Param::SetInt(Param::parkWait, o.parkWait);
+  Param::SetInt(Param::gearInWait, o.gearInWait);
+  Param::SetInt(Param::tipAuto, o.tipAuto);
+  Param::SetInt(Param::pCh7, o.pCh7);
+  Param::SetInt(Param::iPZYL, eds.Setpoint(EDS_PZYL) / 10);
+  Param::SetInt(Param::parkMag, o.parkMagnet && !o.safeOutputs);
+  Param::SetInt(Param::ch7Act, Cal::Ch7Effective(Param::GetInt(Param::Ch7Mode),
+                                                 Param::GetInt(Param::GearboxType)));
+#if HW_HAS_T15
+  Param::SetInt(Param::t15, DigIo::t15_in.Get());
+#else
+  Param::SetInt(Param::t15, 1); // V4: no T15 input, the board is on = T15 on
+#endif
   Param::SetInt(Param::nMot, in.n_mot);
   Param::SetInt(Param::mTq, in.m_t);
   Param::SetInt(Param::tqDelta, o.tqDelta);
@@ -749,7 +835,8 @@ static void Ms100Task() {
   // gp_pwm duty (frequency is applied on a parameter change)
   gp_pwm_set(Param::GetInt(Param::GpPwmDuty));
 
-  // LIN pump status. Faults are reported only (no OEM reaction known).
+  // LIN pump status. Reaction on a fault class: PumpFaultAct (default
+  // report only).
   const LinPumpStatus &ls = linPump.Status();
   Param::SetInt(Param::lpOn, linWanted);
   Param::SetInt(Param::lpState, linPump.State());
@@ -781,6 +868,7 @@ static void Ms100Task() {
 void Param::Change(Param::PARAM_NUM paramNum) {
   switch (paramNum) {
   case Param::CanCmdId:
+  case Param::EcuType:
     if (can1)
       can1->ClearUserMessages(); // calls SetCanFilters() again
     break;
@@ -807,6 +895,9 @@ extern "C" int main(void) {
   DIG_IO_CONFIGURE(DIG_IO_LIST);
   DigIo::max_enable.Clear(); // drivers off before anything else
   DigIo::max_cs0.Set();
+#if HW_HAS_MAX2
+  DigIo::max_cs1.Set();
+#endif
   DigIo::max_cmd.Clear();
   DigIo::max_triga.Clear(); // SPI-controlled channels: TRIGA/B held low
   DigIo::max_trigb.Clear();
