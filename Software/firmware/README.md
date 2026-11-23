@@ -155,7 +155,7 @@ There is no Sol1 and no high-side supply switch on V4.
 | `speedsens.*` | Edge period -> rpm with tooth count as a parameter | §2, pinout §1 |
 | `anaconv.*` | ADC edge finder with hysteresis (speed sensors), vbat, temperature-input resistance, R -> T table | V4 pin map |
 | `shifter.*` | Selector and tip up/down from CAN or the V4 inputs (`ShifterType`) | Damien |
-| `linpump.*` | LIN master for the aux oil pump: PID, classic/enhanced checksum, schedule, start-up and echo, status decode, demand | Damien's LIN pump summary, Ian's spec |
+| `linpump.*` | LIN master for the aux oil pump: PID, checksum, CRC-8, 6-slot schedule, 0x30 build, 0x32/33/34 decode, OEM receive checks and fault classes, run rule | `330E_LIN_OIL_PUMP.md` |
 | `tcu.*` | Top-level mode machine, line pressure, faults, limp | §3, §5.5 |
 | `cal_330e.*`, `caltypes.*` | Generated calibration tables and the lookup code | JSON export |
 | `stm32_tcu.cpp`, `hwinit.cpp`, `terminal_prj.cpp` | Firmware glue: params, SPI, ADC2 speed sampling, LIN UART, PWM, CAN, terminal | ZombieVerter |
@@ -285,10 +285,9 @@ Stubbed / not done yet:
   the `ParkHoldTest` bench switch; PZYL has no V4 channel by default
   (`ChanPZYL = 255`). `parkRequest` is computed. The release sequence
   (17 bar line, cylinder, magnet pulses <= 1 s) is not written.
-* **Electric oil pump (IEP) over LIN**: start-up, live echo, status and
-  demand are done (see "LIN oil pump"), but no speed or pressure
-  setpoint can be sent because that byte is not decoded, and there is no
-  transceiver on V4. Several items wait for Ian (listed below).
+* **Electric oil pump (IEP) over LIN**: done to Ian's OEM read (see "LIN
+  oil pump"), but untested (no transceiver on V4). Fault reaction is
+  report-only.
 * **Analog shifter mapping**: placeholder (see "Setup parameters").
 * **Inverter torque interface** (Q5): only the request value in the status
   frame.
@@ -321,7 +320,7 @@ parameters to set once the value is known:
 | Analog shifter | `ShAnaR`, `ShAnaN`, `ShAnaMin`, `ShAnaMax` | 1500 / 3000 / 200 / 6000 mV | shifter not chosen |
 | Manual mode limits | `ManMaxRpm`, `ManMinRpm` | 6000 / 1000 rpm | bench |
 | Spare outputs | `GpOut1Func`, `GpOut2Func`, `GpPwmFreq`, `GpPwmDuty` | off, 200 Hz, 0 % | use not decided |
-| Aux pump LIN | `LinPumpEnable`, `LinPumpReq`, `LinPumpRpm`, `LinPumpHyst`, `LinChecksum`, `LinCycleMs`, `LinRxDelay`, `LinColdMs`, `LinPhase2Ms`, `LinTimeout`, `LinPollAux` | off; Auto below 500 rpm (+200); enhanced; 25 / 12 / 900 / 25 / 200 ms; no aux poll | Ian (LIN list below) |
+| Aux pump LIN | `LinPumpEnable`, `LinPumpReq`, `LinPumpRpm`, `LinPumpHyst`, `LinTempMin/Max`, `LinPMax`, `LinPumpP`, `LinOffDelay`, `LinChecksum`, `LinSlotMs`, `LinBusFault` | off; Auto: < 500 rpm (+50), 0..125 degC, < 20 bar, 800 ms; enhanced; 10 ms slot; 1.8 s | Ian `330E_LIN_OIL_PUMP.md` |
 | Inverter torque CAN | `CanCmdId`, `CanStatId`, `CanTxEnable`, `TqInterv`, `TqRamp` | placeholder frames, TX off | Q5, Q11 |
 | Applied clutch pressure | `ClutchApplyP` | 16500 mbar (valve fully open) | bench |
 | Engage fast close | `EngageCloseGrad` (20-50 bar/s), `EngageSyncMs` (50-100 ms), `EngageTqZero` | 30 bar/s, 80 ms, 10 Nm | Ian QA2, bench |
@@ -349,9 +348,8 @@ From the control spec §7:
 * **Q3** Speed-sensor teeth: 60 in the firmware vs 28/40 public.
 * **Q4** ATF sensor R vs T.
 * **Q5** Inverter torque-reduction interface and latency.
-* **Q6** IEP LIN frames: now partly answered by Damien's bench summary
-  (see "LIN oil pump" below). Still open: whether the input-shaft pump
-  alone is enough.
+* **Q6** IEP LIN frames: answered in `330E_LIN_OIL_PUMP.md` (see "LIN oil
+  pump"); remaining items are listed there.
 * **Q7** `_EL` vs Normal sets for an EV (`make cal CAL_SET=el` is ready).
 * **Q8** Fill adaptation.
 * **Q9** Exact OEM transition conditions in some states (`FUN_0010831c`).
@@ -422,76 +420,73 @@ inferred, [H] hypothesis.
   (`SWI_GLSGE`, `KF_WNGTNDSYNCGGE_n`, `T_VGLSKZU_n`, `ND_GLSGE_n`) and the
   gear-in ramp lead `T_SYNRAKZU_n`.
 
-### LIN oil pump (to check with Ian)
+### LIN oil pump
 
-Source: Damien's "ZF LIN Electric Oil Pump - Reverse Engineering Summary"
-(bench reverse engineering of an IEP85 49 20 D5, 0501.334.165, NBP 3.5 bar,
-4.5 l/min, 12 V). The document is not copied into the repository; the
-protocol facts used are written out in `include/linpump.h`. What is
-implemented as stated: 19200 baud, command 0x30 (8 bytes) every ~25 ms,
-cold start `AA 00 0A 00 00 00 73 cc` for ~900 ms, phase 2 with byte 2 =
-0x42, run start `55 00 42 00 00 00 73 cc` until a 0x32 with status 00,
-then byte 6 = byte 6 of the last 0x32 (live echo), alive counter 0-15 in
-byte 7; 0x32 byte 0 status (00 good, 40 communication/watchdog fault),
-byte 3 x 32 rpm, byte 4 x 0.1 V. Questions and ambiguities:
+The driver follows Ian's read of the OEM driver, `330E_LIN_OIL_PUMP.md`
+(330e `CDD_IEP_Control`), which replaces the guesses from Damien's bench
+summary (no timed cold-start phases, no echo: byte 6 is a CRC). Labels are
+Ian's [C]/[I]/[H].
 
-1. **Speed / pressure command.** The summary has no setpoint. Byte 2 goes
-   0x0A -> 0x42; 0x42 x 32 = 2112 rpm matches the 0x32 speed units, so
-   byte 2 may be a speed request, but that is a guess. The firmware only
-   ever sends 0x0A then 0x42. What sets speed or pressure, and what range
-   is safe?
-2. **Stopping the pump.** No stop command is given. The firmware stops
-   sending and puts the transceiver to sleep. Does the pump stop on bus
-   silence, and how fast? Is there an explicit stop (e.g. byte 0 or
-   byte 2 = 0)?
-3. **Checksum type.** "LIN 2.x" implies the enhanced checksum for IDs
-   0x30-0x34. Default `LinChecksum = Enhanced`, classic selectable. Which
-   one did the bench setup use?
-4. **Byte 0 meaning (AA vs 55).** Cold-start vs run marker? Any other
-   values?
-5. **Phase 2 length.** "After ~900 ms change byte 2 to 42 (Phase 2)", then
-   "send the first command starting with 55". How long is phase 2, or what
-   ends it (a reply)? `LinPhase2Ms` default 25 ms (one frame) is my guess.
-6. **"20 ms settle delay".** Between which events: 0x30 -> 0x32 header,
-   between phases, or after wake-up? Firmware: `LinRxDelay` 12 ms (0x30
-   header to 0x32 header; the 0x30 frame takes ~6.5 ms). A 20 ms delay
-   does not fit a 25 ms cycle together with a 0x32 read.
-7. **0x32 polling.** Is 0x32 read every cycle (firmware: yes, one 0x32
-   per 0x30)? How often are 0x33/0x34 needed (firmware: off,
-   `LinPollAux`)?
-8. **Echo source on a 0x40 reply.** Echo byte 6 from any last 0x32,
-   including one with status 40 (firmware follows the wording), or only
-   from a good one?
-9. **Byte 6 conflict.** Byte 6 is the echo, but the summary also says
-   "bytes 5 and 6 carry raw current and temperature". Which is which?
-10. **Status codes other than 00 / 40** and the error bits in 0x33/0x34:
-    unknown. The firmware reports the raw status (`lpStatus`) and counts
-    0x40 replies (`lpFaults`); no other status triggers an action.
-11. **Fault reaction (safety).** On 0x40 replies or no reply the firmware
-    keeps the echo going and, after `LinTimeout` (200 ms) without a good
-    reply, stops for 500 ms and restarts from the cold start. It does
-    *not* change the TCU (no neutral, no engage block). Should a pump
-    fault at standstill block gear-in, or force neutral? Ian/Damien to
-    decide.
-12. **When the pump runs (safety).** Firmware: `LinPumpReq = Auto` runs
-    it while the TCU is in N, engage, drive or shift and the input speed
-    is below `LinPumpRpm` (500 rpm, +200 rpm hysteresis); never in P,
-    init or safe. Ian's spec says "line pressure when the input shaft
-    isn't turning / essential at standstill". Right states? What input
-    speed makes the mechanical pump enough? Should P with a pending park
-    release (17 bar) also run it?
-13. **Gear-in gating (safety).** The engage "line pressure OK" input still
-    only checks the commanded pressure. Should fast close (or any
-    gear-in) wait for the pump to report run status and a minimum speed?
-14. **Low voltage / over-temperature cut-offs.** The summary plans them;
-    no thresholds are known, so none are implemented (`lpVolt` is shown).
-15. **Alive counter.** 0-15 in byte 7 only (upper nibble 0)? Does it start
-    at 0 after every cold start?
-16. **Timing tolerance.** "Occasional 0x40 faults if timing is marginal":
-    how much jitter on the 25 ms cycle does the pump accept? The 1 ms task
-    gives about +-1 ms.
-17. **LIN hardware.** No transceiver on V4 (REV): which part (TJA1021?),
-    master pull-up/diode, and does SLP_N on PD11 stay?
+What is implemented:
+
+* 19200 baud, TCU master, 8-byte frames. Schedule 0x30, 0x32, 0x30, 0x33,
+  0x30, 0x34 on `LinSlotMs` slots (10 ms [I]), so 0x30 every 20 ms. PIDs
+  F0 / 32 / 73 / B4 [C].
+* 0x30 [C]: b0 0xAA off / 0x55 run (0xCC / 0x33 unused); b1 flags (0x02
+  clear errors for exactly one frame, at bus start and on `FaultClear`,
+  then 400 ms without diagnosis; 0x04 limp and 0x08 warm-up defined but
+  not requested yet); b2 oil temperature + 50; b3 after-run 0; b4-5 0; b6
+  CRC-8 over b0 (poly 0x1D, init 0, no XOR: AA -> 73, 55 -> B7); b7 alive
+  counter 0-15.
+* 0x32 [C]: EB0/EB1, operating point, speed x 32 rpm, current 0.2 A/bit,
+  voltage 0.1 V/bit (14.0 V until a valid frame), CRC-8 over b2, alive.
+  0x33 (temperature raw, 32-bit ID) and 0x34 (HW / SW version, IEP85
+  check) are decoded raw.
+* Receive checks as the OEM [C]: LIN checksum; 0x32 CRC-8 (2 bad in a row
+  = fault); alive counter repeated twice or jumping by more than 2 = fault,
+  frame dropped; no valid 0x32 for `LinBusFault` (1.8 s) = bus fault. Fault
+  classes use the OEM `ctl_IEP_Status` masks (EB0 0x40/0x80 = permanent
+  level-2 safety fault, 0x10/0x20 = pump comms fault).
+* Run rule (330e) [C values, I for how they combine]: input speed below
+  `LinPumpRpm` 500 rpm (hysteresis `LinPumpHyst` 50), sump `LinTempMin` ..
+  `LinTempMax` (0..125 degC), commanded line pressure below `LinPMax`
+  (20 bar); keeps running `LinOffDelay` (800 ms, `D_t_IEP_ShutdownDelay`
+  [I: use]) after the rule drops. `LinPumpP` (4 bar, `KF_PIEP_SYS`) is the
+  pressure the OEM assumes from the pump; it is shown (`lpPress`) but not
+  used by the line-pressure model yet.
+* `GearboxType = F11`: the bus stays off (the F11 8HP45 has no LIN pump
+  [C]). `LinPumpEnable` stays 0 by default (no transceiver on V4).
+* The document itself is not copied into the repository.
+
+Answered by Ian (closed): setpoint (none; operating point only), byte 0
+meaning, byte 2 (oil temperature, not a phase), byte 6 (CRC, not an
+echo), the cold-start / phase-2 timing (not in the firmware), the "20 ms
+settle delay" (not found; the slot timing gives 20 ms between 0x30s),
+0x32 byte layout, meaning of 0x40 (level-2 safety, not comms), 0x33/0x34
+contents, alive counter rules, when the pump runs, F11 (no pump).
+
+Still open:
+
+1. **LIN channel / checksum.** Which SH725x LIN/SCI channel the OEM uses
+   was not found, nor whether its hardware does the checksum; checksum
+   type is [H: enhanced] (`LinChecksum`, classic selectable).
+2. **b4 / b5 scaling** (current 0.2 A/bit, voltage 0.1 V/bit) is from the
+   A2L; check on the bench against a meter.
+3. **0x33 pump temperature scaling**: the OEM curve looks odd
+   (raw 12..199 -> 120..150 degC), so `lpTempRaw` is shown raw only.
+4. **Slot time** 10 ms is [I].
+5. Go-to-sleep handling (no LIN sleep frame found; SLEEP is sent as 0xAA),
+   and the meaning of EB0 bits 6/7 inside the pump.
+6. **Fault reaction (safety, no OEM answer yet):** retry and report only.
+   On any pump fault class the firmware posts `LINPUMP`, shows `lpClass`,
+   keeps the schedule running and changes nothing in the TCU (no neutral,
+   no engage block). `FaultClear` sends one clear frame.
+7. **Gear-in waiting for the pump (safety, no OEM answer yet):** not done;
+   the engage "line pressure OK" input only checks the commanded
+   pressure.
+8. Warm-up (b1 0x08: below 16 degC, ends at 60 degC, < 8 km/h, <= 8 bar,
+   pump SW >= 0x0705) and limp (0x04) requests are not generated yet.
+9. LIN hardware on the next board (transceiver part, SLP_N on PD11).
 
 ### For Bob
 

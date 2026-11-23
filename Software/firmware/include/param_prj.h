@@ -27,11 +27,12 @@
    2. Temporary parameters (id = 0)
    3. Display values
  */
-// Next param id (increase when adding a new parameter!): 164
+// Next param id (increase when adding a new parameter!): 171
 // (ids 9, 101, 103-105 and 108 were free slots and are used below; 102,
 // 106 and 107 were used by an unreleased draft and are left free. The V4
 // update dropped 1, 22-27, 34, 35, 40, 42, 53, 54, 69 and 70; they are
-// not reused so an old saved parameter set cannot land on a new meaning.)
+// not reused so an old saved parameter set cannot land on a new meaning.
+// The first LIN draft's 157-162 are dropped as well.)
 //
 // Anything marked TBD below has not been measured yet. The defaults are
 // placeholders chosen so the firmware runs on a bench, not values to drive
@@ -143,14 +144,15 @@
   PARAM_ENTRY(CAT_LIN, LinPumpEnable, ONOFF, 0, 1, 0, 152)                     \
   PARAM_ENTRY(CAT_LIN, LinPumpReq, LINREQS, 0, 2, 1, 153)                      \
   PARAM_ENTRY(CAT_LIN, LinPumpRpm, "rpm", 0, 3000, 500, 154)                   \
-  PARAM_ENTRY(CAT_LIN, LinPumpHyst, "rpm", 0, 1000, 200, 155)                  \
+  PARAM_ENTRY(CAT_LIN, LinPumpHyst, "rpm", 0, 1000, 50, 155)                   \
   PARAM_ENTRY(CAT_LIN, LinChecksum, LINCSUMS, 0, 1, 1, 156)                    \
-  PARAM_ENTRY(CAT_LIN, LinCycleMs, "ms", 10, 100, 25, 157)                     \
-  PARAM_ENTRY(CAT_LIN, LinRxDelay, "ms", 5, 50, 12, 158)                       \
-  PARAM_ENTRY(CAT_LIN, LinColdMs, "ms", 0, 5000, 900, 159)                     \
-  PARAM_ENTRY(CAT_LIN, LinPhase2Ms, "ms", 0, 5000, 25, 160)                    \
-  PARAM_ENTRY(CAT_LIN, LinTimeout, "ms", 50, 2000, 200, 161)                   \
-  PARAM_ENTRY(CAT_LIN, LinPollAux, ONOFF, 0, 1, 0, 162)                        \
+  PARAM_ENTRY(CAT_LIN, LinTempMin, "C", -40, 150, 0, 164)                      \
+  PARAM_ENTRY(CAT_LIN, LinTempMax, "C", -40, 150, 125, 165)                    \
+  PARAM_ENTRY(CAT_LIN, LinPMax, "mbar", 0, 30000, 20000, 166)                  \
+  PARAM_ENTRY(CAT_LIN, LinPumpP, "mbar", 0, 10000, 4000, 167)                  \
+  PARAM_ENTRY(CAT_LIN, LinOffDelay, "ms", 0, 5000, 800, 168)                   \
+  PARAM_ENTRY(CAT_LIN, LinSlotMs, "ms", 10, 50, 10, 169)                       \
+  PARAM_ENTRY(CAT_LIN, LinBusFault, "ms", 100, 10000, 1800, 170)               \
   PARAM_ENTRY(CAT_TEST, SelectorSet, SELECTORS, 0, 3, 2, 120)                  \
   PARAM_ENTRY(CAT_TEST, GearSet, "", 0, 8, 0, 121)                             \
   PARAM_ENTRY(CAT_TEST, TorqueSet, "Nm", -500, 1000, 0, 122)                   \
@@ -211,14 +213,24 @@
   VALUE_ENTRY(spdOutLo, "mV", 2050)                                            \
   VALUE_ENTRY(spdOutHi, "mV", 2051)                                            \
   VALUE_ENTRY(lpState, LPSTATES, 2052)                                         \
-  VALUE_ENTRY(lpStatus, "hex", 2053)                                           \
   VALUE_ENTRY(lpRpm, "rpm", 2054)                                              \
   VALUE_ENTRY(lpVolt, "mV", 2055)                                              \
-  VALUE_ENTRY(lpFaults, "", 2056)                                              \
-  VALUE_ENTRY(lpCsErr, "", 2057)                                               \
-  VALUE_ENTRY(lpTimeouts, "", 2058)                                            \
-  VALUE_ENTRY(lpEcho, "", 2059)                                                \
-  VALUE_ENTRY(lpOn, ONOFF, 2060)
+  VALUE_ENTRY(lpOn, ONOFF, 2060)                                               \
+  VALUE_ENTRY(lpOpPt, "hex", 2053)                                             \
+  VALUE_ENTRY(lpCurr, "mA", 2056)                                              \
+  VALUE_ENTRY(lpClass, "bits", 2057)                                           \
+  VALUE_ENTRY(lpEb0, "hex", 2058)                                              \
+  VALUE_ENTRY(lpEb1, "hex", 2059)                                              \
+  VALUE_ENTRY(lpOwn, "bits", 2061)                                             \
+  VALUE_ENTRY(lpTempRaw, "dig", 2062)                                          \
+  VALUE_ENTRY(lpHw, "hex", 2063)                                               \
+  VALUE_ENTRY(lpSw, "hex", 2064)                                               \
+  VALUE_ENTRY(lpIdHi, "hex", 2065)                                             \
+  VALUE_ENTRY(lpIdLo, "hex", 2066)                                             \
+  VALUE_ENTRY(lpChkErr, "", 2067)                                              \
+  VALUE_ENTRY(lpCrcErr, "", 2068)                                              \
+  VALUE_ENTRY(lpAlvErr, "", 2069)                                              \
+  VALUE_ENTRY(lpPress, "mbar", 2070)
 
 // Generate the version string. This must be formatted without spaces to meet
 // the format requirements of the "units".
@@ -234,7 +246,7 @@
 #define GPOUTFUNCS "0=Off, 1=On, 2=StarterLock"
 #define LINREQS "0=Off, 1=Auto, 2=Force"
 #define LINCSUMS "0=Classic, 1=Enhanced"
-#define LPSTATES "0=Off, 1=Cold1, 2=Cold2, 3=Start, 4=Run, 5=Fault"
+#define LPSTATES "0=Off, 1=Idle, 2=Run"
 #define CANLOSSMODES "0=Neutral, 1=HoldGear"
 #define CMDSRC "0=CAN, 1=Param"
 #define NTSRC "0=Sensor, 1=CanMotorRpm"

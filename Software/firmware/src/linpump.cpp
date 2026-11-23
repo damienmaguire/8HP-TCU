@@ -47,6 +47,16 @@ uint8_t Checksum(bool enhanced, uint8_t pid, const uint8_t *d, int n) {
   return enhanced ? ChecksumEnhanced(pid, d, n) : ChecksumClassic(d, n);
 }
 
+uint8_t Crc8(const uint8_t *d, int n) {
+  uint8_t crc = 0x00;
+  for (int i = 0; i < n; i++) {
+    crc ^= d[i];
+    for (int b = 0; b < 8; b++)
+      crc = (crc & 0x80) ? (uint8_t)((crc << 1) ^ 0x1D) : (uint8_t)(crc << 1);
+  }
+  return crc;
+}
+
 int FindData(const uint8_t *buf, int n, uint8_t pid) {
   for (int i = 0; i + 1 < n; i++) {
     if (buf[i] == 0x55 && buf[i + 1] == pid)
@@ -57,145 +67,219 @@ int FindData(const uint8_t *buf, int n, uint8_t pid) {
 
 } // namespace Lin
 
-bool LinPumpDemand(uint8_t req, bool enabled, bool pressureNeeded,
-                   int32_t n_t, int32_t onRpm, int32_t hyst, bool wasOn) {
-  if (!enabled || req == LINREQ_OFF)
-    return false;
-  if (req == LINREQ_FORCE)
-    return true;
-  if (!pressureNeeded)
-    return false;
-  if (n_t < 0)
-    n_t = -n_t;
-  return wasOn ? n_t < onRpm + hyst : n_t < onRpm;
-}
+// Schedule table [C]: 0x30 in the even slots, the three status frames in
+// the odd ones.
+static const uint8_t schedule[6] = {LINPUMP_ID_CMD, LINPUMP_ID_STATUS,
+                                    LINPUMP_ID_CMD, LINPUMP_ID_AUX1,
+                                    LINPUMP_ID_CMD, LINPUMP_ID_AUX2};
 
 LinPump::LinPump()
-    : cfg(), state(LP_OFF), st(), tState(0), tCycle(0), tNoGood(0), alive(0),
-      auxToggle(0), commFaults(0), csErrors(0), timeouts(0), txErrors(0) {
+    : cfg(), state(LP_OFF), st(), tSlot(0), slotIdx(0), txAlive(0),
+      oilRaw(0), extraFlags(0), clearPending(false), tDiagBlock(0),
+      tNoValid(0), ownBits(0), badCrc(0), linChkErrors(0), crcErrors(0),
+      aliveErrors(0), txErrors(0) {
   cfg.enhanced = true;
-  cfg.cycleMs = 25;
-  cfg.rxDelayMs = 12;
-  cfg.coldMs = 900;
-  cfg.phase2Ms = 25;
-  cfg.timeoutMs = 200;
-  cfg.retryMs = 500;
-  cfg.pollAux = false;
+  cfg.slotMs = 10;
+  cfg.busFaultMs = 1800;
+  cfg.diagDelayMs = 400;
+  st.supplymV = 14000;
+  for (int i = 0; i < 3; i++) {
+    lastAlive[i] = -1;
+    stuck[i] = 0;
+  }
 }
 
-void LinPump::Enter(LinPumpState s) {
-  state = s;
-  tState = 0;
-  if (s == LP_COLD1 || s == LP_OFF) {
-    tCycle = 0;
-    tNoGood = 0;
-    st.fresh = false;
+void LinPump::ClearErrors() {
+  clearPending = true;
+  ownBits = 0;
+  badCrc = 0;
+  tNoValid = 0;
+  for (int i = 0; i < 3; i++) {
+    lastAlive[i] = -1;
+    stuck[i] = 0;
   }
 }
 
 void LinPump::Command(uint8_t d[8]) const {
-  for (int i = 0; i < 8; i++)
-    d[i] = 0;
-  bool run = state == LP_START || state == LP_RUN;
-  d[0] = run ? 0x55 : 0xAA;
-  d[2] = state == LP_COLD1 ? 0x0A : 0x42;
-  // Byte 6: 0x73 until the pump has answered with status 00, then the
-  // live echo of byte 6 of the last good 0x32.
-  d[6] = state == LP_RUN ? st.echo : 0x73;
-  d[7] = alive & 0x0F;
+  d[0] = state == LP_RUN ? LINPUMP_OP_RUN : LINPUMP_OP_OFF;
+  d[1] = (uint8_t)(extraFlags | (clearPending ? LINPUMP_FLAG_CLEAR : 0));
+  d[2] = oilRaw;
+  d[3] = 0; // after-run time: 0 as in the 330e calibration
+  d[4] = 0;
+  d[5] = 0;
+  d[6] = Lin::Crc8(d, 1);
+  d[7] = txAlive & 0x0F;
 }
 
-bool LinPump::Tick1ms(bool request, LinSlot *slot) {
-  if (!request) {
-    if (state != LP_OFF)
-      Enter(LP_OFF);
+bool LinPump::Tick1ms(bool active, bool run, int32_t oilTempC, LinSlot *slot) {
+  if (!active) {
+    if (state != LP_OFF) {
+      state = LP_OFF;
+      tSlot = 0;
+      slotIdx = 0;
+    }
     return false;
   }
-  switch (state) {
-  case LP_OFF:
-    Enter(LP_COLD1);
-    break;
-  case LP_COLD1:
-    if (tState >= cfg.coldMs)
-      Enter(LP_COLD2);
-    break;
-  case LP_COLD2:
-    if (tState >= cfg.phase2Ms)
-      Enter(LP_START);
-    break;
-  case LP_FAULT:
-    tState++;
-    if (tState >= cfg.retryMs)
-      Enter(LP_COLD1);
-    return false; // bus silent while pausing
-  default:
-    break;
+  if (state == LP_OFF) {
+    // Bus comes up: start the schedule and clear the pump errors once,
+    // as the OEM does at ignition on.
+    ClearErrors();
+    tSlot = 0;
+    slotIdx = 0;
   }
+  state = run ? LP_RUN : LP_IDLE;
+  int32_t t = oilTempC + 50;
+  oilRaw = (uint8_t)(t < 0 ? 0 : (t > 255 ? 255 : t));
 
-  // Responses are only expected once the run sequence has started.
-  if (state == LP_START || state == LP_RUN) {
-    if (tNoGood >= cfg.timeoutMs) {
-      timeouts++;
-      Enter(LP_FAULT);
-      return false;
-    }
-    tNoGood++;
-  }
+  if (tDiagBlock)
+    tDiagBlock--;
+  if (tNoValid < 0xFFFFFFu)
+    tNoValid++;
+  if (tNoValid >= cfg.busFaultMs)
+    ownBits |= LINPUMP_ST_NORX;
 
   bool due = false;
-  uint32_t c = tCycle;
-  if (c == 0) {
-    slot->id = LINPUMP_ID_CMD;
-    slot->publish = true;
-    Command(slot->data);
-    alive = (uint8_t)((alive + 1) & 0x0F);
-    due = true;
-  } else if (c == cfg.rxDelayMs && state != LP_COLD1 && state != LP_COLD2) {
-    slot->id = LINPUMP_ID_STATUS;
-    slot->publish = false;
-    due = true;
-  } else if (cfg.pollAux && c == (uint32_t)cfg.rxDelayMs + 8u &&
-             (state == LP_RUN)) {
-    slot->id = auxToggle ? LINPUMP_ID_AUX2 : LINPUMP_ID_AUX1;
-    slot->publish = false;
-    auxToggle ^= 1;
+  if (tSlot == 0) {
+    slot->id = schedule[slotIdx];
+    slot->publish = slot->id == LINPUMP_ID_CMD;
+    if (slot->publish) {
+      Command(slot->data);
+      txAlive = (uint8_t)((txAlive + 1) & 0x0F);
+      if (clearPending) {
+        clearPending = false; // on the bus for exactly one 0x30
+        tDiagBlock = cfg.diagDelayMs;
+      }
+    }
     due = true;
   }
-  tState++;
-  tCycle++;
-  if (tCycle >= cfg.cycleMs)
-    tCycle = 0;
+  if (++tSlot >= cfg.slotMs) {
+    tSlot = 0;
+    slotIdx = (uint8_t)((slotIdx + 1) % 6);
+  }
   return due;
 }
 
-bool LinPump::OnResponse(uint8_t id, const uint8_t *b, int n) {
-  if (n < 9)
-    return false;
-  if (Lin::Checksum(cfg.enhanced, Lin::Pid(id), b, 8) != b[8]) {
-    csErrors++;
-    return false;
-  }
-  uint8_t *dst = id == LINPUMP_ID_STATUS ? st.raw32
-                 : id == LINPUMP_ID_AUX1 ? st.raw33
-                 : id == LINPUMP_ID_AUX2 ? st.raw34
-                                         : 0;
-  if (!dst)
-    return false;
-  for (int i = 0; i < 8; i++)
-    dst[i] = b[i];
-  if (id != LINPUMP_ID_STATUS)
+bool LinPump::CheckAlive(int idx, uint8_t alive) {
+  alive &= 0x0F;
+  int8_t last = lastAlive[idx];
+  lastAlive[idx] = (int8_t)alive;
+  if (last < 0)
     return true;
-  st.status = b[0];
-  st.rpm = (int32_t)b[3] * 32;
-  st.supplymV = (int32_t)b[4] * 100;
-  st.echo = b[6];
-  if (b[0] == LINPUMP_ST_COMMFAULT)
-    commFaults++;
-  if (b[0] == LINPUMP_ST_OK) {
-    st.fresh = true;
-    tNoGood = 0;
-    if (state == LP_START)
-      Enter(LP_RUN);
+  uint8_t d = (uint8_t)((alive - last) & 0x0F);
+  if (d == 0) {
+    // One repeat is tolerated; the second in a row is a fault [C].
+    if (++stuck[idx] >= 2) {
+      aliveErrors++;
+      ownBits |= LINPUMP_ST_ALIVE;
+      return false;
+    }
+    return true;
+  }
+  stuck[idx] = 0;
+  if (d > 2) {
+    aliveErrors++;
+    ownBits |= LINPUMP_ST_ALIVE;
+    return false;
   }
   return true;
+}
+
+bool LinPump::OnResponse(uint8_t id, const uint8_t *b, int n) {
+  if (n < 9 || id < LINPUMP_ID_STATUS || id > LINPUMP_ID_AUX2)
+    return false;
+  if (Lin::Checksum(cfg.enhanced, Lin::Pid(id), b, 8) != b[8]) {
+    linChkErrors++;
+    ownBits |= LINPUMP_ST_LINCHK;
+    return false;
+  }
+  int idx = id - LINPUMP_ID_STATUS;
+  if (id == LINPUMP_ID_STATUS) {
+    if (Lin::Crc8(&b[2], 1) != b[6]) {
+      crcErrors++;
+      if (++badCrc >= 2)
+        ownBits |= LINPUMP_ST_CRC8;
+      return false;
+    }
+    badCrc = 0;
+  }
+  if (!CheckAlive(idx, b[7]))
+    return false;
+
+  uint8_t *dst = idx == 0 ? st.raw32 : (idx == 1 ? st.raw33 : st.raw34);
+  for (int i = 0; i < 8; i++)
+    dst[i] = b[i];
+  st.eb0 = b[0];
+  st.eb1 = b[1];
+  if (id == LINPUMP_ID_STATUS) {
+    st.opPoint = b[2];
+    st.rpm = (int32_t)b[3] * 32;
+    st.currentmA = (int32_t)b[4] * 200;
+    st.supplymV = (int32_t)b[5] * 100;
+    st.seen32 = true;
+    tNoValid = 0;
+  } else if (id == LINPUMP_ID_AUX1) {
+    st.tempRaw = b[2];
+    st.pumpId = ((uint32_t)b[3] << 24) | ((uint32_t)b[4] << 16) |
+                ((uint32_t)b[5] << 8) | b[6];
+  } else {
+    st.hwVersion = b[2];
+    st.swVersion = (uint16_t)((b[3] << 8) | b[4]);
+    st.seen34 = true;
+    // The 330e expects SW variant bits 001 = IEP85 (D_SWVersion_LINIEP
+    // 0x2000, mask 0xE000) [C]; HW check off.
+    if ((st.swVersion & 0xE000) != 0x2000)
+      ownBits |= LINPUMP_ST_SWVER;
+    else
+      ownBits &= ~LINPUMP_ST_SWVER;
+  }
+  return true;
+}
+
+uint32_t LinPump::StatusWord() const {
+  return ((uint32_t)st.eb0 << 16) | ((uint32_t)st.eb1 << 24) | ownBits;
+}
+
+uint8_t LinPump::Classes() const {
+  if (state == LP_OFF || tDiagBlock)
+    return 0;
+  uint32_t w = StatusWord();
+  uint8_t c = 0;
+  if (w & LINPUMP_MASK_TEMP)
+    c |= LPC_TEMPORARY;
+  if (w & LINPUMP_MASK_PERM)
+    c |= LPC_PERMANENT;
+  if (w & LINPUMP_MASK_COMM)
+    c |= LPC_COMM;
+  if (w & LINPUMP_ST_NORX)
+    c |= LPC_BUS;
+  return c;
+}
+
+bool LinPumpRule::Update(uint8_t req, int32_t n_t, int32_t sumpC,
+                         int32_t pSys) {
+  if (req == LINREQ_OFF) {
+    on = speedOn = false;
+    tOff = 0;
+    return false;
+  }
+  if (req == LINREQ_FORCE) {
+    on = true;
+    return true;
+  }
+  if (n_t < 0)
+    n_t = -n_t;
+  speedOn = speedOn ? n_t < cfg.onRpm + cfg.hystRpm : n_t < cfg.onRpm;
+  bool want = speedOn && sumpC >= cfg.tempMin && sumpC <= cfg.tempMax &&
+              pSys < cfg.pMaxMbar;
+  if (want) {
+    on = true;
+    tOff = 0;
+  } else if (on) {
+    tOff += 10;
+    if (tOff >= cfg.offDelayMs) {
+      on = false;
+      tOff = 0;
+    }
+  }
+  return on;
 }

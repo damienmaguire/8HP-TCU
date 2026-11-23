@@ -98,6 +98,7 @@ static Eds eds;
 static Tcu tcu;
 static Shifter shifter;
 static LinPump linPump;
+static LinPumpRule linRule;
 // Speed sensors: ISS (index 0, PA0) and OSS (index 1, PA1). No pin for an
 // aux sensor on V4 (TeethAux is kept as a parameter only).
 static SpeedSensor spdIn, spdOut;
@@ -201,14 +202,18 @@ static void ConfigureShifter() {
 static void ConfigureLin() {
   LinPumpConfig c;
   c.enhanced = Param::GetInt(Param::LinChecksum) == 1;
-  c.cycleMs = Param::GetInt(Param::LinCycleMs);
-  c.rxDelayMs = Param::GetInt(Param::LinRxDelay);
-  c.coldMs = Param::GetInt(Param::LinColdMs);
-  c.phase2Ms = Param::GetInt(Param::LinPhase2Ms);
-  c.timeoutMs = Param::GetInt(Param::LinTimeout);
-  c.retryMs = 500;
-  c.pollAux = Param::GetBool(Param::LinPollAux);
+  c.slotMs = Param::GetInt(Param::LinSlotMs);
+  c.busFaultMs = Param::GetInt(Param::LinBusFault);
+  c.diagDelayMs = 400; // D_t_DiagDelayAfterClearErr_LINIEP [C]
   linPump.Configure(c);
+  LinRuleConfig r;
+  r.onRpm = Param::GetInt(Param::LinPumpRpm);
+  r.hystRpm = Param::GetInt(Param::LinPumpHyst);
+  r.tempMin = Param::GetInt(Param::LinTempMin);
+  r.tempMax = Param::GetInt(Param::LinTempMax);
+  r.pMaxMbar = Param::GetInt(Param::LinPMax);
+  r.offDelayMs = Param::GetInt(Param::LinOffDelay);
+  linRule.Configure(r);
 }
 
 static void ConfigureValveMap() {
@@ -285,8 +290,12 @@ extern "C" void adc1_2_isr(void) {
 // LIN master (aux oil pump) on UART4. The UART hears its own bytes, so
 // the read-back buffer holds the header (and for 0x30 our data), then the
 // pump's response. linpump.h has the protocol; this is just byte moving.
+// Which SH725x LIN channel the OEM uses (and so whether its hardware does
+// the checksum) was not found; the checksum type is a parameter.
 
-#define LIN_FRAME_MS 10 // break + header + 9 bytes at 19200 with margin
+// Read-back is evaluated 9 ms after the header starts: the OEM worst-case
+// 8-byte frame time is 9.1 ms [C], and the next slot starts at 10 ms.
+#define LIN_FRAME_MS 9
 
 static uint8_t linTx[11];
 static volatile uint8_t linTxN = 0, linTxPos = 0;
@@ -295,7 +304,9 @@ static volatile uint8_t linRxN = 0;
 static uint8_t linId = 0;
 static bool linPublish = false;
 static uint8_t linBusyMs = 0;
-static bool linWanted = false;
+static bool linActive = false; // bus on: enabled and the gearbox has a pump
+static bool linWanted = false; // operating point 55
+static int32_t linOilC = 40;
 
 extern "C" void uart4_isr(void) {
   uint32_t sr = USART_SR(LIN_USART);
@@ -362,7 +373,7 @@ static void LinTick1ms() {
     }
   }
   LinSlot slot;
-  if (linPump.Tick1ms(linWanted, &slot) && !linBusyMs)
+  if (linPump.Tick1ms(linActive, linWanted, linOilC, &slot) && !linBusyMs)
     LinStart(slot); // a slot that falls into a busy frame is skipped
   if (linPump.TransceiverAwake())
     DigIo::lin_nslp.Set();
@@ -531,6 +542,7 @@ static void Ms10Task() {
   in.faultClear = false;
   if (Param::GetBool(Param::FaultClear)) {
     Param::SetInt(Param::FaultClear, 0);
+    linPump.ClearErrors(); // one 0x30 with the clear flag
     // Only at standstill in P or N: restart the chips, then let the TCU
     // leave the safe state if nothing is still wrong.
     if (tcu.Out().mode == TCU_SAFE && in.n_ab == 0 &&
@@ -550,14 +562,13 @@ static void Ms10Task() {
   tcu.Tick10ms(in);
   const TcuOutputs &o = tcu.Out();
 
-  // Aux oil pump: line pressure needed at low input speed (Ian's spec).
-  bool pressureNeeded = o.mode == TCU_NEUTRAL || o.mode == TCU_ENGAGE ||
-                        o.mode == TCU_DRIVE || o.mode == TCU_SHIFT;
-  linWanted = LinPumpDemand(Param::GetInt(Param::LinPumpReq),
-                            Param::GetBool(Param::LinPumpEnable),
-                            pressureNeeded, in.n_t,
-                            Param::GetInt(Param::LinPumpRpm),
-                            Param::GetInt(Param::LinPumpHyst), linWanted);
+  // Aux oil pump (330e run rule, Ian's 330E_LIN_OIL_PUMP.md section 7).
+  // The F11 8HP45 has no LIN pump [C], so the bus stays off for it.
+  linActive = Param::GetBool(Param::LinPumpEnable) &&
+              Param::GetInt(Param::GearboxType) == ENG_VAR_330E;
+  linOilC = atfTemp;
+  linWanted = linActive && linRule.Update(Param::GetInt(Param::LinPumpReq),
+                                          in.n_t, atfTemp, o.pSys);
 
   // Discrete outputs. Park-hold magnet: its sequence is not known yet, so
   // it stays off except for the bench test at standstill in P or N.
@@ -738,18 +749,31 @@ static void Ms100Task() {
   // gp_pwm duty (frequency is applied on a parameter change)
   gp_pwm_set(Param::GetInt(Param::GpPwmDuty));
 
-  // LIN pump status
+  // LIN pump status. Faults are reported only (no OEM reaction known).
   const LinPumpStatus &ls = linPump.Status();
   Param::SetInt(Param::lpOn, linWanted);
   Param::SetInt(Param::lpState, linPump.State());
-  Param::SetInt(Param::lpStatus, ls.status);
+  Param::SetInt(Param::lpOpPt, ls.opPoint);
   Param::SetInt(Param::lpRpm, ls.rpm);
+  Param::SetInt(Param::lpCurr, ls.currentmA);
   Param::SetInt(Param::lpVolt, ls.supplymV);
-  Param::SetInt(Param::lpEcho, ls.echo);
-  Param::SetInt(Param::lpFaults, linPump.CommFaults());
-  Param::SetInt(Param::lpCsErr, linPump.ChecksumErrors());
-  Param::SetInt(Param::lpTimeouts, linPump.Timeouts());
-  if (linWanted && linPump.State() == LP_FAULT)
+  Param::SetInt(Param::lpEb0, ls.eb0);
+  Param::SetInt(Param::lpEb1, ls.eb1);
+  Param::SetInt(Param::lpOwn, linPump.StatusWord() & 0xFFFF);
+  Param::SetInt(Param::lpClass, linPump.Classes());
+  Param::SetInt(Param::lpTempRaw, ls.tempRaw);
+  Param::SetInt(Param::lpHw, ls.hwVersion);
+  Param::SetInt(Param::lpSw, ls.swVersion);
+  Param::SetInt(Param::lpIdHi, ls.pumpId >> 16);
+  Param::SetInt(Param::lpIdLo, ls.pumpId & 0xFFFF);
+  Param::SetInt(Param::lpChkErr, linPump.LinChecksumErrors());
+  Param::SetInt(Param::lpCrcErr, linPump.CrcErrors());
+  Param::SetInt(Param::lpAlvErr, linPump.AliveErrors());
+  // Pressure the OEM assumes from a running pump (KF_PIEP_SYS 4 bar [C]).
+  // Shown only; the line pressure model does not use it yet.
+  Param::SetInt(Param::lpPress,
+                linWanted && ls.rpm > 0 ? Param::GetInt(Param::LinPumpP) : 0);
+  if (linPump.Classes())
     ErrorMessage::Post(ERR_LINPUMP);
 }
 
