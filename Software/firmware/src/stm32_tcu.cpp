@@ -113,6 +113,17 @@ public:
 
 #define PRINT_JSON 0 // SDO print request sub-index for the JSON dump
 
+/// Called if code ever calls a virtual function that has no body (a
+/// "pure virtual" call, e.g. through a half-built object). It should never
+/// happen; if it does, stop here so it shows up in the debugger instead of
+/// running on. libopeninv's CanHardware needs this symbol and we link
+/// without the C++ runtime, so we provide it, as the ZombieVerter does.
+/// (GCC 10 needs it to link; newer GCC only references it weakly.)
+extern "C" void __cxa_pure_virtual() {
+  while (1) {
+  }
+}
+
 static Stm32Scheduler *scheduler;
 static CanHardware *can1;
 static CanHardware *can2;

@@ -66,6 +66,12 @@ OBJSL     = stm32_tcu.o hwinit.o slowadc.o terminal_prj.o $(CORE_OBJS) \
             param_save.o errormessage.o stm32_can.o terminalcommands.o
 
 OBJS      = $(patsubst %.o,$(OUT_DIR)/%.o, $(OBJSL))
+
+# libopeninv's cansdo.cpp hands a packed SDO frame to the CAN driver as a
+# uint32_t pointer. The frames it passes sit in word-aligned CAN buffers,
+# so this is harmless (the ZombieVerter builds with the same warning). It
+# is upstream code, so the warning is turned off for this object only.
+$(OUT_DIR)/cansdo.o: CPPFLAGS += -Wno-address-of-packed-member
 vpath %.c src/ libopeninv/src/
 vpath %.cpp src/ libopeninv/src/
 
