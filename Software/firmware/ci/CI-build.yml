@@ -39,6 +39,10 @@ jobs:
         run: |
           make HW_REV=5
 
+      - name: Build TCU firmware for the V4 rev C board (provisional)
+        run: |
+          make HW_REV=6
+
       - uses: actions/upload-artifact@v4
         with:
           name: 8HP TCU firmware binary

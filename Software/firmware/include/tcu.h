@@ -259,6 +259,38 @@ struct TcuOutputs
 /// is switched off and stays off until the request goes away and comes
 /// back. Used on the park magnet so a stuck request (or the bench test)
 /// cannot cook the coil or pretend to hold N without oil pressure.
+/// Where the footbrake for the park release comes from (ParkBrake).
+/// Bypass is for the bench only: on a car the lock must not come out
+/// without the brake.
+enum ParkBrakeSrc
+{
+   PARKBRAKE_CAN = 0,    // VCU frame byte 6 bit 2 (lost with CAN)
+   PARKBRAKE_PARAM = 1,  // the BrakeIn parameter
+   PARKBRAKE_BYPASS = 2, // not asked for at all
+   PARKBRAKE_INPUT = 3   // the 12 V brake switch input (rev C, PD1)
+};
+
+/// Footbrake state for the TCU from the selected source. canOk: the VCU
+/// frame is arriving. pinFitted: this board has the brake input; on a
+/// board without it the Input source always reads "not pressed", so P
+/// stays in rather than coming out without a brake signal.
+bool FootbrakeFrom(int src, bool canOk, bool canBrake, bool paramBrake,
+                   bool pinFitted, bool pinBrake);
+
+/// A switch input that must read the same for n samples in a row before
+/// its state changes (contact bounce). Starts released.
+class Debounce
+{
+public:
+   Debounce() : state(false), count(0) {}
+   bool Tick(bool raw, int n);
+   bool State() const { return state; }
+
+private:
+   bool state;
+   int count;
+};
+
 class OnTimeLimit
 {
 public:

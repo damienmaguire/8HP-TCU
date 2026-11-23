@@ -61,7 +61,17 @@
  *              high (divider with pull-down: INPUT_FLT)
  *  t15_in      PD0, terminal 15 (ignition on), active high
  *  lin_nslp    PD11 drives the TJA1021 SLP_N (fitted on rev B)
+ *
+ * Rev C (HW_REV 6, provisional), in addition:
+ *  brake_in    PD1, J1.46: 12 V brake switch, active high, ZV1.3 input
+ *              circuit (4.7k / 1.5k divider, the 1.5k is the pull-down,
+ *              so INPUT_FLT)
  */
+#if HW_HAS_BRAKE_IN
+#define DIG_IO_BRAKE DIG_IO_ENTRY(brake_in, BRAKE_IN_PORT, BRAKE_IN_PIN, PinMode::INPUT_FLT)
+#else
+#define DIG_IO_BRAKE
+#endif
 #if HW_REV >= 5
 #define DIG_IO_GP
 #define DIG_IO_NEXT                                                            \
@@ -92,6 +102,7 @@
   DIG_IO_ENTRY(lin_nslp, GPIOD, GPIO11, PinMode::OUTPUT)                       \
   DIG_IO_ENTRY(led_out, GPIOE, GPIO2, PinMode::OUTPUT)   /* active low */      \
   DIG_IO_NEXT                                                                  \
+  DIG_IO_BRAKE                                                                 \
   DIG_IO_ENTRY(dummypin, GPIOE, GPIO15, PinMode::INPUT_PD)
 
 #endif // PinMode_PRJ_H_INCLUDED

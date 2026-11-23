@@ -48,6 +48,16 @@
  *  - board NTC TH1 on PB0 (ADC12_IN8): 10k at 25 degC, B 3950 K, 10k
  *    pull-up to 3V3, NTC to GND.
  *  - temperature input pull-ups 2.7k / 2.7k (V4: 2.6k / 470R).
+ *  6 = Stm32_TCU_V4 rev C, PROVISIONAL (still being routed; Bob's full
+ *      answers to follow). Build with `make HW_REV=6`. Rev B plus:
+ *  - dedicated 12 V brake switch input BRAKE_IN on J1.46 -> PD1 (LQFP
+ *    pin 82, 5 V tolerant, EXTI1), the ZV1.3 12 V input circuit (SMF16A
+ *    TVS, 4.7k series, 1.5k to GND, 1 uF), active high. PD1 is unused
+ *    on rev B. SHIFT_DN stays on J1.49.
+ *  Rev C changes with no firmware effect: D1 / D2 / PARK / NOT_PARK get
+ *  the same ZV1.3 circuit (same scaling), TVS diodes on the analogue
+ *  inputs, J1.10 / 11 / 12 nets renamed OUT1_DRV / OUT2_DRV / OUT3_DRV.
+ *  No other rev C pins are assumed.
  */
 #ifndef HW_REV
 #define HW_REV 4
@@ -88,6 +98,14 @@
 #define HW_HAS_BOARD_NTC 0
 #define HW_HAS_GP_DISCRETE 1
 #define HW_SPEED_DMA 0
+#endif
+
+#if HW_REV >= 6
+#define HW_HAS_BRAKE_IN 1   // rev C: 12 V brake switch input
+#define BRAKE_IN_PORT GPIOD
+#define BRAKE_IN_PIN GPIO1  // PD1, J1.46 BRAKE_IN
+#else
+#define HW_HAS_BRAKE_IN 0
 #endif
 
 #define USART_BAUDRATE 115200 // baud, terminal

@@ -677,7 +677,10 @@ Implemented:
     (150 ms) or the motor at `ParkRelRpm`, **and** the footbrake. The
     footbrake comes from `ParkBrake`: 0 = VCU frame byte 6 bit 2
     (default; lost with CAN), 1 = the `BrakeIn` parameter, 2 = bypass
-    (bench only). `parkBrkW` = 1 while it waits for the brake.
+    (bench only), 3 = the 12 V brake switch input on J1.46 / PD1 (for
+    installs without CAN; debounced over 30 ms, active high). `brakePin`
+    shows the input, `brake` the footbrake the TCU uses, and `parkBrkW`
+    = 1 while it waits for the brake.
   * **Magnet**: at most 1 s per energise (`ParkMagMax` is capped at
     1000 ms, and the output itself is cut after 1 s, the `ParkHoldTest`
     bench test included). It is not used to hold N with the motor off:
@@ -767,7 +770,7 @@ parameters to set once the value is known:
 | Park release | `ParkRelRpm`, `ParkRelP`, `ParkRelHold`, `ParkPNDelay` | 700 rpm, 17000 mbar, 2000 ms, 150 ms | Ian 11 Q9d [C] |
 | Park outputs | `ParkCtrl`, `PzylCurrent`, `ParkMagMin`, `ParkMagMax` | off, 550 mA, 100 ms, 1000 ms (max 1000) | Ian 12.1, bench |
 | Park engage limit | `ParkEngKmh`, `NabPerKmh`, `ParkEngNab` | 5 km/h, 25 rpm per km/h [I], 5 rpm | TIS, `N_ABBRTVPSEIN` [C] |
-| Park release footbrake | `ParkBrake`, `BrakeIn` | VcuCan (required), off | TIS; 2 = bench bypass |
+| Park release footbrake | `ParkBrake`, `BrakeIn` | VcuCan (required), off | TIS; 2 = bench bypass, 3 = 12 V brake input (J1.46) |
 | Gear-in pressure source | `GearInMinP`, `GearInPumpMs`, `GearInMotRpm` | 8000 mbar, 1000 ms, 100 rpm | Ian 11 Q9d [I] |
 | Pump fault reaction | `PumpFaultAct`, `PumpFaultRpm` | report, 600 rpm | Ian 11 Q9a [I] |
 | Manual gear / tips | `ManualGear`, `TipOverride`, `Tip12Deb` | Selector, 0 (tips ignored in Auto), 30 ms | Damien |
@@ -837,7 +840,7 @@ retired ids stay free and no id changes its name).
 | Gear | `gear`, `target`, `selGear` (ManualGear / VCU request, else the TCU target; N in P/N, R in R), `opmode`, `zkzu`, `zkab`, `engphase`, `inertia`, `drvMode`, `shiftMd` |
 | Line pressure | `pSys` requested, `pSysMeas` measured (-1: no sensor on V4) |
 | LIN pump | `lpState`, `lpRpm`, `lpCurr`, `lpVolt`, `lpEb0`, `lpEb1`, `lpClass`, `lpBusFlt` |
-| Park | `parkSt` (0 Engaged, 1 Releasing, 2 Released, 3 Engaging, 4 Unheld = INIT / safe), `parkMag` (as driven), `parkWait` (pressure), `parkBrkW` (footbrake), `brake`, `parkInh` (P held off: still moving) |
+| Park | `parkSt` (0 Engaged, 1 Releasing, 2 Released, 3 Engaging, 4 Unheld = INIT / safe), `parkMag` (as driven), `parkWait` (pressure), `parkBrkW` (footbrake), `brake` (as used), `brakePin` (12 V brake input J1.46), `parkInh` (P held off: still moving) |
 | CAN / supply | `canLoss`, `canAct`, `tq0B0` (Nm, absolute 0x0B0 target, 0 = none), `tqQual`, `t15` |
 | Drivers / load | `drvFlags0` / `drvFlags1` (IC2 / IC4 status), `gpFault` (rev B GP outputs), `cpuload` (scheduler), `spdLoad` (rev B speed ISR, 0.1 %) |
 | Lever | `lvMove` (raw move / code), `lvPBtn`, `lvState` (P R N D M), `lvCrcErr`, `lvCntErr`, `lvTmo` |

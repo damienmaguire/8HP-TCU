@@ -1371,6 +1371,57 @@ static void TestSteadyStateThree() {
 
 /* TIS park rules: engage only stopped, release needs the footbrake, the
  * magnet is never on for more than 1 s. */
+// ParkBrake sources, the rev C 12 V brake input included.
+static void TestFootbrakeSrc() {
+  // VcuCan (default): the frame bit, only while CAN is alive
+  CHECK(FootbrakeFrom(PARKBRAKE_CAN, true, true, false, true, false));
+  CHECK(!FootbrakeFrom(PARKBRAKE_CAN, false, true, false, true, true));
+  CHECK(!FootbrakeFrom(PARKBRAKE_CAN, true, false, true, true, true));
+  // Param
+  CHECK(FootbrakeFrom(PARKBRAKE_PARAM, false, false, true, false, false));
+  CHECK(!FootbrakeFrom(PARKBRAKE_PARAM, true, true, false, true, true));
+  // Bypass
+  CHECK(FootbrakeFrom(PARKBRAKE_BYPASS, false, false, false, false, false));
+  // Input: the pin, independent of CAN; never pressed where not fitted
+  CHECK(FootbrakeFrom(PARKBRAKE_INPUT, false, false, false, true, true));
+  CHECK(!FootbrakeFrom(PARKBRAKE_INPUT, true, true, true, true, false));
+  CHECK(!FootbrakeFrom(PARKBRAKE_INPUT, true, true, true, false, true));
+  // Unknown values fall back to VcuCan
+  CHECK(!FootbrakeFrom(9, false, true, true, true, true));
+
+  // Debounce: 3 equal samples to change, a 1-2 sample bounce is ignored
+  Debounce d;
+  CHECK(!d.Tick(true, 3));
+  CHECK(!d.Tick(true, 3));
+  CHECK(d.Tick(true, 3));
+  CHECK(d.Tick(false, 3));
+  CHECK(d.Tick(true, 3)); // bounce: count restarts
+  CHECK(d.Tick(false, 3));
+  CHECK(d.Tick(false, 3));
+  CHECK(!d.Tick(false, 3));
+  CHECK(!d.State());
+
+  // End to end: P only releases with the input pressed
+  TcuConfig c = Cfg();
+  c.parkCtrl = true;
+  c.parkNeedBrake = true;
+  Tcu t;
+  t.Configure(c);
+  t.Ready();
+  TcuInputs in = In();
+  in.selector = SEL_P;
+  for (int i = 0; i < 50; i++)
+    t.Tick10ms(in);
+  in.selector = SEL_D;
+  in.brake = FootbrakeFrom(PARKBRAKE_INPUT, false, false, false, true, false);
+  for (int i = 0; i < 100; i++)
+    t.Tick10ms(in);
+  CHECK(t.Out().parkBrakeWait);
+  in.brake = FootbrakeFrom(PARKBRAKE_INPUT, false, false, false, true, true);
+  t.Tick10ms(in);
+  CHECK(!t.Out().parkBrakeWait);
+}
+
 static void TestParkTis() {
   TcuConfig c = Cfg();
   c.parkCtrl = true;
@@ -1525,6 +1576,7 @@ void TestTcu() {
   TestTipOverride();
   TestPark();
   TestParkTis();
+  TestFootbrakeSrc();
   TestOnTimeLimit();
   TestSteadyStateThree();
   TestGearInSource();

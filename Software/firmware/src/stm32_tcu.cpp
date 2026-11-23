@@ -788,6 +788,9 @@ static void Ms1Task() {
 static int32_t atfTemp = 40;
 static int32_t vbatmV = 12000;
 static OnTimeLimit parkMagLimit; // park magnet: at most 1 s per energise
+#if HW_HAS_BRAKE_IN
+static Debounce brakeDeb; // rev C 12 V brake input
+#endif
 static bool parkMagOn = false;   // park magnet output as driven
 
 // Main 10 ms task: inputs, TCU, outputs, CAN and spot values.
@@ -929,14 +932,18 @@ static void Ms10Task() {
     in.pedal = pp;
   }
   in.tccFault = tccSlip.Fault();
-  // Footbrake for the park release: from the VCU frame (lost with CAN),
-  // from the BrakeIn parameter, or bypassed on the bench (then the TCU
-  // does not ask for it at all, see ConfigureTcu).
-  switch (Param::GetInt(Param::ParkBrake)) {
-  case PARKBRAKE_PARAM: in.brake = Param::GetBool(Param::BrakeIn); break;
-  case PARKBRAKE_BYPASS: in.brake = true; break;
-  default: in.brake = canOk && canRx.brake; break;
-  }
+  // Footbrake for the park release (ParkBrake): the VCU frame (lost with
+  // CAN), the BrakeIn parameter, the 12 V brake input (rev C; debounced
+  // over 3 samples = 30 ms), or bypassed on the bench (then the TCU does
+  // not ask for it at all, see ConfigureTcu).
+#if HW_HAS_BRAKE_IN
+  bool brakePin = brakeDeb.Tick(DigIo::brake_in.Get(), 3);
+#else
+  bool brakePin = false; // no brake input on this board
+#endif
+  Param::SetInt(Param::brakePin, brakePin);
+  in.brake = FootbrakeFrom(Param::GetInt(Param::ParkBrake), canOk, canRx.brake,
+                           Param::GetBool(Param::BrakeIn), HW_HAS_BRAKE_IN, brakePin);
   // LIN pump: delivering time and faults (diagnosis blanked below the
   // load-off voltage, as the OEM does [C]).
   bool uv = Param::GetInt(Param::UvLimit) > 0 && vbatmV < Param::GetInt(Param::UvLimit);

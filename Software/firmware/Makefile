@@ -17,7 +17,8 @@
 ##
 
 # Board: HW_REV=4 Stm32_TCU_V4 (default), HW_REV=5 Stm32_TCU_V4 rev B
-# (`make HW_REV=5`, image stm32_tcu_revb, objects in obj_revb/).
+# (`make HW_REV=5`, image stm32_tcu_revb, objects in obj_revb/),
+# HW_REV=6 rev C, provisional (`make HW_REV=6`, stm32_tcu_revc, obj_revc/).
 HW_REV          ?= 4
 CPUFLAGS        = -mcpu=cortex-m3 -mthumb
 ARCHDEF         = -DSTM32F1 -DHW_REV=$(HW_REV)
@@ -27,12 +28,20 @@ OUT_DIR         = obj
 MAPFILE         = linker.map
 # V4: slow analogue inputs through libopeninv AnaIn (ADC1 + DMA)
 ANAIN_OBJ       = anain.o
-else
+else ifeq ($(HW_REV),5)
 BINARY          = stm32_tcu_revb
 OUT_DIR         = obj_revb
 MAPFILE         = linker_revb.map
 # Rev B: ADC1 + DMA run the speed scan, AnaIn is not linked (slowadc.cpp)
 ANAIN_OBJ       =
+else ifeq ($(HW_REV),6)
+BINARY          = stm32_tcu_revc
+OUT_DIR         = obj_revc
+MAPFILE         = linker_revc.map
+# Rev C: as rev B
+ANAIN_OBJ       =
+else
+$(error HW_REV must be 4 (V4), 5 (rev B) or 6 (rev C))
 endif
 LDSCRIPT        = stm32_tcu.ld
 OPENCM3_LIB     = opencm3_stm32f1
