@@ -34,7 +34,7 @@
  *   330e (tables 0x4C214 / 0x4C21E / 0x4C228): 1st {B, A, C}, R {B, A, D}.
  *     B is the internal launch element on the converterless hybrid.
  *   F11 8HP (tables 0x5BA08 / 0x5BA12 / 0x5BA1C): 1st {C, A, B}, R {D, A, B}.
- * The variant is the Variant parameter (default 330e, which matches the
+ * The variant is the GearboxType parameter (default 330e, which matches the
  * calibration in use); only this table differs for now.
  *
  * V2 starts filling KL_TVKZUCGV2_n (300 -> 50 ms) after V1.

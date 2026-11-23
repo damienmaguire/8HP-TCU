@@ -33,6 +33,8 @@ int main() {
       {"max22200", TestMax22200},   {"sas", TestSas},
       {"engage", TestEngage},       {"speedsens", TestSpeedSens},
       {"tcu", TestTcu},             {"valveout", TestValveOut},
+      {"anaconv", TestAnaConv},     {"linpump", TestLinPump},
+      {"shifter", TestShifter},
   };
   for (const Suite &s : suites) {
     int before = g_failures;

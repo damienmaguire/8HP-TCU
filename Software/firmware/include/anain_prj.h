@@ -24,14 +24,30 @@
 #define NUM_SAMPLES 12
 #define SAMPLE_TIME ADC_SMPR_SMP_7DOT5CYC
 
-/* *** PLACEHOLDER PINS (TBD) ***
- *  vbat      battery / ignition supply through a divider. Scale is the
- *            VbatScale parameter (mV at full scale) until Bob fixes it.
- *  atf_temp  ATF temperature sensor (mechatronic connector). The curve is
- *            the AtfAdc / AtfT table parameters (open question Q4).
+/* Stm32_TCU_V4 analogue inputs on ADC1 (libopeninv AnaIn, DMA scan).
+ * VDDA / VREF+ = +3V3 through L2, so 4095 counts = 3.3 V (not a
+ * precision reference). Conversions in anaconv.h.
+ *  vbat       PC0, ADC12_IN10: 8.2k / 1.8k = 0.18, V = Vadc x 5.556,
+ *             full scale 18.33 V (VbatScale)
+ *  atf_temp1  PC1, ADC12_IN11: TempIn1 J1.31, 2.6k pull-up to 5 V, /2
+ *  atf_temp2  PC2, ADC12_IN12: TempIn2 J1.33, 470R pull-up to 5 V, /2
+ *             Which input the 8HP ATF sensor uses is open (Damien).
+ *  ana_in     PC3, ADC12_IN13: J1.47 spare, /2, 0..6.6 V
+ *
+ * The speed sensor pins spd_in_ana (PA0, ADC12_IN0) and spd_out_ana
+ * (PA1, ADC12_IN1) are sampled by ADC2 at SPEED_TIMER_HZ, not by this
+ * slow scan, so the same channel is never converted by both ADCs at
+ * once. REV: the RC filter on these pins comes with the next revision.
  */
 #define ANA_IN_LIST                                                            \
-  ANA_IN_ENTRY(vbat, GPIOC, 0)     /* TBD */                                   \
-  ANA_IN_ENTRY(atf_temp, GPIOC, 1) /* TBD */
+  ANA_IN_ENTRY(vbat, GPIOC, 0)                                                 \
+  ANA_IN_ENTRY(atf_temp1, GPIOC, 1)                                            \
+  ANA_IN_ENTRY(atf_temp2, GPIOC, 2)                                            \
+  ANA_IN_ENTRY(ana_in, GPIOC, 3)
+
+/* ADC2 injected inputs for the speed sensors (hwinit.cpp speed_adc_setup). */
+#define SPEED_ANA_LIST                                                         \
+  SPEED_ANA_ENTRY(spd_in_ana, GPIOA, 0)                                        \
+  SPEED_ANA_ENTRY(spd_out_ana, GPIOA, 1)
 
 #endif // ANAIN_PRJ_H_INCLUDED

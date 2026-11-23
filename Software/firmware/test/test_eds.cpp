@@ -33,8 +33,8 @@ static void TestCurves() {
   CHECK(Eds::PressureToCurrent(EDS_D, 8000) < Eds::PressureToCurrent(EDS_D, 2000));
   CHECK(Eds::PressureToCurrent(EDS_E, 8000) < Eds::PressureToCurrent(EDS_E, 2000));
   CHECK(Eds::PressureToCurrent(EDS_SYS, 15000) < Eds::PressureToCurrent(EDS_SYS, 5000));
-  // No curve for the on/off outputs
-  CHECK_EQ(Eds::PressureToCurrent(EDS_PARK, 5000), 0);
+  // No curve for the current-command outputs
+  CHECK_EQ(Eds::PressureToCurrent(EDS_PZYL, 5000), 0);
 }
 
 static void TestSlewAndSafe() {
@@ -51,10 +51,10 @@ static void TestSlewAndSafe() {
   CHECK_EQ(e.Setpoint(EDS_A), 3000);
   e.SetCurrent(EDS_A, 99999);
   CHECK_EQ(e.Target(EDS_A), 8500); // clamped to iMax
-  // On/off outputs are not slew limited
-  e.SetCurrent(EDS_PARK, 5000);
+  // Current-command outputs are slew limited like the rest
+  e.SetCurrent(EDS_PZYL, 5000);
   e.Tick10ms();
-  CHECK_EQ(e.Setpoint(EDS_PARK), 5000);
+  CHECK_EQ(e.Setpoint(EDS_PZYL), 600);
   // Safe state drops everything at once
   e.SafeState();
   e.Tick1ms();
@@ -94,7 +94,7 @@ static void TestDither() {
   c.slewPer10ms = 0; // jump straight to the target
   e.Configure(c);
   e.SetCurrent(EDS_A, 4000);
-  e.SetCurrent(EDS_PARK, 4000);
+  e.SetCurrent(EDS_PZYL, 4000);
   e.Tick10ms();
   int32_t mn = 99999, mx = 0;
   for (int i = 0; i < 16; i++) {
@@ -102,7 +102,7 @@ static void TestDither() {
     int32_t o = e.Output(EDS_A);
     mn = o < mn ? o : mn;
     mx = o > mx ? o : mx;
-    CHECK_EQ(e.Output(EDS_PARK), 4000); // on/off outputs never dither
+    CHECK_EQ(e.Output(EDS_PZYL), 4000); // current-command outputs never dither
   }
   CHECK_EQ(mn, 3700);
   CHECK_EQ(mx, 4300);

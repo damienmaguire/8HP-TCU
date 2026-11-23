@@ -62,10 +62,13 @@ void TestSpeedSens() {
   s.Tick10ms();
   CHECK_EQ(s.Rpm(), 0);
 
-  // ATF table: falling NTC-style curve
-  const int32_t a[] = {400, 1000, 1800, 2600, 3300, 3900};
-  const int32_t t[] = {140, 100, 70, 40, 10, -30};
-  CHECK_EQ(AtfTemp::FromAdc(400, a, t, 6), 140);
-  CHECK_EQ(AtfTemp::FromAdc(2200, a, t, 6), 55);
-  CHECK_EQ(AtfTemp::FromAdc(4095, a, t, 6), -30);
+  // V4 time base: ADC2 samples at 40 kHz. 60 teeth at 1000 rpm =
+  // 1000 edges/s = 40 samples per edge.
+  s.Configure(40000, 60, 100, 30);
+  s.Edge(40);
+  s.Tick10ms();
+  for (int i = 0; i < 10; i++)
+    s.Edge(40);
+  s.Tick10ms();
+  CHECK_EQ(s.Rpm(), 1000);
 }

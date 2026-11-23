@@ -111,24 +111,40 @@ int Tcu::ChooseTarget(const TcuInputs &in) const {
     return g;
   if (!in.canOk && cfg.canLossMode == CANLOSS_HOLD) {
     // CAN lost, hold mode: no upshifts. Still step down as the car slows
-    // so it does not lug in a tall gear (same rule as GSEL_AUTO).
+    // so it does not lug in a tall gear (same rule as SHIFT_AUTO).
     if (g > 1 && in.n_t < cfg.autoDownRpm &&
         Gears::SyncSpeed(g - 1, in.n_ab) < cfg.autoUpRpm - 200)
       return g - 1;
     return g;
   }
-  if (cfg.gearSelMode == GSEL_VCU) {
+  // Lugging protection (Auto and Manual): step down when the input speed
+  // is low and the lower gear will not immediately want to go up again.
+  bool lug = g > 1 && in.n_t < cfg.autoDownRpm &&
+             Gears::SyncSpeed(g - 1, in.n_ab) < cfg.autoUpRpm - 200;
+  if (cfg.shiftMode == SHIFT_VCU) {
     int r = in.gearReq;
     if (r < 1)
       return g; // 0 = hold
     return r > top ? top : r;
   }
-  // GSEL_AUTO: upshift on input speed, downshift when the input speed is
-  // low and the lower gear will not immediately want to upshift again.
+  if (cfg.shiftMode == SHIFT_MANUAL) {
+    // Driver tips, one gear per tip, inside the rpm limits. The interlock
+    // and the shift sequences are the same as in Auto. A tip that would
+    // over-rev (down) or lug (up) the input is ignored, not queued.
+    if (lug)
+      return g - 1;
+    if (in.tipUp && g < top &&
+        Gears::SyncSpeed(g + 1, in.n_ab) >= cfg.manMinRpm)
+      return g + 1;
+    if (in.tipDown && g > 1 &&
+        Gears::SyncSpeed(g - 1, in.n_ab) <= cfg.manMaxRpm)
+      return g - 1;
+    return g;
+  }
+  // SHIFT_AUTO: upshift on input speed, downshift when lugging.
   if (g < top && in.n_t > cfg.autoUpRpm)
     return g + 1;
-  if (g > 1 && in.n_t < cfg.autoDownRpm &&
-      Gears::SyncSpeed(g - 1, in.n_ab) < cfg.autoUpRpm - 200)
+  if (lug)
     return g - 1;
   return g;
 }

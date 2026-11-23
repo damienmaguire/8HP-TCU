@@ -34,7 +34,9 @@ static TcuConfig Cfg() {
   c.engage.syncConfirmMs = 80;
   c.engage.tqZeroNm = 10;
   c.engage.variant = ENG_VAR_330E;
-  c.gearSelMode = GSEL_VCU;
+  c.shiftMode = SHIFT_VCU;
+  c.manMaxRpm = 6000;
+  c.manMinRpm = 1000;
   c.applyP = 16500;
   c.lineOffset = 0;
   c.lineMax = 25000;
@@ -418,7 +420,143 @@ static void TestCoastShift() {
   CHECK_EQ(t.Out().fault, TF_NONE);
 }
 
+/// Output speed that puts the input at rpm in gear g.
+static int32_t NabFor(int g, int32_t rpm) {
+  return (int32_t)(((int64_t)rpm * 1000) / Gears::RatioX1000(g));
+}
+
+/// Run until the TCU is back in DRIVE in some gear (or limit ticks).
+static bool Settle(Tcu &t, TcuInputs &in, int limit = 400) {
+  for (int i = 0; i < limit; i++) {
+    if (!RunTicks(t, in, 1))
+      return false;
+    if (t.Out().mode == TCU_DRIVE && i > 2)
+      return true;
+  }
+  return t.Out().mode == TCU_DRIVE;
+}
+
+/* Manual mode: one gear per tip, rpm limits, lugging protection. */
+static void TestManual() {
+  Tcu t;
+  TcuConfig c = Cfg();
+  c.shiftMode = SHIFT_MANUAL;
+  t.Configure(c);
+  TcuInputs in = In();
+  t.Ready();
+  t.Tick10ms(in);
+  CHECK(EngageTo(t, in, SEL_D));
+  CHECK_EQ(t.Out().gear, GEAR_1);
+
+  // High input speed in 1st: Auto would upshift, Manual holds the gear.
+  in.n_ab = NabFor(1, 5000);
+  in.n_t = 5000;
+  in.gearReq = 8; // the VCU field is ignored in Manual
+  CHECK(RunTicks(t, in, 50));
+  CHECK_EQ(t.Out().gear, 1);
+  CHECK_EQ(t.Out().mode, TCU_DRIVE);
+
+  // Tip up: one gear
+  in.tipUp = true;
+  CHECK(RunTicks(t, in, 1));
+  in.tipUp = false;
+  CHECK_EQ(t.Out().mode, TCU_SHIFT);
+  CHECK_EQ(t.Out().target, 2);
+  CHECK(Settle(t, in));
+  CHECK_EQ(t.Out().gear, 2);
+  CHECK(RunTicks(t, in, 50));
+  CHECK_EQ(t.Out().gear, 2); // no repeat without a new tip
+
+  // Tip down that would over-rev the input (1st above ManMaxRpm): refused
+  in.n_ab = NabFor(1, 6500);
+  CHECK(RunTicks(t, in, 2));
+  in.tipDown = true;
+  CHECK(RunTicks(t, in, 1));
+  in.tipDown = false;
+  CHECK(RunTicks(t, in, 50));
+  CHECK_EQ(t.Out().gear, 2);
+  CHECK_EQ(t.Out().mode, TCU_DRIVE);
+
+  // Tip down inside the limit: accepted
+  in.n_ab = NabFor(1, 4000);
+  CHECK(RunTicks(t, in, 2));
+  in.tipDown = true;
+  CHECK(RunTicks(t, in, 1));
+  in.tipDown = false;
+  CHECK_EQ(t.Out().target, 1);
+  CHECK(Settle(t, in));
+  CHECK_EQ(t.Out().gear, 1);
+
+  // Tip up that would lug the input (2nd below ManMinRpm): refused
+  in.n_ab = NabFor(2, 800);
+  CHECK(RunTicks(t, in, 2));
+  in.tipUp = true;
+  CHECK(RunTicks(t, in, 1));
+  in.tipUp = false;
+  CHECK(RunTicks(t, in, 50));
+  CHECK_EQ(t.Out().gear, 1);
+
+  // Top gear limit still applies
+  c.topGear = 1;
+  t.Configure(c);
+  in.n_ab = NabFor(1, 4000);
+  in.tipUp = true;
+  CHECK(RunTicks(t, in, 1));
+  in.tipUp = false;
+  CHECK(RunTicks(t, in, 20));
+  CHECK_EQ(t.Out().gear, 1);
+  c.topGear = 8;
+  t.Configure(c);
+
+  // Climb to 3rd with tips, then slow down without tipping: the
+  // lugging protection steps down on its own.
+  for (int g = 1; g < 3; g++) {
+    in.n_ab = NabFor(g, 4500);
+    CHECK(RunTicks(t, in, 2));
+    in.tipUp = true;
+    CHECK(RunTicks(t, in, 1));
+    in.tipUp = false;
+    CHECK(Settle(t, in));
+  }
+  CHECK_EQ(t.Out().gear, 3);
+  in.n_ab = NabFor(3, 1200); // below AutoDownRpm (1500) in 3rd
+  bool down = false;
+  for (int i = 0; i < 400 && !down; i++) {
+    CHECK(RunTicks(t, in, 1));
+    down = t.Out().gear < 3;
+  }
+  CHECK(down);
+  CHECK_EQ(t.Out().fault, TF_NONE);
+
+  // The interlock still guards Manual: never more than 3 clutches in
+  // gear, 4 during a swap (checked on every tick of the runs above by
+  // the TCU itself; here just confirm no interlock fault was raised).
+  CHECK(t.Out().interlock == 0);
+}
+
+/* Auto mode picks gears on its own thresholds. */
+static void TestAuto() {
+  Tcu t;
+  TcuConfig c = Cfg();
+  c.shiftMode = SHIFT_AUTO;
+  t.Configure(c);
+  TcuInputs in = In();
+  t.Ready();
+  t.Tick10ms(in);
+  CHECK(EngageTo(t, in, SEL_D));
+  in.n_ab = NabFor(1, 4500); // above AutoUpRpm in 1st
+  in.tipDown = true;          // tips are ignored in Auto
+  bool up = false;
+  for (int i = 0; i < 400 && !up; i++) {
+    CHECK(RunTicks(t, in, 1));
+    up = t.Out().gear >= 2;
+  }
+  CHECK(up);
+}
+
 void TestTcu() {
+  TestManual();
+  TestAuto();
   TestEngageAndShift();
   TestReverse();
   TestFaults();

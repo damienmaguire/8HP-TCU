@@ -23,7 +23,7 @@
 static Max22200Config DefaultCfg() {
   Max22200Config c;
   c.ifsmA = 1000;
-  c.halfScale = false;
+  c.halfScaleMask = 0;
   c.freq80k = false;
   c.freqDiv = 0;
   c.slewControl = false;
@@ -61,7 +61,7 @@ static void TestCodes() {
 
   // CFG word: CDR, low side, HOLD in [30:24]
   Max22200Config c = DefaultCfg();
-  uint32_t w = Max22200::CfgWord(c, 108, 0, 0);
+  uint32_t w = Max22200::CfgWord(c, false, 108, 0, 0);
   CHECK_EQ((w >> 24) & 0x7F, 108);
   CHECK_EQ(w & MAX22200_CFG_HFS, 0);
   CHECK_EQ(w & MAX22200_CFG_VDRNCDR, 0);
@@ -69,10 +69,9 @@ static void TestCodes() {
   CHECK_EQ(w & MAX22200_CFG_TRGNSPI, 0);
   CHECK(w & MAX22200_CFG_OL_EN);
   CHECK_EQ(w & MAX22200_CFG_HHF_EN, 0);
-  CHECK_EQ((Max22200::CfgWord(c, 127, 127, 0) >> 24) & 0x7F, 126);
+  CHECK_EQ((Max22200::CfgWord(c, false, 127, 127, 0) >> 24) & 0x7F, 126);
   c.freqDiv = 3;
-  c.halfScale = true;
-  w = Max22200::CfgWord(c, 10, 50, 20);
+  w = Max22200::CfgWord(c, true, 10, 50, 20);
   CHECK_EQ((w >> 4) & 3, 3);
   CHECK(w & MAX22200_CFG_HFS);
   CHECK_EQ((w >> 16) & 0x7F, 50);
@@ -91,7 +90,7 @@ static void TestInitAndWrites() {
   CHECK_EQ(bus.reg[1][0] >> 24, 0);              // all channels off
   CHECK_EQ(bus.reg[0][0] & MAX22200_ST_UVM, MAX22200_ST_UVM); // other chip untouched
   for (int ch = 0; ch < 8; ch++)
-    CHECK_EQ(bus.reg[1][1 + ch], Max22200::CfgWord(DefaultCfg(), 0, 0, 0));
+    CHECK_EQ(bus.reg[1][1 + ch], Max22200::CfgWord(DefaultCfg(), false, 0, 0, 0));
 
   // HOLD update is a single-byte write, and only when the code changes
   int n = bus.write8Count;
@@ -103,7 +102,7 @@ static void TestInitAndWrites() {
   CHECK_EQ(bus.write8Count, n + 1);
   // The rest of the CFG word survives an 8-bit write
   CHECK_EQ(bus.reg[1][1 + 3] & 0x00FFFFFFu,
-           Max22200::CfgWord(DefaultCfg(), 0, 0, 0) & 0x00FFFFFFu);
+           Max22200::CfgWord(DefaultCfg(), false, 0, 0, 0) & 0x00FFFFFFu);
   // Ceiling = 850 mA even if more is asked
   chip.SetCurrent(3, 20000);
   CHECK_EQ(bus.reg[1][1 + 3] >> 24, 108);

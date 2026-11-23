@@ -19,7 +19,7 @@
 #include "max22200.h"
 
 Max22200::Max22200(Max22200Bus &b, uint8_t d)
-    : bus(b), dev(d), cfg(), maxCode(0), onMask(0), lastFlags(0),
+    : bus(b), dev(d), cfg(), maxCode(), onMask(0), lastFlags(0),
       echoError(false) {
   for (int i = 0; i < MAX22200_CHANNELS; i++) {
     holdCode[i] = 0;
@@ -61,14 +61,14 @@ int32_t Max22200::CodeToCurrent(uint8_t code, uint16_t ifsmA, bool halfScale) {
   return (code * fs + 63) / 127;
 }
 
-uint32_t Max22200::CfgWord(const Max22200Config &c, uint8_t hold, uint8_t hit,
+uint32_t Max22200::CfgWord(const Max22200Config &c, bool hfs, uint8_t hold, uint8_t hit,
                            uint8_t hitT) {
   if (hold > MAX22200_CODE_MAX)
     hold = MAX22200_CODE_MAX;
   if (hit > MAX22200_CODE_MAX)
     hit = MAX22200_CODE_MAX;
   uint32_t w = 0;
-  if (c.halfScale)
+  if (hfs)
     w |= MAX22200_CFG_HFS;
   w |= (uint32_t)(hold & 0x7F) << MAX22200_CFG_HOLD_SHIFT;
   // TRGnSPI = 0: channel switched by its ONCH bit over SPI, not TRIGA/B.
@@ -142,8 +142,9 @@ uint32_t Max22200::Read32(uint8_t reg, uint32_t sdiMask) {
 
 bool Max22200::Init(const Max22200Config &c) {
   cfg = c;
-  maxCode = CurrentToCode((int32_t)cfg.maxCurrentmA * 10, cfg.ifsmA,
-                          cfg.halfScale, MAX22200_CODE_MAX);
+  for (int h = 0; h < 2; h++)
+    maxCode[h] = CurrentToCode((int32_t)cfg.maxCurrentmA * 10, cfg.ifsmA,
+                               h != 0, MAX22200_CODE_MAX);
   echoError = false;
 
   // Step 1: read STATUS to clear UVM and release nFAULT.
@@ -160,7 +161,8 @@ bool Max22200::Init(const Max22200Config &c) {
   // Step 3: configure every channel with zero current.
   for (uint8_t ch = 0; ch < MAX22200_CHANNELS; ch++) {
     holdCode[ch] = 0;
-    Write32(MAX22200_REG_CFG_CH(ch), CfgWord(cfg, 0, hitCode[ch], hitTime[ch]));
+    Write32(MAX22200_REG_CFG_CH(ch),
+            CfgWord(cfg, Hfs(ch), 0, hitCode[ch], hitTime[ch]));
   }
 
   // Step 4: read STATUS again; UVM and the other flags must be clear.
@@ -172,22 +174,22 @@ bool Max22200::Init(const Max22200Config &c) {
 void Max22200::SetHit(uint8_t ch, const Max22200Hit &hit) {
   ch &= 7;
   hitCode[ch] = CurrentToCode((int32_t)hit.hitmA * 10, cfg.ifsmA,
-                              cfg.halfScale, maxCode);
+                              Hfs(ch), maxCode[Hfs(ch)]);
   hitTime[ch] = hit.hitTime;
   Write32(MAX22200_REG_CFG_CH(ch),
-          CfgWord(cfg, holdCode[ch], hitCode[ch], hitTime[ch]));
+          CfgWord(cfg, Hfs(ch), holdCode[ch], hitCode[ch], hitTime[ch]));
 }
 
 void Max22200::SetCurrent(uint8_t ch, int32_t current_0p1mA) {
   ch &= 7;
   uint8_t code =
-      CurrentToCode(current_0p1mA, cfg.ifsmA, cfg.halfScale, maxCode);
+      CurrentToCode(current_0p1mA, cfg.ifsmA, Hfs(ch), maxCode[Hfs(ch)]);
   if (code == holdCode[ch])
     return;
   holdCode[ch] = code;
   // Top byte of CFG_CHx is HFS + HOLD[6:0].
   Write8(MAX22200_REG_CFG_CH(ch),
-         (uint8_t)((cfg.halfScale ? 0x80 : 0) | (code & 0x7F)));
+         (uint8_t)((Hfs(ch) ? 0x80 : 0) | (code & 0x7F)));
 }
 
 void Max22200::SetOnMask(uint8_t mask) {

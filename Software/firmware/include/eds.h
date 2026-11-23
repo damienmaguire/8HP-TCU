@@ -47,12 +47,12 @@ enum EdsValve
    EDS_D,
    EDS_E,
    EDS_SYS,  // line pressure regulator
-   EDS_K0,   // hybrid disconnect clutch (TCC slot); kept open for an EV
-   EDS_POS,  // position / cooling valve, current command only
+   EDS_K0,   // hybrid disconnect clutch (V4 "TCC", OUT7); kept open for an EV
+   EDS_POS,  // position / cooling valve, current command only (V4 "PREL"? see README)
    EDS_PZYL, // park-lock cylinder valve (MvPZyl), current command only
-   EDS_SOL1, // on/off valve with HIT/HOLD (OUT7 in the OEM unit)
-   EDS_PARK, // park-lock holding magnet (OUT11), on/off
    EDS_COUNT
+   // V4 board: there is no Sol1, and the park-hold magnet is not on the
+   // MAX22200 (NCV8402 on PC7, digio park_hold).
 };
 
 /// Valves A..K0 have a pressure-to-current curve.
@@ -84,7 +84,7 @@ public:
 
    /// Pressure command for A..K0 in mbar. Called by the 10 ms layer.
    void SetPressure(EdsValve v, int32_t p_mbar, int32_t atfTemp);
-   /// Direct current command in 0.1 mA (POS, PZYL, SOL1, PARK, tests).
+   /// Direct current command in 0.1 mA (POS, PZYL, tests).
    void SetCurrent(EdsValve v, int32_t i_0p1mA);
    /// Enable or disable dither on one valve. On/off outputs never dither.
    void SetDither(EdsValve v, bool on) { ditherOn[v] = on; }

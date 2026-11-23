@@ -135,7 +135,9 @@ protected:
 struct Max22200Config
 {
    uint16_t ifsmA;     // full-scale current for HFS = 0, set by RREF
-   bool halfScale;     // HFS = 1: full scale halved, better resolution
+   uint8_t halfScaleMask; // bit per channel: HFS = 1, full scale halved
+                          // (finer steps, RON doubles; only for coils
+                          // that stay below IFS / 2)
    bool freq80k;       // master oscillator 80 kHz instead of 100 kHz
    uint8_t freqDiv;    // FREQ_CFG: 0 = /4, 1 = /3, 2 = /2, 3 = /1
    bool slewControl;   // SRC bit, only for chopping below 50 kHz
@@ -143,7 +145,7 @@ struct Max22200Config
    uint16_t maxCurrentmA; // hard ceiling on any HOLD code (e.g. 850 mA)
 };
 
-/// Optional HIT phase for an on/off solenoid (park magnet, Sol1).
+/// Optional HIT phase for an on/off solenoid (none on the V4 board).
 struct Max22200Hit
 {
    uint16_t hitmA;  // 0 = no HIT phase
@@ -205,7 +207,7 @@ public:
    /// Build a command byte (Table 9).
    static uint8_t CommandByte(uint8_t reg, bool write, bool eightBit);
    /// Build a 32-bit CFG_CHx value for a CDR low-side channel.
-   static uint32_t CfgWord(const Max22200Config &cfg, uint8_t holdCode,
+   static uint32_t CfgWord(const Max22200Config &cfg, bool hfs, uint8_t holdCode,
                            uint8_t hitCode, uint8_t hitTime);
 
    uint8_t HoldCode(uint8_t ch) const { return holdCode[ch & 7]; }
@@ -219,7 +221,8 @@ private:
    Max22200Bus &bus;
    uint8_t dev;
    Max22200Config cfg;
-   uint8_t maxCode;
+   uint8_t maxCode[2]; // HOLD ceiling for HFS = 0 and HFS = 1
+   bool Hfs(uint8_t ch) const { return (cfg.halfScaleMask >> ch) & 1; }
    uint8_t holdCode[MAX22200_CHANNELS];
    uint8_t hitCode[MAX22200_CHANNELS];
    uint8_t hitTime[MAX22200_CHANNELS];

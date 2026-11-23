@@ -23,7 +23,7 @@
 static Max22200Config Cfg() {
   Max22200Config c;
   c.ifsmA = 1000;
-  c.halfScale = false;
+  c.halfScaleMask = 0;
   c.freq80k = false;
   c.freqDiv = 0;
   c.slewControl = false;
@@ -47,17 +47,20 @@ void TestValveOut() {
   v.SetMap(EDS_B, 16); // out of range
   CHECK(!v.Validate());
   v.SetMap(EDS_B, 1);
-  v.SetMap(EDS_PARK, VALVE_NOT_FITTED); // optional valves may be absent
+  v.SetMap(EDS_PZYL, VALVE_NOT_FITTED); // optional valves may be absent
   CHECK(v.Validate());
   v.SetMap(EDS_SYS, VALVE_NOT_FITTED);
   CHECK(!v.Validate());
   v.SetMap(EDS_SYS, 5);
+  v.SetMap(EDS_PZYL, 8); // PZYL on chip 1 channel 0
   v.AttachChip(1, 0); // second chip not fitted but PZYL mapped to it
   CHECK(!v.Validate());
   v.AttachChip(1, &c1);
 
-  Max22200Hit hit = {0, 0};
-  CHECK(v.Init(Cfg(), hit));
+  // HFS per channel: bit = global channel. C (chip 0 ch 2) on half scale.
+  CHECK(v.Init(Cfg(), 1u << 2));
+  CHECK(bus.reg[0][1 + 2] & MAX22200_CFG_HFS);
+  CHECK(!(bus.reg[0][1 + 0] & MAX22200_CFG_HFS));
 
   Eds e;
   EdsConfig ec = e.Config();
@@ -67,32 +70,33 @@ void TestValveOut() {
   e.Configure(ec);
   e.SetCurrent(EDS_A, 8500);
   e.SetCurrent(EDS_C, 4000);
-  e.SetCurrent(EDS_SOL1, 5000); // chip 1 channel 1
+  e.SetCurrent(EDS_PZYL, 5000); // chip 1 channel 0
   e.Tick10ms();
   e.Tick1ms();
   v.Update(e);
   CHECK_EQ(bus.reg[0][1 + 0] >> 24, 108);
-  CHECK_EQ(bus.reg[0][1 + 2] >> 24, 51);
-  CHECK_EQ(bus.reg[1][1 + 1] >> 24, 64);
+  // C on half scale: 400 mA of 500 mA full scale = code 102, HFS bit set
+  CHECK_EQ(bus.reg[0][1 + 2] >> 24, 0x80 | 102);
+  CHECK_EQ(bus.reg[1][1 + 0] >> 24, 64);
   CHECK_EQ(bus.reg[0][0] >> 24, 0x05); // A and C on
-  CHECK_EQ(bus.reg[1][0] >> 24, 0x02); // SOL1 on
+  CHECK_EQ(bus.reg[1][0] >> 24, 0x01); // PZYL on
   v.AllOff();
   CHECK_EQ(bus.reg[0][0] >> 24, 0);
   CHECK_EQ(bus.reg[1][0] >> 24, 0);
 
   // OCP on chip 0 channel 2 = valve C (critical); open load on chip 1
-  // channel 1 = SOL1 (not critical)
+  // channel 0 = PZYL (not critical)
   bus.reg[0][MAX22200_REG_FAULT] = 0x04u << 24;
-  bus.reg[1][MAX22200_REG_FAULT] = 0x02u << 8;
+  bus.reg[1][MAX22200_REG_FAULT] = 0x01u << 8;
   uint16_t f = v.PollFaults();
-  CHECK_EQ(f, (1u << EDS_C) | (1u << EDS_SOL1));
+  CHECK_EQ(f, (1u << EDS_C) | (1u << EDS_PZYL));
   CHECK(f & ValveOut::CriticalMask());
-  CHECK(!(ValveOut::CriticalMask() & (1u << EDS_SOL1)));
+  CHECK(!(ValveOut::CriticalMask() & (1u << EDS_PZYL)));
   CHECK(!v.ChipLost());
   CHECK_EQ(v.PollFaults(), 0); // cleared
 
   // Over-temperature flags every valve on that chip
   bus.reg[1][0] |= MAX22200_ST_OVT;
   f = v.PollFaults();
-  CHECK_EQ(f, (1u << EDS_PZYL) | (1u << EDS_SOL1));
+  CHECK_EQ(f, 1u << EDS_PZYL);
 }

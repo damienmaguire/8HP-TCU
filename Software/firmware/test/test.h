@@ -56,5 +56,8 @@ void TestEngage();
 void TestSpeedSens();
 void TestTcu();
 void TestValveOut();
+void TestAnaConv();
+void TestLinPump();
+void TestShifter();
 
 #endif // TEST_H_INCLUDED

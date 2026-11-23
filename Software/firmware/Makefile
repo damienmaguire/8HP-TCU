@@ -44,7 +44,8 @@ LDFLAGS   = -Llibopencm3/lib -T$(LDSCRIPT) -march=armv7 -nostartfiles \
 
 # Hardware-free control code (also built by the host tests)
 CORE_OBJS = caltypes.o cal_330e.o gears.o interlock.o max22200.o eds.o sas.o \
-            engage.o speedsens.o tcu.o valveout.o
+            engage.o speedsens.o tcu.o valveout.o anaconv.o linpump.o \
+            shifter.o
 # Firmware glue and libopeninv
 OBJSL     = stm32_tcu.o hwinit.o terminal_prj.o $(CORE_OBJS) \
             stm32scheduler.o params.o terminal.o my_string.o digio.o my_fp.o \

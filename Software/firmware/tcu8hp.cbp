@@ -50,6 +50,7 @@
 			</Target>
 		</Build>
 		<Unit filename="include/anain_prj.h" />
+		<Unit filename="include/anaconv.h" />
 		<Unit filename="include/cal_330e.h" />
 		<Unit filename="include/caltypes.h" />
 		<Unit filename="include/digio_prj.h" />
@@ -60,21 +61,26 @@
 		<Unit filename="include/hwdefs.h" />
 		<Unit filename="include/hwinit.h" />
 		<Unit filename="include/interlock.h" />
+		<Unit filename="include/linpump.h" />
 		<Unit filename="include/max22200.h" />
 		<Unit filename="include/param_prj.h" />
 		<Unit filename="include/sas.h" />
+		<Unit filename="include/shifter.h" />
 		<Unit filename="include/speedsens.h" />
 		<Unit filename="include/tcu.h" />
 		<Unit filename="include/valveout.h" />
 		<Unit filename="src/cal_330e.cpp" />
 		<Unit filename="src/caltypes.cpp" />
+		<Unit filename="src/anaconv.cpp" />
 		<Unit filename="src/eds.cpp" />
 		<Unit filename="src/engage.cpp" />
 		<Unit filename="src/gears.cpp" />
 		<Unit filename="src/hwinit.cpp" />
 		<Unit filename="src/interlock.cpp" />
+		<Unit filename="src/linpump.cpp" />
 		<Unit filename="src/max22200.cpp" />
 		<Unit filename="src/sas.cpp" />
+		<Unit filename="src/shifter.cpp" />
 		<Unit filename="src/speedsens.cpp" />
 		<Unit filename="src/stm32_tcu.cpp" />
 		<Unit filename="src/tcu.cpp" />
@@ -82,14 +88,17 @@
 		<Unit filename="src/valveout.cpp" />
 		<Unit filename="test/fake_max22200.h" />
 		<Unit filename="test/test.h" />
+		<Unit filename="test/test_anaconv.cpp" />
 		<Unit filename="test/test_eds.cpp" />
 		<Unit filename="test/test_engage.cpp" />
 		<Unit filename="test/test_gears.cpp" />
 		<Unit filename="test/test_interlock.cpp" />
+		<Unit filename="test/test_linpump.cpp" />
 		<Unit filename="test/test_lookup.cpp" />
 		<Unit filename="test/test_main.cpp" />
 		<Unit filename="test/test_max22200.cpp" />
 		<Unit filename="test/test_sas.cpp" />
+		<Unit filename="test/test_shifter.cpp" />
 		<Unit filename="test/test_speedsens.cpp" />
 		<Unit filename="test/test_tcu.cpp" />
 		<Unit filename="test/test_valveout.cpp" />

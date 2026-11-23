@@ -92,8 +92,8 @@ void Eds::Tick10ms() {
       continue;
     }
     int32_t d = target[v] - setpoint[v];
-    // On/off outputs and a zero slew setting switch straight through.
-    if (cfg.slewPer10ms <= 0 || v >= EDS_SOL1) {
+    // A zero slew setting switches straight through.
+    if (cfg.slewPer10ms <= 0) {
       setpoint[v] = target[v];
     } else if (d > cfg.slewPer10ms) {
       setpoint[v] += cfg.slewPer10ms;
@@ -125,7 +125,7 @@ void Eds::Tick1ms() {
     int32_t i = safe ? 0 : setpoint[v];
     // Dither only inside the working range, as the OEM does (off at the
     // 50 mA and 850 mA end points), so it never pushes past either end.
-    if (!safe && ditherOn[v] && v < EDS_SOL1 && i > cfg.iMin + cfg.ditherAmp &&
+    if (!safe && ditherOn[v] && i > cfg.iMin + cfg.ditherAmp &&
         i < cfg.iMax - cfg.ditherAmp)
       i += d;
     out[v] = i;

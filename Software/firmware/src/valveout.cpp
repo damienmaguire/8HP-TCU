@@ -55,22 +55,17 @@ bool ValveOut::Validate() const {
   return true;
 }
 
-bool ValveOut::Init(const Max22200Config &cfg, const Max22200Hit &onOffHit) {
+bool ValveOut::Init(const Max22200Config &cfg, uint16_t halfScaleMask) {
   ok = false;
   lost = false;
   if (!Validate())
     return false;
   bool good = true;
   for (int i = 0; i < VALVE_MAX_CHIPS; i++) {
-    if (chips[i] && !chips[i]->Init(cfg))
+    Max22200Config c = cfg;
+    c.halfScaleMask = (uint8_t)(halfScaleMask >> (8 * i));
+    if (chips[i] && !chips[i]->Init(c))
       good = false;
-  }
-  // HIT phase only on the on/off coils (park magnet, Sol1).
-  const EdsValve onOff[] = {EDS_SOL1, EDS_PARK};
-  for (unsigned k = 0; k < sizeof(onOff) / sizeof(onOff[0]); k++) {
-    uint8_t g = map[onOff[k]];
-    if (g != VALVE_NOT_FITTED && onOffHit.hitmA > 0)
-      chips[g >> 3]->SetHit(g & 7, onOffHit);
   }
   ok = good;
   return good;

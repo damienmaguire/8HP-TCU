@@ -17,7 +17,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "speedsens.h"
-#include "caltypes.h"
 
 SpeedSensor::SpeedSensor()
     : timerHz(1000000), teeth(60), timeoutMs(100), minRpm(30), sumTicks(0),
@@ -72,9 +71,3 @@ void SpeedSensor::Tick10ms() {
   if (rpm < minRpm)
     rpm = 0;
 }
-
-namespace AtfTemp {
-int32_t FromAdc(int32_t adc, const int32_t *a, const int32_t *t, int n) {
-  return Cal::Interp(a, t, n, adc);
-}
-} // namespace AtfTemp

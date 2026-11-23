@@ -27,9 +27,11 @@
    2. Temporary parameters (id = 0)
    3. Display values
  */
-// Next param id (increase when adding a new parameter!): 127
+// Next param id (increase when adding a new parameter!): 164
 // (ids 9, 101, 103-105 and 108 were free slots and are used below; 102,
-// 106 and 107 were used by an unreleased draft and are left free)
+// 106 and 107 were used by an unreleased draft and are left free. The V4
+// update dropped 1, 22-27, 34, 35, 40, 42, 53, 54, 69 and 70; they are
+// not reused so an old saved parameter set cannot land on a new meaning.)
 //
 // Anything marked TBD below has not been measured yet. The defaults are
 // placeholders chosen so the firmware runs on a bench, not values to drive
@@ -38,36 +40,43 @@
 /*              category     name         unit       min     max     default id
  */
 #define PARAM_LIST                                                             \
-  PARAM_ENTRY(CAT_SETUP, GearSelMode, GSELMODES, 0, 1, 0, 1)                   \
   PARAM_ENTRY(CAT_SETUP, TopGear, "", 1, 8, 8, 2)                              \
   PARAM_ENTRY(CAT_SETUP, CmdSource, CMDSRC, 0, 1, 0, 3)                        \
   PARAM_ENTRY(CAT_SETUP, NtSource, NTSRC, 0, 1, 0, 7)                          \
   PARAM_ENTRY(CAT_SETUP, FaultClear, ONOFF, 0, 1, 0, 8)                        \
-  PARAM_ENTRY(CAT_SETUP, Variant, VARIANTS, 0, 1, 0, 9)                        \
+  PARAM_ENTRY(CAT_SETUP, GearboxType, GBOXTYPES, 0, 1, 0, 9)                   \
+  PARAM_ENTRY(CAT_SETUP, ShiftMode, SHIFTMODES, 0, 2, 0, 127)                  \
+  PARAM_ENTRY(CAT_SETUP, ShifterType, SHIFTERS, 0, 1, 0, 128)                  \
+  PARAM_ENTRY(CAT_SETUP, ShAnaR, "mV", 0, 6600, 1500, 129)                     \
+  PARAM_ENTRY(CAT_SETUP, ShAnaN, "mV", 0, 6600, 3000, 130)                     \
+  PARAM_ENTRY(CAT_SETUP, ShAnaMin, "mV", 0, 6600, 200, 131)                    \
+  PARAM_ENTRY(CAT_SETUP, ShAnaMax, "mV", 0, 6600, 6000, 132)                   \
   PARAM_ENTRY(CAT_SPEED, TeethIn, "", 1, 200, 60, 10)                          \
   PARAM_ENTRY(CAT_SPEED, TeethOut, "", 1, 200, 60, 11)                         \
   PARAM_ENTRY(CAT_SPEED, TeethAux, "", 1, 200, 60, 12)                         \
-  PARAM_ENTRY(CAT_SPEED, SpdTimeout, "ms", 10, 130, 100, 13)                  \
+  PARAM_ENTRY(CAT_SPEED, SpdTimeout, "ms", 10, 130, 100, 13)                   \
   PARAM_ENTRY(CAT_SPEED, SpdMinRpm, "rpm", 0, 500, 30, 14)                     \
+  PARAM_ENTRY(CAT_SPEED, SpdAdcLo, "mV", 0, 3300, 900, 135)                    \
+  PARAM_ENTRY(CAT_SPEED, SpdAdcHi, "mV", 0, 3300, 1200, 136)                   \
   PARAM_ENTRY(CAT_ATF, AtfSource, ATFSRC, 0, 1, 0, 20)                         \
   PARAM_ENTRY(CAT_ATF, AtfFixed, "C", -40, 150, 40, 21)                        \
-  PARAM_ENTRY(CAT_ATF, AtfAdc1, "dig", 0, 4095, 400, 22)                       \
-  PARAM_ENTRY(CAT_ATF, AtfAdc2, "dig", 0, 4095, 1000, 23)                      \
-  PARAM_ENTRY(CAT_ATF, AtfAdc3, "dig", 0, 4095, 1800, 24)                      \
-  PARAM_ENTRY(CAT_ATF, AtfAdc4, "dig", 0, 4095, 2600, 25)                      \
-  PARAM_ENTRY(CAT_ATF, AtfAdc5, "dig", 0, 4095, 3300, 26)                      \
-  PARAM_ENTRY(CAT_ATF, AtfAdc6, "dig", 0, 4095, 3900, 27)                      \
+  PARAM_ENTRY(CAT_ATF, AtfInput, ATFINPUTS, 0, 1, 0, 143)                      \
+  PARAM_ENTRY(CAT_ATF, AtfR1, "ohm", 0, 200000, 70, 137)                       \
+  PARAM_ENTRY(CAT_ATF, AtfR2, "ohm", 0, 200000, 190, 138)                      \
+  PARAM_ENTRY(CAT_ATF, AtfR3, "ohm", 0, 200000, 450, 139)                      \
+  PARAM_ENTRY(CAT_ATF, AtfR4, "ohm", 0, 200000, 1180, 140)                     \
+  PARAM_ENTRY(CAT_ATF, AtfR5, "ohm", 0, 200000, 3800, 141)                     \
+  PARAM_ENTRY(CAT_ATF, AtfR6, "ohm", 0, 200000, 26000, 142)                    \
+  PARAM_ENTRY(CAT_ATF, AtfRMin, "ohm", 0, 200000, 30, 144)                     \
+  PARAM_ENTRY(CAT_ATF, AtfRMax, "ohm", 0, 200000, 100000, 145)                 \
   PARAM_ENTRY(CAT_ATF, AtfT1, "C", -40, 150, 140, 28)                          \
   PARAM_ENTRY(CAT_ATF, AtfT2, "C", -40, 150, 100, 29)                          \
   PARAM_ENTRY(CAT_ATF, AtfT3, "C", -40, 150, 70, 30)                           \
   PARAM_ENTRY(CAT_ATF, AtfT4, "C", -40, 150, 40, 31)                           \
   PARAM_ENTRY(CAT_ATF, AtfT5, "C", -40, 150, 10, 32)                           \
   PARAM_ENTRY(CAT_ATF, AtfT6, "C", -40, 150, -30, 33)                          \
-  PARAM_ENTRY(CAT_ATF, AtfAdcMin, "dig", 0, 4095, 50, 34)                      \
-  PARAM_ENTRY(CAT_ATF, AtfAdcMax, "dig", 0, 4095, 4050, 35)                    \
-  PARAM_ENTRY(CAT_VALVE, MaxChips, "", 1, 2, 2, 40)                            \
   PARAM_ENTRY(CAT_VALVE, MaxIfs, "mA", 150, 1000, 1000, 41)                    \
-  PARAM_ENTRY(CAT_VALVE, MaxHfs, ONOFF, 0, 1, 0, 42)                           \
+  PARAM_ENTRY(CAT_VALVE, MaxHfsMask, "bits", 0, 255, 0, 146)                   \
   PARAM_ENTRY(CAT_VALVE, MaxFreq, MAXFREQ, 0, 1, 0, 43)                        \
   PARAM_ENTRY(CAT_VALVE, MaxFreqDiv, MAXDIV, 0, 3, 0, 44)                      \
   PARAM_ENTRY(CAT_VALVE, MaxOpenLoad, ONOFF, 0, 1, 1, 45)                      \
@@ -78,8 +87,6 @@
   PARAM_ENTRY(CAT_VALVE, DitherPeriod, "ms", 2, 50, 8, 50)                     \
   PARAM_ENTRY(CAT_VALVE, DitherShape, DSHAPE, 0, 1, 1, 51)                     \
   PARAM_ENTRY(CAT_VALVE, TempCorr, ONOFF, 0, 1, 1, 52)                         \
-  PARAM_ENTRY(CAT_VALVE, HitCurrent, "mA", 0, 1000, 0, 53)                     \
-  PARAM_ENTRY(CAT_VALVE, HitTime, "", 0, 255, 0, 54)                           \
   PARAM_ENTRY(CAT_VALVE, PosCurrent, "mA", 0, 1000, 0, 55)                     \
   PARAM_ENTRY(CAT_VALVE, ChanA, "ch", 0, 255, 0, 60)                           \
   PARAM_ENTRY(CAT_VALVE, ChanB, "ch", 0, 255, 1, 61)                           \
@@ -87,11 +94,9 @@
   PARAM_ENTRY(CAT_VALVE, ChanD, "ch", 0, 255, 3, 63)                           \
   PARAM_ENTRY(CAT_VALVE, ChanE, "ch", 0, 255, 4, 64)                           \
   PARAM_ENTRY(CAT_VALVE, ChanSYS, "ch", 0, 255, 5, 65)                         \
-  PARAM_ENTRY(CAT_VALVE, ChanK0, "ch", 0, 255, 6, 66)                          \
-  PARAM_ENTRY(CAT_VALVE, ChanPOS, "ch", 0, 255, 7, 67)                         \
-  PARAM_ENTRY(CAT_VALVE, ChanPZYL, "ch", 0, 255, 8, 68)                        \
-  PARAM_ENTRY(CAT_VALVE, ChanSOL1, "ch", 0, 255, 9, 69)                        \
-  PARAM_ENTRY(CAT_VALVE, ChanPARK, "ch", 0, 255, 10, 70)                       \
+  PARAM_ENTRY(CAT_VALVE, ChanK0, "ch", 0, 255, 7, 66)                          \
+  PARAM_ENTRY(CAT_VALVE, ChanPOS, "ch", 0, 255, 6, 67)                         \
+  PARAM_ENTRY(CAT_VALVE, ChanPZYL, "ch", 0, 255, 255, 68)                      \
   PARAM_ENTRY(CAT_SHIFT, ClutchApplyP, "mbar", 5000, 25000, 16500, 80)         \
   PARAM_ENTRY(CAT_SHIFT, LineOffset, "mbar", -5000, 10000, 0, 81)              \
   PARAM_ENTRY(CAT_SHIFT, LineMax, "mbar", 5000, 30000, 25000, 82)              \
@@ -105,6 +110,8 @@
   PARAM_ENTRY(CAT_SHIFT, EngageCloseGrad, "mbar/s", 20000, 50000, 30000, 90)   \
   PARAM_ENTRY(CAT_SHIFT, AutoUpRpm, "rpm", 500, 10000, 4000, 91)               \
   PARAM_ENTRY(CAT_SHIFT, AutoDownRpm, "rpm", 200, 8000, 1500, 92)              \
+  PARAM_ENTRY(CAT_SHIFT, ManMaxRpm, "rpm", 1000, 10000, 6000, 133)             \
+  PARAM_ENTRY(CAT_SHIFT, ManMinRpm, "rpm", 0, 5000, 1000, 134)                 \
   PARAM_ENTRY(CAT_SHIFT, TqInterv, TQINTERV, 0, 2, 1, 93)                      \
   PARAM_ENTRY(CAT_SHIFT, TqRamp, "ms", 0, 1000, 100, 94)                       \
   PARAM_ENTRY(CAT_SHIFT, DntTau, "ms", 0, 500, 70, 95)                         \
@@ -112,7 +119,7 @@
   PARAM_ENTRY(CAT_SHIFT, GearChkMs, "ms", 0, 5000, 500, 97)                    \
   PARAM_ENTRY(CAT_SHIFT, GearChkMinNab, "rpm", 50, 2000, 200, 98)              \
   PARAM_ENTRY(CAT_SHIFT, UvLimit, "mV", 0, 12000, 7400, 99)                    \
-  PARAM_ENTRY(CAT_SHIFT, VbatScale, "mV", 1000, 60000, 23100, 100)             \
+  PARAM_ENTRY(CAT_SHIFT, VbatScale, "mV", 1000, 60000, 18330, 100)             \
   PARAM_ENTRY(CAT_SHIFT, EngageSyncMs, "ms", 50, 100, 80, 101)                 \
   PARAM_ENTRY(CAT_SHIFT, EngageTqZero, "Nm", 0, 100, 10, 103)                  \
   PARAM_ENTRY(CAT_SHIFT, IlOpenLow, "mA", 0, 200, 60, 104)                     \
@@ -128,13 +135,30 @@
   PARAM_ENTRY(CAT_COMM, LogEnable, ONOFF, 0, 1, 0, 117)                        \
   PARAM_ENTRY(CAT_COMM, LogBaseId, "", 1, 2040, 1520, 118)                     \
   PARAM_ENTRY(CAT_COMM, Can2Baud, CANBAUDS, 0, 4, 2, 119)                      \
+  PARAM_ENTRY(CAT_COMM, Can2Enable, ONOFF, 0, 1, 0, 163)                       \
+  PARAM_ENTRY(CAT_IO, GpOut1Func, GPOUTFUNCS, 0, 2, 0, 147)                    \
+  PARAM_ENTRY(CAT_IO, GpOut2Func, GPOUTFUNCS, 0, 2, 0, 148)                    \
+  PARAM_ENTRY(CAT_IO, GpPwmFreq, "Hz", 10, 20000, 200, 150)                    \
+  PARAM_ENTRY(CAT_IO, GpPwmDuty, "%", 0, 100, 0, 151)                          \
+  PARAM_ENTRY(CAT_LIN, LinPumpEnable, ONOFF, 0, 1, 0, 152)                     \
+  PARAM_ENTRY(CAT_LIN, LinPumpReq, LINREQS, 0, 2, 1, 153)                      \
+  PARAM_ENTRY(CAT_LIN, LinPumpRpm, "rpm", 0, 3000, 500, 154)                   \
+  PARAM_ENTRY(CAT_LIN, LinPumpHyst, "rpm", 0, 1000, 200, 155)                  \
+  PARAM_ENTRY(CAT_LIN, LinChecksum, LINCSUMS, 0, 1, 1, 156)                    \
+  PARAM_ENTRY(CAT_LIN, LinCycleMs, "ms", 10, 100, 25, 157)                     \
+  PARAM_ENTRY(CAT_LIN, LinRxDelay, "ms", 5, 50, 12, 158)                       \
+  PARAM_ENTRY(CAT_LIN, LinColdMs, "ms", 0, 5000, 900, 159)                     \
+  PARAM_ENTRY(CAT_LIN, LinPhase2Ms, "ms", 0, 5000, 25, 160)                    \
+  PARAM_ENTRY(CAT_LIN, LinTimeout, "ms", 50, 2000, 200, 161)                   \
+  PARAM_ENTRY(CAT_LIN, LinPollAux, ONOFF, 0, 1, 0, 162)                        \
   PARAM_ENTRY(CAT_TEST, SelectorSet, SELECTORS, 0, 3, 2, 120)                  \
   PARAM_ENTRY(CAT_TEST, GearSet, "", 0, 8, 0, 121)                             \
   PARAM_ENTRY(CAT_TEST, TorqueSet, "Nm", -500, 1000, 0, 122)                   \
   PARAM_ENTRY(CAT_TEST, MotorRpmSet, "rpm", 0, 15000, 0, 123)                  \
   PARAM_ENTRY(CAT_TEST, ValveTest, ONOFF, 0, 1, 0, 124)                        \
-  PARAM_ENTRY(CAT_TEST, ValveTestSel, VALVES, 0, 10, 0, 125)                   \
+  PARAM_ENTRY(CAT_TEST, ValveTestSel, VALVES, 0, 8, 0, 125)                    \
   PARAM_ENTRY(CAT_TEST, ValveTestmA, "mA", 0, 1000, 0, 126)                    \
+  PARAM_ENTRY(CAT_TEST, ParkHoldTest, ONOFF, 0, 1, 0, 149)                     \
   VALUE_ENTRY(version, VERSTR, 2000)                                           \
   VALUE_ENTRY(opmode, OPMODES, 2001)                                           \
   VALUE_ENTRY(lasterr, errorListString, 2002)                                  \
@@ -172,13 +196,29 @@
   VALUE_ENTRY(tSyn, "ms", 2034)                                                \
   VALUE_ENTRY(gls, "mbar", 2035)                                               \
   VALUE_ENTRY(drvFlags0, "bits", 2036)                                         \
-  VALUE_ENTRY(drvFlags1, "bits", 2037)                                         \
   VALUE_ENTRY(valveFault, "bits", 2038)                                        \
   VALUE_ENTRY(canAct, ONOFF, 2039)                                             \
   VALUE_ENTRY(cpuload, "%", 2040)                                              \
   VALUE_ENTRY(tqHold, ONOFF, 2041)                                             \
   VALUE_ENTRY(canHold, ONOFF, 2042)                                            \
-  VALUE_ENTRY(coast, ONOFF, 2043)
+  VALUE_ENTRY(coast, ONOFF, 2043)                                              \
+  VALUE_ENTRY(atfOhm, "ohm", 2044)                                             \
+  VALUE_ENTRY(anaIn, "mV", 2045)                                               \
+  VALUE_ENTRY(dinBits, "bits", 2046)                                           \
+  VALUE_ENTRY(shFault, ONOFF, 2047)                                            \
+  VALUE_ENTRY(spdInLo, "mV", 2048)                                             \
+  VALUE_ENTRY(spdInHi, "mV", 2049)                                             \
+  VALUE_ENTRY(spdOutLo, "mV", 2050)                                            \
+  VALUE_ENTRY(spdOutHi, "mV", 2051)                                            \
+  VALUE_ENTRY(lpState, LPSTATES, 2052)                                         \
+  VALUE_ENTRY(lpStatus, "hex", 2053)                                           \
+  VALUE_ENTRY(lpRpm, "rpm", 2054)                                              \
+  VALUE_ENTRY(lpVolt, "mV", 2055)                                              \
+  VALUE_ENTRY(lpFaults, "", 2056)                                              \
+  VALUE_ENTRY(lpCsErr, "", 2057)                                               \
+  VALUE_ENTRY(lpTimeouts, "", 2058)                                            \
+  VALUE_ENTRY(lpEcho, "", 2059)                                                \
+  VALUE_ENTRY(lpOn, ONOFF, 2060)
 
 // Generate the version string. This must be formatted without spaces to meet
 // the format requirements of the "units".
@@ -187,8 +227,14 @@
 // clang-format on
 
 #define ONOFF "0=Off, 1=On"
-#define GSELMODES "0=VCU, 1=Auto"
-#define VARIANTS "0=330e, 1=F11"
+#define GBOXTYPES "0=8HP75_330e, 1=8HP45_F11"
+#define SHIFTMODES "0=Auto, 1=Manual, 2=VCU"
+#define SHIFTERS "0=CAN, 1=Analog"
+#define ATFINPUTS "0=TempIn1, 1=TempIn2"
+#define GPOUTFUNCS "0=Off, 1=On, 2=StarterLock"
+#define LINREQS "0=Off, 1=Auto, 2=Force"
+#define LINCSUMS "0=Classic, 1=Enhanced"
+#define LPSTATES "0=Off, 1=Cold1, 2=Cold2, 3=Start, 4=Run, 5=Fault"
 #define CANLOSSMODES "0=Neutral, 1=HoldGear"
 #define CMDSRC "0=CAN, 1=Param"
 #define NTSRC "0=Sensor, 1=CanMotorRpm"
@@ -200,7 +246,7 @@
 #define CANBAUDS "0=125k, 1=250k, 2=500k, 3=800k, 4=1M"
 #define SELECTORS "0=P, 1=R, 2=N, 3=D"
 #define VALVES                                                                 \
-  "0=A, 1=B, 2=C, 3=D, 4=E, 5=SYS, 6=K0, 7=POS, 8=PZYL, 9=SOL1, 10=PARK"
+  "0=A, 1=B, 2=C, 3=D, 4=E, 5=SYS, 6=K0, 7=POS, 8=PZYL"
 #define OPMODES                                                                \
   "0=Init, 1=Park, 2=Neutral, 3=Engage, 4=Drive, 5=Shift, 6=Safe"
 #define GEARS "0=N, 1=1st, 2=2nd, 3=3rd, 4=4th, 5=5th, 6=6th, 7=7th, 8=8th, 9=R"
@@ -215,6 +261,8 @@
 #define CAT_VALVE "Valve Driver"
 #define CAT_SHIFT "Shift Control"
 #define CAT_COMM "Communication"
+#define CAT_IO "Spare Outputs"
+#define CAT_LIN "LIN Oil Pump"
 #define CAT_TEST "Testing"
 
 /// Value of a ChanX parameter for a valve that is not on any MAX22200.

@@ -27,14 +27,19 @@ extern "C" {
 
 void clock_setup(void);
 void rtc_setup(void);
+/// SWD only, TIM3 full remap (PC6..9), CAN2 on PB5/PB6.
+void afio_setup(void);
 void nvic_setup(void);
-/// SPI for the MAX22200s: mode 0 (CPOL 0, CPHA 0), MSB first, 8 bit.
+/// SPI1 for the MAX22200: mode 0 (CPOL 0, CPHA 0), MSB first, 8 bit.
 void max_spi_setup(void);
-/// Free-running timer for the speed sensor timestamps.
-void speed_timer_setup(void);
-/// EXTI on the three speed sensor inputs, rising edge.
-void speed_exti_setup(void);
 uint8_t max_spi_transfer(uint8_t tx);
+/// ADC2 injected sampling of the speed sensor pins, TIM1-triggered.
+void speed_adc_setup(void);
+/// gp_pwm on PC6 (TIM3_CH1), inverted polarity.
+void gp_pwm_setup(uint32_t freqHz);
+void gp_pwm_set(uint32_t dutyPct);
+/// UART4 in LIN mode for the aux oil pump.
+void lin_usart_setup(void);
 
 #ifdef __cplusplus
 }

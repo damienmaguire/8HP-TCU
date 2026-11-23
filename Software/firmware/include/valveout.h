@@ -34,7 +34,11 @@
  * Faults are read every 100 ms. A fault on a pressure valve (A..E, SYS)
  * means the TCU can no longer control pressure, so the caller goes to the
  * safe state (all coils off = 6th gear, full line pressure). A fault on
- * K0, POS, PZYL, SOL1 or PARK is reported but does not force limp.
+ * K0, POS or PZYL is reported but does not force limp.
+ *
+ * The V4 board has one MAX22200 (8 channels, OUT0..7 = A, B, C, D, E,
+ * LINE, PREL, TCC). The class still handles two chips so a later board
+ * can add one; stm32_tcu.cpp only attaches chip 0.
  */
 
 #define VALVE_MAX_CHIPS 2
@@ -53,11 +57,12 @@ public:
    /// or shared with another valve. Also false if A..E or SYS is unmapped.
    bool Validate() const;
 
-   /** Bring the chips up (data sheet Figure 6) and set the HIT phase on the
-    * on/off outputs. Returns false on a map error or if a chip reports a
-    * fault after init. Every channel is left off.
+   /** Bring the chips up (data sheet Figure 6). Returns false on a map
+    * error or if a chip reports a fault after init. Every channel is left
+    * off. halfScaleMask: bit per global channel (chip * 8 + ch) that runs
+    * with HFS = 1 (full scale halved).
     */
-   bool Init(const Max22200Config &cfg, const Max22200Hit &onOffHit);
+   bool Init(const Max22200Config &cfg, uint16_t halfScaleMask = 0);
 
    /// 1 ms: send the current setpoints (dither included) to the chips.
    void Update(const Eds &eds);

@@ -56,10 +56,12 @@ enum Selector
    SEL_D = 3,
 };
 
-enum GearSelMode
+/// Mode parameter: who picks the gear in D.
+enum TcuShiftMode
 {
-   GSEL_VCU = 0,  // gear requested over CAN1 by the VCU (GearReq)
-   GSEL_AUTO = 1, // simple internal input-speed thresholds
+   SHIFT_AUTO = 0,   // TCU picks the gear on simple input-speed thresholds
+   SHIFT_MANUAL = 1, // driver tips up/down on the shifter (tipUp/tipDown)
+   SHIFT_VCU = 2,    // the VCU requests a gear over CAN1 (gearReq)
 };
 
 enum TcuFault
@@ -76,13 +78,18 @@ struct TcuConfig
 {
    SasConfig sas;
    EngageConfig engage;
-   uint8_t gearSelMode;   // GearSelMode
+   uint8_t shiftMode;     // Mode (TcuShiftMode)
    int32_t applyP;        // pressure command for an applied element, mbar
    int32_t lineOffset;    // added to the OEM line pressure, mbar
    int32_t lineMax;       // ceiling on line pressure, mbar
    int32_t engageMaxNab;  // highest output speed for N->D/R, rpm
-   int32_t autoUpRpm;     // GSEL_AUTO: upshift above this input speed
-   int32_t autoDownRpm;   // GSEL_AUTO: downshift if the lower gear stays below this
+   int32_t autoUpRpm;     // Auto: upshift above this input speed
+   int32_t autoDownRpm;   // Auto (and Manual protection): downshift if the
+                          // input speed falls below this
+   int32_t manMaxRpm;     // Manual: refuse a tip down that would put the
+                          // input above this, rpm
+   int32_t manMinRpm;     // Manual: refuse a tip up that would put the
+                          // input below this, rpm
    int32_t uvLimit;       // loads off below this, mV (OEM 7400)
    int32_t gearCheckPct;  // allowed n_t/n_ab ratio error in gear, %
    int32_t gearCheckMinNab; // gear check only above this output speed, rpm
@@ -115,7 +122,9 @@ struct TcuInputs
    int32_t temp;      // degC
    int32_t vbat;      // mV
    uint8_t selector;  // Selector
-   uint8_t gearReq;   // GSEL_VCU: requested gear 1..8, 0 = hold
+   uint8_t gearReq;   // SHIFT_VCU: requested gear 1..8, 0 = hold
+   bool tipUp;        // SHIFT_MANUAL: one-shot tip up from the shifter
+   bool tipDown;      // SHIFT_MANUAL: one-shot tip down from the shifter
    bool canOk;        // torque/request frames arriving
    bool speedsValid;  // input and output speed sensors working
    bool driverFault;  // a pressure valve driver reported a fault
