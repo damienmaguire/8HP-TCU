@@ -10,12 +10,35 @@ Connector housing, header, plug and pins are the same as ZombieVerter VCU.
 
 ## Gearboxes
 
-Two gearboxes are the ones this is written for:
+`GearboxType` picks the row. None of these has been run on a gearbox.
 
-- **BMW 330e, GA8P75HZ (8HP75).** Hybrid box. It has an electric oil pump on LIN, used when nothing is turning the mechanical pump.
-- **BMW F11 8HP45.** Driven by the engine. It has no LIN pump. Start-stop holds pressure in an accumulator instead.
+| Setting | Gearbox | Where it stands |
+|---|---|---|
+| 0 `8HP75_330e` | BMW 330e. ZF GA8P75HZ (8HP75), hybrid, with a K0 clutch and an electric LIN oil pump. Calibration Q030. | Target. Untried. |
+| 1 `8HP45_F11` | BMW F11, N47 engine. ZF 8HP45. No LIN pump; start-stop uses a pressure accumulator. Calibration F11 v058, with its own shift and line-pressure maps. | Target. Untried. |
+| 2 `8HP45_F11N47_v095` | Same F11 8HP45 / N47. Older a81 software v095, id 2768. | Calibration data only. Untried. |
+| 3 `8HP70_N57_v095` | ZF 8HP70, BMW N57 engine. a81 v095, id 1367. | Calibration data only. Untried. |
+| 4 `8HP70_N63_v095` | ZF 8HP70, BMW N63 engine. a81 v095, id 317e. | Calibration data only. Untried. |
+| 5 `8HP90_N74_v095` | ZF 8HP90, BMW N74 engine. a81 v095, id 0a8b. | Calibration data only. Untried. |
+| 6 `8HP90_RR4N74_v095` | ZF 8HP90, RR4 with the N74 engine. a81 v095, id 0a92. | Calibration data only. Untried. |
 
-`GearboxType` selects which one the firmware uses. A few other 8HP size rows are included as calibration data only. They have not been tried.
+Rows 2 to 6 keep the 330e shift maps. Their own content is solenoid curves and size figures, and the size figures are not used by the control yet.
+
+## Shifters
+
+`ShifterType` picks the lever. The CAN levers are ported from the ZombieVerter (`Stm32-vcu`, branch `BMW-F11-Dev`, `src/shifters/`). Host tests cover them. None has been tried on hardware. Messages the TCU sends stay off until both `LeverTxEnable` and `CanTxEnable` are on.
+
+| Setting | Lever | Interface | Where it stands |
+|---|---|---|---|
+| 0 `BMW_GWS` | BMW F-series GWS, the monostable lever used on the F30 and the F11. One setting covers both. Reads `0x197`. When sending is on, it sends the lever display on `0x3FD`. From ZombieVerter `F30_Lever`. | CAN | In the firmware. Host tests include an F11 capture. Not tried on a car. |
+| 1 `Analog` | No part chosen. Park and not-park switches, an analogue voltage for R / N / D, and two tip switches. | Board pins | Placeholder. Untried. |
+| 2 `BMW_E65` | BMW E65 lever. Reads `0x192` (park button, full forward, full back). It sends nothing back to the lever. | CAN | Ported. Host tests only. Untried on hardware. |
+| 3 `JLR_G1` | JLR rotary knob, first generation. Reads `0x312`, sends `0x3F3`. | CAN | Ported. Host tests only. Untried on hardware. |
+| 4 `JLR_G2` | JLR rotary knob, second generation. Reads `0x0E0`, sends `0x02C`. | CAN | Ported. Host tests only. Untried on hardware. |
+| 5 `PKP2300` | Blink Marine PKP-2300-SI keypad, CANopen node `0x15`. Reads `0x195`, sends the lamp message `0x215`. | CAN | Ported. The regen, heater and charge display from the VCU port are not included. Untried on hardware. |
+| 6 `VCU_Frame` | No lever. The vehicle controller puts P / R / N / D, and tip up / tip down, in its command frame. | CAN | Placeholder frame. Untried. |
+
+The 12 V shift-up and shift-down inputs are extra tip buttons. They are not a gear selector, and they work alongside whichever lever you pick.
 
 ## Status
 
@@ -24,7 +47,7 @@ In development, and not tried on hardware. The firmware is in this repository, w
 Written so far, still untested on the hardware:
 
 - Solenoid and line-pressure control, and the shift maps.
-- CAN gear lever (BMW GWS). With sending turned on, the TCU sends the lever display message `0x3FD`. Sending stays off until you enable it.
+- Gear levers, in the table above. For the BMW GWS, the TCU can send the lever display message `0x3FD`. That sending stays off until you enable it.
 - Park lock. The outputs stay off until you enable them, and the wiring still needs a check on the bench.
 - LIN oil pump, for the 330e only. Off until you enable it.
 
