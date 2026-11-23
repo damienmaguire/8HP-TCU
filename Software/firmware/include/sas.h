@@ -20,6 +20,7 @@
 #define SAS_H
 
 #include <stdint.h>
+#include "caltypes.h"
 
 /* Shift sequencer ("SAS" in the ZF firmware): the off-going (KAB) and
  * on-coming (KZU) clutch phase machines for one single-swap shift.
@@ -31,12 +32,23 @@
  *
  * Which timeline is used:
  *  - upshift   -> KZU-led sequence (section 5.3 A): KZU fills and takes the
- *                 torque, KAB hands over, the PI ("GLS") controls the slip.
+ *                 torque, KAB hands over.
  *  - downshift -> KAB-led sequence (section 5.3 B): KAB slips so the input
  *                 speed can rise, KZU closes at the new synchronous speed.
- * v1 uses the power-on parameter sets for both power-on and coast shifts,
- * which Ian lists as an acceptable first option [I]. Coast-specific sets
- * (HSS/RSS "Schub") and nested/preparatory shifts are not implemented.
+ *
+ * Power-on ("Zug") or coast ("Schub") is picked at the start of the shift
+ * from the sign of the input torque, like zug_schub_sas in the OEM code.
+ * Ian confirmed there are no separate coast ROM sets: the same maps are
+ * used and their negative-torque points give the coast values. What
+ * changes is which clutch carries the slip controller (GLS):
+ *   power-on upshift   -> GLS on KZU (from ramp 2)
+ *   coast upshift      -> GLS on KAB (from the KAB shift-pressure phase)
+ *   power-on downshift -> GLS on KAB (from the KAB slip phase)
+ *   coast downshift    -> GLS on KZU (from the KZU slip/hold phase)
+ * TAB_IKABENTLEER (0x234c78, the shift-type switch for the off-going
+ * current ramp) is all zeros in the 330e calibration, so that current ramp
+ * is never active and is not implemented. Nested/preparatory shifts are
+ * not implemented.
  *
  * Parts of the transition logic are Ian's [I] reading of FUN_0010831c, and
  * a few gaps are filled with simple choices that are marked [Sam] below.
@@ -100,6 +112,8 @@ struct SasConfig
    int32_t syncBand;    // |ndSyn| below this counts as synchronous, rpm
    int32_t glsGainPct;  // scale on the OEM GLS gains, 0 = GLS off
    int32_t rampMaxDownMs; // timeout ramp for downshifts (no OEM value in the down set)
+   int32_t glsKabSlipUp;   // KAB GLS starts early once |ndSynIst| reaches this on an upshift, rpm (Ian: 350)
+   int32_t glsKabSlipDown; // same for a downshift, rpm (Ian: 150)
 };
 
 struct SasOutputs
@@ -142,7 +156,12 @@ public:
    int To() const { return to; }
    int OffClutch() const { return offCl; }
    int OnClutch() const { return onCl; }
+   bool IsCoast() const { return coast; }
    const SasOutputs &Out() const { return out; }
+
+   /** GLS output scaling (see sas.cpp), mbar before the gain trim and
+    * clamp: (KP x err x 64 + acc) / 4096, where acc is the sum of KI x err. */
+   static int32_t GlsScale(int32_t kp, int32_t err, int64_t acc);
 
 private:
    void TickUpKzu(const SasInputs &in);
@@ -151,7 +170,9 @@ private:
    void TickDownKab(const SasInputs &in);
    void EnterKzu(uint8_t s);
    void EnterKab(uint8_t s);
-   int32_t GlsStep(const SasInputs &in);
+   void GlsArm(const CalMap &wtsgls, const SasInputs &in);
+   int32_t GlsStep(const SasInputs &in, int32_t kp, int32_t ki);
+   int32_t GlsRun(const SasInputs &in, bool start, int32_t kp, int32_t ki);
 
    SasConfig cfg;
    SasOutputs out;
@@ -166,11 +187,16 @@ private:
    int32_t tKabRampEnd; // tShift at which the KAB ramp must end (upshift)
    int32_t pKzuStart;   // pressure at the start of a ramp
    int32_t pKabStart;
-   int32_t pKzuSync;    // pressure when the final closing phase began
-   int32_t tInSync;     // ms spent inside the sync band
-   int32_t glsInt;      // GLS integrator, mbar
+   int32_t pKzuSync;    // pressure when the upshift reached sync
+   int32_t pKabBase;    // off-going pressure without the GLS correction
+   int32_t glsAcc;      // GLS integrator, 1/3200 mbar (KI counts x rpm/s)
    int32_t glsTarget;   // target input speed gradient, rpm/s
-   bool closingFinal;   // upshift: past T_SYN, ramping to max
+   int32_t glsDir;      // direction n_t must move: -1 down (upshift), +1 up
+   int32_t tGls;        // ms since the GLS phase began (start delay timer)
+   bool glsOn;          // GLS start delay has passed
+   bool glsOnKab;       // GLS acts on the off-going clutch for this shift
+   bool coast;          // shift started with negative input torque
+   uint8_t syncPhase;   // upshift ramp 3: 0 before sync, 1 KL_PGRASYN, 2 to max
 };
 
 #endif // SAS_H

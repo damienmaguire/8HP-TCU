@@ -26,11 +26,17 @@ static TcuConfig Cfg() {
   c.sas.syncBand = 30;
   c.sas.glsGainPct = 100;
   c.sas.rampMaxDownMs = 1000;
+  c.sas.glsKabSlipUp = 350;
+  c.sas.glsKabSlipDown = 150;
   c.engage.pMax = 12750;
   c.engage.fillEqMs = 50;
   c.engage.rampMs = 300;
   c.engage.syncBand = 30;
-  c.engage.syncCloseGrad = 20000;
+  c.engage.fastCloseGrad = 30000;
+  c.engage.syncConfirmMs = 80;
+  c.engage.postSyncMs = 200;
+  c.engage.tqZeroNm = 10;
+  c.engage.variant = ENG_VAR_330E;
   c.gearSelMode = GSEL_VCU;
   c.applyP = 16500;
   c.lineOffset = 0;
@@ -46,6 +52,11 @@ static TcuConfig Cfg() {
   c.dntTauMs = 70;
   c.topGear = 8;
   c.tqInterv = 1;
+  c.canLossMode = CANLOSS_NEUTRAL;
+  c.ilOpenLow = 600;
+  c.ilOpenHigh = 7900;
+  c.iMax = 8500;
+  c.tempCorrection = true;
   return c;
 }
 
@@ -89,6 +100,27 @@ static bool RunTicks(Tcu &t, TcuInputs &in, int ticks) {
   return true;
 }
 
+
+/// Gear-in the way a VCU would do it: hold the motor torque at 0 while the
+/// TCU asks for it (tqHold), then give it back. Returns true once in gear.
+static bool EngageTo(Tcu &t, TcuInputs &in, uint8_t sel) {
+  int32_t tq = in.m_t;
+  in.selector = sel;
+  bool held = false;
+  for (int i = 0; i < 500 && t.Out().mode != TCU_DRIVE; i++) {
+    if (!RunTicks(t, in, 1))
+      return false;
+    if (t.Out().tqHold) {
+      held = true;
+      in.m_t = 0;
+    }
+  }
+  in.m_t = tq;
+  CHECK(held);
+  CHECK(!t.Out().tqHold);
+  return t.Out().mode == TCU_DRIVE;
+}
+
 static void TestEngageAndShift() {
   Tcu t;
   t.Configure(Cfg());
@@ -108,7 +140,8 @@ static void TestEngageAndShift() {
   in.selector = SEL_D;
   t.Tick10ms(in);
   CHECK_EQ(t.Out().mode, TCU_ENGAGE);
-  CHECK(RunTicks(t, in, 500));
+  CHECK(t.Out().tqHold);
+  CHECK(EngageTo(t, in, SEL_D));
   CHECK_EQ(t.Out().mode, TCU_DRIVE);
   CHECK_EQ(t.Out().gear, GEAR_1);
   CHECK_EQ(t.Out().applied, Gears::ClutchMask(GEAR_1));
@@ -170,15 +203,14 @@ static void TestReverse() {
   t.Configure(Cfg());
   TcuInputs in = In();
   t.Ready();
-  in.selector = SEL_R;
-  CHECK(RunTicks(t, in, 500));
+  CHECK(EngageTo(t, in, SEL_R));
   CHECK_EQ(t.Out().gear, GEAR_R);
   CHECK_EQ(t.Out().applied, Gears::ClutchMask(GEAR_R));
   // R -> D goes through neutral
   in.selector = SEL_D;
   t.Tick10ms(in);
   CHECK_EQ(t.Out().mode, TCU_NEUTRAL);
-  CHECK(RunTicks(t, in, 500));
+  CHECK(EngageTo(t, in, SEL_D));
   CHECK_EQ(t.Out().gear, GEAR_1);
 }
 
@@ -187,8 +219,7 @@ static void TestFaults() {
   t.Configure(Cfg());
   TcuInputs in = In();
   t.Ready();
-  in.selector = SEL_D;
-  CHECK(RunTicks(t, in, 500));
+  CHECK(EngageTo(t, in, SEL_D));
   CHECK_EQ(t.Out().gear, GEAR_1);
 
   // Driver fault: safe state, every pressure 0 (all coils off = 6th)
@@ -224,8 +255,7 @@ static void TestFaults() {
   CHECK_EQ(t.Out().mode, TCU_NEUTRAL);
 
   // Gear ratio check: in 1st but input speed says otherwise
-  in.selector = SEL_D;
-  CHECK(RunTicks(t, in, 500));
+  CHECK(EngageTo(t, in, SEL_D));
   CHECK_EQ(t.Out().gear, GEAR_1);
   in.n_ab = 500;
   in.n_t = 500; // ratio 1.0 in 1st = slipping
@@ -242,8 +272,7 @@ static void TestNoTorqueIntervention() {
   t.Configure(c);
   TcuInputs in = In();
   t.Ready();
-  in.selector = SEL_D;
-  CHECK(RunTicks(t, in, 500));
+  CHECK(EngageTo(t, in, SEL_D));
   in.n_ab = 1000;
   in.n_t = Gears::SyncSpeed(1, 1000);
   in.gearReq = 2;
@@ -254,9 +283,149 @@ static void TestNoTorqueIntervention() {
   CHECK_EQ(t.Out().gear, 2);
 }
 
+
+/* Without torque held near 0 the gear-in still completes, on the slower
+ * OEM gradients, and never uses the fast close. */
+static void TestEngageNoTorqueHold() {
+  Tcu t;
+  t.Configure(Cfg());
+  TcuInputs in = In(); // m_t = 100 Nm throughout
+  t.Ready();
+  in.selector = SEL_D;
+  int fastTicks = 0, ms = 0;
+  for (; ms < 30000 && t.Out().mode != TCU_DRIVE; ms += 10) {
+    CHECK(RunTicks(t, in, 1));
+    if (t.Out().engPhase == ENG_CLOSE && t.Out().p[CL_B] > 0 &&
+        t.Out().p[CL_B] < 12750)
+      fastTicks++;
+  }
+  CHECK_EQ(t.Out().gear, GEAR_1);
+  CHECK(ms > 1500); // OEM low-torque gradients are slow
+
+  // No gear-in while the VCU frames are missing.
+  in.selector = SEL_N;
+  CHECK(RunTicks(t, in, 2));
+  in.canOk = false;
+  in.selector = SEL_D;
+  CHECK(RunTicks(t, in, 20));
+  CHECK_EQ(t.Out().mode, TCU_NEUTRAL);
+  (void)fastTicks;
+}
+
+/* F11 variant: C is the last clutch in for 1st. */
+static void TestEngageF11() {
+  Tcu t;
+  TcuConfig c = Cfg();
+  c.engage.variant = ENG_VAR_F11;
+  t.Configure(c);
+  TcuInputs in = In();
+  t.Ready();
+  in.selector = SEL_D;
+  bool cWaited = false;
+  for (int i = 0; i < 500 && t.Out().mode != TCU_DRIVE; i++) {
+    in.m_t = t.Out().tqHold ? 0 : in.m_t;
+    CHECK(RunTicks(t, in, 1));
+    if (t.Out().engPhase == ENG_FILL && t.Out().p[CL_C] == 0 && t.Out().p[CL_A] > 0)
+      cWaited = true;
+  }
+  CHECK(cWaited);
+  CHECK_EQ(t.Out().gear, GEAR_1);
+}
+
+/* CanLossMode: 0 drops the shift requests (the glue then selects N);
+ * 1 holds the gear at full line pressure, refuses upshifts, still steps
+ * down as the car slows. */
+static void TestCanLoss() {
+  Tcu t;
+  TcuConfig c = Cfg();
+  c.canLossMode = CANLOSS_HOLD;
+  t.Configure(c);
+  TcuInputs in = In();
+  t.Ready();
+  CHECK(EngageTo(t, in, SEL_D));
+  in.n_ab = 1000;
+  in.n_t = Gears::SyncSpeed(1, 1000);
+  in.gearReq = 4;
+  for (int i = 0; i < 1500 && t.Out().gear != 4; i++)
+    CHECK(RunTicks(t, in, 1));
+  CHECK_EQ(t.Out().gear, 4);
+  CHECK(RunTicks(t, in, 20));
+  CHECK(!t.Out().canLossHold);
+
+  // Frames stop at speed: hold 4th with LineMax, no upshift even if asked.
+  in.canOk = false;
+  in.gearReq = 8;
+  in.n_ab = 1500;
+  in.n_t = Gears::SyncSpeed(4, in.n_ab);
+  CHECK(RunTicks(t, in, 100));
+  CHECK_EQ(t.Out().gear, 4);
+  CHECK_EQ(t.Out().mode, TCU_DRIVE);
+  CHECK(t.Out().canLossHold);
+  CHECK_EQ(t.Out().pSys, c.lineMax);
+  // Slowing down: downshifts are still allowed so it does not lug.
+  in.n_ab = 300;
+  in.n_t = Gears::SyncSpeed(4, in.n_ab);
+  for (int i = 0; i < 2000 && t.Out().gear > 1; i++)
+    CHECK(RunTicks(t, in, 1));
+  CHECK(t.Out().gear < 4);
+  CHECK_EQ(t.Out().fault, TF_NONE);
+  // Frames back: normal again.
+  in.canOk = true;
+  CHECK(RunTicks(t, in, 5));
+  CHECK(!t.Out().canLossHold);
+
+  // Mode 0 (default): no shifts and no hold flag.
+  Tcu t0;
+  t0.Configure(Cfg());
+  TcuInputs i0 = In();
+  t0.Ready();
+  CHECK(EngageTo(t0, i0, SEL_D));
+  i0.n_ab = 1000;
+  i0.n_t = Gears::SyncSpeed(1, 1000);
+  i0.canOk = false;
+  i0.gearReq = 3;
+  CHECK(RunTicks(t0, i0, 50));
+  CHECK_EQ(t0.Out().gear, GEAR_1);
+  CHECK(!t0.Out().canLossHold);
+}
+
+/* A coast upshift (negative torque) runs to the end with the slip
+ * controller on the off-going clutch and is reported as coast. */
+static void TestCoastShift() {
+  Tcu t;
+  t.Configure(Cfg());
+  TcuInputs in = In();
+  t.Ready();
+  CHECK(EngageTo(t, in, SEL_D));
+  in.n_ab = 1000;
+  in.n_t = Gears::SyncSpeed(1, 1000);
+  in.m_t = -40;
+  in.gearReq = 2;
+  bool sawCoast = false;
+  for (int i = 0; i < 600 && t.Out().gear != 2; i++) {
+    CHECK(RunTicks(t, in, 1));
+    if (t.Out().coast)
+      sawCoast = true;
+  }
+  CHECK(sawCoast);
+  CHECK_EQ(t.Out().gear, 2);
+  CHECK_EQ(t.Out().fault, TF_NONE);
+  CHECK(!t.Out().coast);
+  // And a coast downshift back to 1st.
+  in.gearReq = 1;
+  for (int i = 0; i < 600 && t.Out().gear != 1; i++)
+    CHECK(RunTicks(t, in, 1));
+  CHECK_EQ(t.Out().gear, 1);
+  CHECK_EQ(t.Out().fault, TF_NONE);
+}
+
 void TestTcu() {
   TestEngageAndShift();
   TestReverse();
   TestFaults();
   TestNoTorqueIntervention();
+  TestEngageNoTorqueHold();
+  TestEngageF11();
+  TestCanLoss();
+  TestCoastShift();
 }

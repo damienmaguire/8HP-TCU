@@ -67,7 +67,6 @@ UP_FIELDS = [
     ("pgokzumtnt", "KF_PGOKZUMTNT", "M"),
     ("tsynmtrakzu", "KL_TSYNMTRAKZU", "C"),
     ("pgrasyn", "KL_PGRASYN", "C"),
-    ("porasyn", "KL_PORASYN", "C"),
     ("t_syn", "T_SYN", "V"),
     ("t_vkabhs", "T_VKABHS", "V"),
     ("phkabmt", "KL_PHKABMT", "C"),
@@ -89,6 +88,7 @@ UP_FIELDS = [
     ("kp_glskab", "KP_GLSKAB", "V"),
     ("ki_glskab", "KI_GLSKAB", "V"),
     ("tvglskzucg", "KL_TVGLSKZUCG", "C"),
+    ("tvglskabcg", "KL_TVGLSKABCG", "C"),
     ("mehaupt", "KF_MEHAUPT", "M"),
     ("t_ramee", "T_RAMEE", "V"),
 ]
@@ -116,6 +116,13 @@ DOWN_FIELDS = [
     ("p_sysmin", "P_SYSMIN", "V"),
     ("mehaupt", "KF_MEHAUPT", "M"),
     ("menach", "KF_MENACH", "M"),
+    ("wtsgls", "KF_WTSGLS", "M"),
+    ("kp_glskzu", "KP_GLSKZU", "V"),
+    ("ki_glskzu", "KI_GLSKZU", "V"),
+    ("kp_glskab", "KP_GLSKAB", "V"),
+    ("ki_glskab", "KI_GLSKAB", "V"),
+    ("tvglskzucg", "KL_TVGLSKZUCG", "C"),
+    ("tvglskabcg", "KL_TVGLSKABCG", "C"),
 ]
 
 CLUTCH_FIELDS = [

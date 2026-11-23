@@ -55,7 +55,8 @@ SasShift::SasShift()
     : cfg(), out(), active(false), up(false), from(0), to(0), offCl(0),
       onCl(0), pair(0), tShift(0), tKzu(0), tKab(0), fillStart(0),
       tFillEnd(0), tKabRampEnd(0), pKzuStart(0), pKabStart(0), pKzuSync(0),
-      tInSync(0), glsInt(0), glsTarget(0), closingFinal(false) {}
+      pKabBase(0), glsAcc(0), glsTarget(0), glsDir(0), tGls(0), glsOn(false),
+      glsOnKab(false), coast(false), syncPhase(0) {}
 
 bool SasShift::Start(int f, int t, int offClutch, int onClutch,
                      const SasConfig &c, const SasInputs &in) {
@@ -75,10 +76,18 @@ bool SasShift::Start(int f, int t, int offClutch, int onClutch,
   pair = up ? f - 1 : t - 1; // 1->2 and 2->1 are both index 0
   tShift = tKzu = tKab = 0;
   fillStart = 0;
-  tInSync = 0;
-  glsInt = 0;
+  pKabBase = 0;
+  glsAcc = 0;
   glsTarget = 0;
-  closingFinal = false;
+  glsDir = 0;
+  tGls = 0;
+  glsOn = false;
+  syncPhase = 0;
+  // zug_schub_sas: coast when the input torque is negative at the start.
+  coast = in.m_t < 0;
+  // The slip controller sits on KZU for power-on upshifts and coast
+  // downshifts, and on KAB for coast upshifts and power-on downshifts.
+  glsOnKab = up ? coast : !coast;
   out = SasOutputs();
   active = true;
 
@@ -121,24 +130,61 @@ void SasShift::EnterKab(uint8_t s) {
   pKabStart = out.pKab;
 }
 
-/* GLS: PI on the input speed gradient during the inertia phase, so the
- * slip lasts the target time KF_WTSGLSxy [C gains, I structure]. The
- * error is positive when the input speed falls more slowly than wanted,
- * which calls for more on-coming pressure.
+/* GLS ("Gradientenlageregler"): PI on the input speed gradient so the slip
+ * lasts the target time KF_WTSGLSxy. Scaling, from Ian's QA2 answers:
+ *   KP: 1 count = 0.02 mbar per (rpm/s)
+ *   KI: 1 count = 0.02/64 mbar per (rpm/s), added every 10 ms
+ *   output = (P + I) x 50/64, clamped to +/-3 bar (P_MAXOBGLS/P_MAXUNGLS)
+ * Everything is kept in 1/3200 mbar (= 0.02/64 mbar) so it stays integer:
+ * P = KP x err x 64, I = sum of KI x err, and the scaled output in mbar is
+ * (P + I) x 50 / (64 x 3200) = (P + I) / 4096.
+ *
+ * The error is positive when the input speed moves more slowly than wanted
+ * (towards the new sync). The return value is the extra "push" in mbar: the
+ * caller adds it to an on-coming clutch and subtracts it from an off-going
+ * one (less off-going pressure lets the speed move faster).
  */
-int32_t SasShift::GlsStep(const SasInputs &in) {
+void SasShift::GlsArm(const CalMap &wtsgls, const SasInputs &in) {
+  // Target gradient: cover the present slip in the target slip time.
+  int32_t tw = Cal::Map(wtsgls, in.n_t, in.m_t);
+  glsTarget = tw > 0 ? -(int32_t)(((int64_t)in.ndSyn * 1000) / tw) : 0;
+  glsDir = in.ndSyn > 0 ? -1 : 1;
+  glsAcc = 0;
+  glsOn = false;
+  tGls = 0;
+}
+
+#define GLS_SHIFT 4096 // (64 x 3200) / 50
+
+int32_t SasShift::GlsScale(int32_t kp, int32_t err, int64_t acc) {
+  return (int32_t)(((int64_t)kp * err * 64 + acc) / GLS_SHIFT);
+}
+
+int32_t SasShift::GlsStep(const SasInputs &in, int32_t kp, int32_t ki) {
   if (cfg.glsGainPct <= 0)
     return 0;
-  const UpShiftCal &u = calUp[pair];
-  int32_t err = in.dnt - glsTarget; // rpm/s
-  // KP in mbar per rpm/s. KI is per 10 ms in the A2L (UMR_..._10MSEC), so
-  // the integrator gains KI x error / 100 each 10 ms step [I].
-  glsInt += (int32_t)(((int64_t)u.ki_glskzu * err) / 100);
-  int32_t lo = -calGlobal.p_maxungls, hi = calGlobal.p_maxobgls;
-  glsInt = Clamp(glsInt, lo, hi);
-  int32_t p = u.kp_glskzu * err + glsInt;
+  int32_t err = (glsTarget - in.dnt) * glsDir; // rpm/s, + = too slow
+  int32_t hi = calGlobal.p_maxobgls, lo = -calGlobal.p_maxungls;
+  // Anti-windup: the integrator alone may not exceed the output clamp.
+  int64_t accHi = (int64_t)hi * GLS_SHIFT, accLo = (int64_t)lo * GLS_SHIFT;
+  int64_t acc = (int64_t)glsAcc + (int64_t)ki * err;
+  acc = acc > accHi ? accHi : (acc < accLo ? accLo : acc);
+  glsAcc = (int32_t)acc;
+  int32_t p = GlsScale(kp, err, acc);
   p = (int32_t)(((int64_t)p * cfg.glsGainPct) / 100);
   return Clamp(p, lo, hi);
+}
+
+/* Run the GLS for the clutch that owns it this shift. "start" lets the
+ * caller begin early (slip threshold) before the start delay has passed.
+ * Returns 0 until it has started.
+ */
+int32_t SasShift::GlsRun(const SasInputs &in, bool start, int32_t kp, int32_t ki) {
+  if (start)
+    glsOn = true;
+  tGls += SAS_TICK_MS;
+  out.gls = glsOn ? GlsStep(in, kp, ki) : 0;
+  return out.gls;
 }
 
 void SasShift::TickUpKzu(const SasInputs &in) {
@@ -173,21 +219,18 @@ void SasShift::TickUpKzu(const SasInputs &in) {
     if (tKzu >= len) {
       out.pKzu = p;
       EnterKzu(KZU_RAMP2);
-      // Target gradient for the GLS: cover the present slip in the
-      // target slip time. n_t falls on an upshift, so it is negative.
-      int32_t tw = Cal::Map(u.wtsgls, in.n_t, in.m_t);
-      glsTarget = tw > 0 ? -(int32_t)(((int64_t)in.ndSyn * 1000) / tw) : 0;
-      glsInt = 0;
+      if (!glsOnKab)
+        GlsArm(u.wtsgls, in);
     }
     break;
   }
   case KZU_RAMP2: {
+    // On-coming gradient KF_PGOKZUMTNT. Power-on: the GLS on KZU starts
+    // KL_TVGLSKZUCG (180-200 ms) after the start of ramp 2 (Ian, QA2).
     p = pKzuStart + GradMs(Cal::Map(u.pgokzumtnt, in.m_t, in.n_t), tKzu);
-    // [Sam] GLS start delay counted from the start of ramp 2.
-    if (tKzu >= Cal::Curve(u.tvglskzucg, in.temp)) {
-      out.gls = GlsStep(in);
-      p += out.gls;
-    }
+    if (!glsOnKab)
+      p += GlsRun(in, tGls >= Cal::Curve(u.tvglskzucg, in.temp), u.kp_glskzu,
+                  u.ki_glskzu);
     if (BeforeSync(in.tSyn, Cal::Curve(u.tsynmtrakzu, in.m_t)) ||
         Abs(in.ndSyn) < cfg.syncBand) {
       out.pKzu = p;
@@ -196,19 +239,25 @@ void SasShift::TickUpKzu(const SasInputs &in) {
     break;
   }
   case KZU_RAMP3:
-    if (!closingFinal) {
-      p += GradMs(Cal::Curve(u.pgrasyn, in.m_t), SAS_TICK_MS);
-      tInSync = Abs(in.ndSyn) < cfg.syncBand ? tInSync + SAS_TICK_MS : 0;
-      if (tInSync >= u.t_syn) {
-        closingFinal = true;
-        pKzuSync = p;
+    // No third ramp (Ian, QA2): until sync the on-coming clutch keeps the
+    // ramp-2 gradient KF_PGOKZUMTNT. After sync it uses KL_PGRASYN for
+    // T_SYN (300 ms on 1->2), then ramps to full pressure over T_RAMAX.
+    if (syncPhase == 0) {
+      p += GradMs(Cal::Map(u.pgokzumtnt, in.m_t, in.n_t), SAS_TICK_MS);
+      if (Abs(in.ndSyn) < cfg.syncBand) {
+        syncPhase = 1;
         tKzu = 0;
       }
+    } else if (syncPhase == 1) {
+      p += GradMs(Cal::Curve(u.pgrasyn, in.m_t), SAS_TICK_MS);
+      if (tKzu + SAS_TICK_MS >= u.t_syn) {
+        syncPhase = 2;
+        pKzuSync = p;
+        tKzu = -SAS_TICK_MS; // the ramp starts on the next tick
+      }
     } else {
-      // KL_PORASYN: offset over time in this phase, ending at 12.75 bar.
-      const CalCurve &c = u.porasyn;
-      p = pKzuSync + Cal::Curve(c, tKzu);
-      if (tKzu >= c.x[c.n - 1]) {
+      p = Ramp(pKzuSync, cfg.pMax, tKzu, u.t_ramax);
+      if (tKzu >= u.t_ramax) {
         p = cfg.pMax;
         out.zKzu = KZU_IDLE; // finished
       }
@@ -255,23 +304,39 @@ void SasShift::TickUpKab(const SasInputs &in) {
     if (tShift >= tKabRampEnd) {
       out.pKab = p;
       EnterKab(KAB_SHIFT_P_UP);
+      if (glsOnKab)
+        GlsArm(u.wtsgls, in);
     }
     break;
   case KAB_SHIFT_P_UP:
-    p = Cal::Map(u.pkab, in.n_t, in.m_t) +
-        GradMs(Cal::Curve(u.pgomtkab, in.m_t), tKab);
+    // Off-going gradient KL_PGOMTKAB. This is the only KAB gradient on an
+    // upshift; the takeover state below just carries it on.
+    pKabBase = Cal::Map(u.pkab, in.n_t, in.m_t) +
+               GradMs(Cal::Curve(u.pgomtkab, in.m_t), tKab);
+    p = pKabBase;
+    // Coast: the GLS sits on KAB, starting KL_TVGLSKABCG (250/150/50 ms)
+    // into this phase, or earlier once the slip reaches 350 rpm (Ian, QA2).
+    if (glsOnKab)
+      p -= GlsRun(in, tGls >= Cal::Curve(u.tvglskabcg, in.temp) ||
+                          Abs(in.ndSynIst) >= cfg.glsKabSlipUp,
+                  u.kp_glskab, u.ki_glskab);
     // Inertia phase starts once the input speed has left the old gear's
     // sync by NS_SYNISTE (350 rpm), or the on-coming clutch is closing.
     if (Abs(in.ndSynIst) > u.ns_synist || out.zKzu == KZU_RAMP3 ||
         out.zKzu == KZU_IDLE) {
       out.pKab = p;
       EnterKab(KAB_TAKEOVER);
+      pKabStart = pKabBase;
     }
     break;
   case KAB_TAKEOVER:
-    // [Sam] keep venting with the shift-phase gradient while the KZU GLS
-    // carries the load.
-    p = pKabStart + GradMs(Cal::Curve(u.pgomtkab, in.m_t), tKab);
+    // Same KL_PGOMTKAB gradient, carried on from the shift phase.
+    pKabBase = pKabStart + GradMs(Cal::Curve(u.pgomtkab, in.m_t), tKab);
+    p = pKabBase;
+    if (glsOnKab)
+      p -= GlsRun(in, tGls >= Cal::Curve(u.tvglskabcg, in.temp) ||
+                          Abs(in.ndSynIst) >= cfg.glsKabSlipUp,
+                  u.kp_glskab, u.ki_glskab);
     if (BeforeSync(in.tSyn, u.t_synkabe) || out.zKzu == KZU_RAMP3 ||
         out.zKzu == KZU_IDLE)
       EnterKab(KAB_END);
@@ -292,8 +357,9 @@ void SasShift::TickDownKab(const SasInputs &in) {
 
   switch (out.zKab) {
   case KAB_HOLD_DOWN:
-    // [Sam] hold = shift pressure + KL_POHKAB offset, for the KAB delay
-    // KF_TVKABMTNMOTRS. Ian: "hold = current + KL_POHKAB" [I].
+    // Hold = KF_PKAB + KL_POHKAB (0.4-1.0 bar) for the KAB delay
+    // KF_TVKABMTNMOTRS, then a KL_TRAHKAB (100 ms) ramp down to KF_PKAB.
+    // Confirmed by Ian (QA2). Upshifts use the absolute KL_PHKABMT instead.
     p = pShift + Cal::Curve(d.pohkab, in.m_t);
     if (tKab >= Cal::Map(d.tvkabmtnmotrs, in.m_t, in.n_mot)) {
       out.pKab = p;
@@ -306,12 +372,20 @@ void SasShift::TickDownKab(const SasInputs &in) {
     if (tKab >= len) {
       out.pKab = p;
       EnterKab(KAB_SLIP_DOWN);
+      if (glsOnKab)
+        GlsArm(d.wtsgls, in);
     }
     break;
   }
   case KAB_SLIP_DOWN:
     // Controlled slip: the input speed rises towards the new sync.
     p = pShift + GradMs(Cal::Curve(d.pgokab, in.m_t), tKab);
+    // Power-on: the GLS sits on KAB, starting KL_TVGLSKABCG into this
+    // phase, or earlier once the slip reaches 150 rpm (Ian, QA2).
+    if (glsOnKab)
+      p -= GlsRun(in, tGls >= Cal::Curve(d.tvglskabcg, in.temp) ||
+                          Abs(in.ndSynIst) >= cfg.glsKabSlipDown,
+                  d.kp_glskab, d.ki_glskab);
     out.inertia = true;
     if (BeforeSync(in.tSyn, Cal::Map(d.tsyncgmthinsyn, in.temp, in.m_t)) ||
         Abs(in.ndSyn) < cfg.syncBand) {
@@ -373,11 +447,17 @@ void SasShift::TickDownKzu(const SasInputs &in) {
     if (tKzu >= len) {
       out.pKzu = p;
       EnterKzu(KZU_HOLD_SYNC);
+      if (!glsOnKab)
+        GlsArm(d.wtsgls, in);
     }
     break;
   }
   case KZU_HOLD_SYNC:
     p = Cal::Map(d.pkzu, in.n_t, in.m_t) + Cal::Map(d.pohinsynkzu, in.n_t, in.m_t);
+    // Coast: the GLS sits on KZU, starting KL_TVGLSKZUCG into this phase.
+    if (!glsOnKab)
+      p += GlsRun(in, tGls >= Cal::Curve(d.tvglskzucg, in.temp), d.kp_glskzu,
+                  d.ki_glskzu);
     if (BeforeSync(in.tSyn, Cal::Curve(d.tsyncghinsynekzu, in.temp)) ||
         Abs(in.ndSyn) < cfg.syncBand) {
       out.pKzu = p;
@@ -407,6 +487,7 @@ void SasShift::TickDownKzu(const SasInputs &in) {
 void SasShift::Tick(const SasInputs &in) {
   if (!active)
     return;
+  out.gls = 0; // set again below by whichever phase runs the GLS
 
   // Timeout: shift taking longer than KL_TMAXCG -> close the on-coming
   // clutch to max and vent the off-going one.
@@ -423,7 +504,7 @@ void SasShift::Tick(const SasInputs &in) {
     TickUpKab(in);
     // Inertia phase: from ramp 2 until the input speed reaches the new sync.
     out.inertia = out.zKzu == KZU_RAMP2 ||
-                  (out.zKzu == KZU_RAMP3 && !closingFinal) ||
+                  (out.zKzu == KZU_RAMP3 && syncPhase == 0) ||
                   out.zKab == KAB_TAKEOVER;
     // Torque intervention during the inertia phase (KF_MEHAUPTxy).
     out.tqDelta = out.inertia ? Cal::Map(calUp[pair].mehaupt, in.n_t, in.m_t) : 0;

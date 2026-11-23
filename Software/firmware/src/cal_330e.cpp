@@ -45,9 +45,6 @@ static const int32_t up12_tsynmtrakzu_y[] = {-30, -40, -40, -50};
 // KL_PGRASYN12 @0x257910  x=sig_m_t  (UMR_BAR_SEC_1_10_0_S6_S3)
 static const int16_t up12_pgrasyn_x[] = {-100, -10, 0, 100, 200, 300};
 static const int32_t up12_pgrasyn_y[] = {10000, 2500, 5000, 10000, 30000, 100000};
-// KL_PORASYN12 @0x2578c8  x=timer_zkzu  (UMR_BAR__1_1000_0_S6_S3)
-static const int16_t up12_porasyn_x[] = {0, 400, 450};
-static const int32_t up12_porasyn_y[] = {100, 500, 12750};
 // KL_PHKABMT12 @0x23f87c  x=sig_m_t  (UMR_BAR__1_1000_0_S6_S3)
 static const int16_t up12_phkabmt_x[] = {-300, -50, -20, 0, 50, 100, 250, 515};
 static const int32_t up12_phkabmt_y[] = {1900, 1250, 1250, 1250, 1500, 2500, 6000, 12750};
@@ -79,6 +76,9 @@ static const int32_t up12_wtsgls_z[] = {400, 700, 900, 1200, 680, 720, 790, 860,
 // KL_TVGLSKZUCG12 @0x238be8  x=sig_c_getr  (UMR_MSEC__10_1_0_S6_S3)
 static const int16_t up12_tvglskzucg_x[] = {-20, 0, 30};
 static const int32_t up12_tvglskzucg_y[] = {200, 200, 180};
+// KL_TVGLSKABCG12 @0x239854  x=sig_c_getr  (UMR_MSEC__10_1_0_S6_S3)
+static const int16_t up12_tvglskabcg_x[] = {-15, 0, 30};
+static const int32_t up12_tvglskabcg_y[] = {250, 150, 50};
 // KF_MEHAUPT12 @0x22c1e0  x=n_tkf y=sig_m_t8  (UMR_NM__6_1_M145_S6_S3)
 static const int16_t up12_mehaupt_x[] = {608, 1408, 2400, 3392, 4896, 6400};
 static const int16_t up12_mehaupt_y[] = {-72, -8, 0, 56, 120, 200, 296, 400, 496, 648};
@@ -109,9 +109,6 @@ static const int32_t up23_tsynmtrakzu_y[] = {-20, -20, -20, -30};
 // KL_PGRASYN23 @0x257ac4  x=sig_m_t  (UMR_BAR_SEC_1_10_0_S6_S3)
 static const int16_t up23_pgrasyn_x[] = {-100, -10, 50, 100, 200, 300};
 static const int32_t up23_pgrasyn_y[] = {10000, 2500, 10000, 50000, 100000, 200000};
-// KL_PORASYN23 @0x257a7c  x=timer_zkzu  (UMR_BAR__1_1000_0_S6_S3)
-static const int16_t up23_porasyn_x[] = {0, 480, 490};
-static const int32_t up23_porasyn_y[] = {100, 900, 12750};
 // KL_PHKABMT23 @0x23fa6c  x=sig_m_t  (UMR_BAR__1_1000_0_S6_S3)
 static const int16_t up23_phkabmt_x[] = {-100, -50, -10, 10, 60, 150, 250, 750};
 static const int32_t up23_phkabmt_y[] = {2850, 2450, 1000, 800, 800, 2000, 3000, 8500};
@@ -143,6 +140,9 @@ static const int32_t up23_wtsgls_z[] = {800, 1000, 1200, 1370, 700, 700, 750, 82
 // KL_TVGLSKZUCG23 @0x238c64  x=sig_c_getr  (UMR_MSEC__10_1_0_S6_S3)
 static const int16_t up23_tvglskzucg_x[] = {-20, 0, 30};
 static const int32_t up23_tvglskzucg_y[] = {830, 280, 110};
+// KL_TVGLSKABCG23 @0x2398f8  x=sig_c_getr  (UMR_MSEC__10_1_0_S6_S3)
+static const int16_t up23_tvglskabcg_x[] = {-15, 0, 30};
+static const int32_t up23_tvglskabcg_y[] = {200, 100, 50};
 // KF_MEHAUPT23 @0x22c340  x=n_tkf y=sig_m_t8  (UMR_NM__6_1_M145_S6_S3)
 static const int16_t up23_mehaupt_x[] = {1408, 2400, 3392, 4416, 5408, 6400};
 static const int16_t up23_mehaupt_y[] = {-80, 24, 56, 120, 200, 296, 400, 496, 648, 800};
@@ -173,9 +173,6 @@ static const int32_t up34_tsynmtrakzu_y[] = {-20, -20, -20, -30};
 // KL_PGRASYN34 @0x257c78  x=sig_m_t  (UMR_BAR_SEC_1_10_0_S6_S3)
 static const int16_t up34_pgrasyn_x[] = {-100, -10, 50, 100, 200, 400};
 static const int32_t up34_pgrasyn_y[] = {10000, 2500, 10000, 50000, 100000, 100000};
-// KL_PORASYN34 @0x257c30  x=timer_zkzu  (UMR_BAR__1_1000_0_S6_S3)
-static const int16_t up34_porasyn_x[] = {0, 440, 450};
-static const int32_t up34_porasyn_y[] = {0, 1000, 12750};
 // KL_PHKABMT34 @0x23fc5c  x=sig_m_t  (UMR_BAR__1_1000_0_S6_S3)
 static const int16_t up34_phkabmt_x[] = {-300, -50, -10, 10, 50, 250, 500, 750};
 static const int32_t up34_phkabmt_y[] = {4000, 1500, 1200, 1200, 2700, 5500, 9000, 12400};
@@ -207,6 +204,9 @@ static const int32_t up34_wtsgls_z[] = {630, 880, 880, 900, 480, 520, 560, 620, 
 // KL_TVGLSKZUCG34 @0x238ce0  x=sig_c_getr  (UMR_MSEC__10_1_0_S6_S3)
 static const int16_t up34_tvglskzucg_x[] = {-20, 0, 30};
 static const int32_t up34_tvglskzucg_y[] = {530, 280, 110};
+// KL_TVGLSKABCG34 @0x23999c  x=sig_c_getr  (UMR_MSEC__10_1_0_S6_S3)
+static const int16_t up34_tvglskabcg_x[] = {-15, 0, 30};
+static const int32_t up34_tvglskabcg_y[] = {130, 100, 50};
 // KF_MEHAUPT34 @0x22c4a0  x=n_tkf y=sig_m_t8  (UMR_NM__6_1_M145_S6_S3)
 static const int16_t up34_mehaupt_x[] = {1408, 2400, 3392, 4416, 5408, 6400};
 static const int16_t up34_mehaupt_y[] = {-200, -48, 0, 56, 120, 200, 296, 400, 496, 648};
@@ -237,9 +237,6 @@ static const int32_t up45_tsynmtrakzu_y[] = {-30, -40, -40, -50};
 // KL_PGRASYN45 @0x257e2c  x=sig_m_t  (UMR_BAR_SEC_1_10_0_S6_S3)
 static const int16_t up45_pgrasyn_x[] = {-100, -10, 100, 200, 300, 400};
 static const int32_t up45_pgrasyn_y[] = {10000, 2500, 15000, 100000, 100000, 100000};
-// KL_PORASYN45 @0x257de4  x=timer_zkzu  (UMR_BAR__1_1000_0_S6_S3)
-static const int16_t up45_porasyn_x[] = {0, 480, 500};
-static const int32_t up45_porasyn_y[] = {500, 700, 12750};
 // KL_PHKABMT45 @0x23fe4c  x=sig_m_t  (UMR_BAR__1_1000_0_S6_S3)
 static const int16_t up45_phkabmt_x[] = {-300, -50, -10, 10, 50, 100, 500, 750};
 static const int32_t up45_phkabmt_y[] = {6500, 2200, 750, 750, 1800, 2750, 6800, 9300};
@@ -271,6 +268,9 @@ static const int32_t up45_wtsgls_z[] = {700, 820, 820, 840, 550, 590, 630, 690, 
 // KL_TVGLSKZUCG45 @0x238d5c  x=sig_c_getr  (UMR_MSEC__10_1_0_S6_S3)
 static const int16_t up45_tvglskzucg_x[] = {-20, 0, 30};
 static const int32_t up45_tvglskzucg_y[] = {530, 230, 130};
+// KL_TVGLSKABCG45 @0x239a40  x=sig_c_getr  (UMR_MSEC__10_1_0_S6_S3)
+static const int16_t up45_tvglskabcg_x[] = {-15, 0, 30};
+static const int32_t up45_tvglskabcg_y[] = {150, 150, 150};
 // KF_MEHAUPT45 @0x22c600  x=n_tkf y=sig_m_t8  (UMR_NM__6_1_M145_S6_S3)
 static const int16_t up45_mehaupt_x[] = {1408, 2400, 3392, 4416, 5408, 6400};
 static const int16_t up45_mehaupt_y[] = {-80, -8, 8, 56, 120, 200, 296, 400, 496, 648};
@@ -301,9 +301,6 @@ static const int32_t up56_tsynmtrakzu_y[] = {-20, -40, -40, -40};
 // KL_PGRASYN56 @0x257fe0  x=sig_m_t  (UMR_BAR_SEC_1_10_0_S6_S3)
 static const int16_t up56_pgrasyn_x[] = {-100, -10, 100, 200, 300, 400};
 static const int32_t up56_pgrasyn_y[] = {10000, 2500, 20000, 80000, 200000, 200000};
-// KL_PORASYN56 @0x257f98  x=timer_zkzu  (UMR_BAR__1_1000_0_S6_S3)
-static const int16_t up56_porasyn_x[] = {0, 280, 300};
-static const int32_t up56_porasyn_y[] = {200, 700, 12750};
 // KL_PHKABMT56 @0x24003c  x=sig_m_t  (UMR_BAR__1_1000_0_S6_S3)
 static const int16_t up56_phkabmt_x[] = {-300, -50, -10, 10, 50, 250, 500, 750};
 static const int32_t up56_phkabmt_y[] = {2000, 1250, 900, 900, 1400, 1550, 2100, 2700};
@@ -335,6 +332,9 @@ static const int32_t up56_wtsgls_z[] = {690, 960, 960, 980, 520, 560, 600, 690, 
 // KL_TVGLSKZUCG56 @0x238dd8  x=sig_c_getr  (UMR_MSEC__10_1_0_S6_S3)
 static const int16_t up56_tvglskzucg_x[] = {-20, 0, 30};
 static const int32_t up56_tvglskzucg_y[] = {430, 230, 130};
+// KL_TVGLSKABCG56 @0x239ae4  x=sig_c_getr  (UMR_MSEC__10_1_0_S6_S3)
+static const int16_t up56_tvglskabcg_x[] = {-15, 0, 30};
+static const int32_t up56_tvglskabcg_y[] = {150, 150, 70};
 // KF_MEHAUPT56 @0x22c760  x=n_tkf y=sig_m_t8  (UMR_NM__6_1_M145_S6_S3)
 static const int16_t up56_mehaupt_x[] = {1408, 2400, 3392, 4416, 5408, 6400};
 static const int16_t up56_mehaupt_y[] = {-296, -40, 0, 56, 120, 200, 296, 400, 496, 648};
@@ -365,9 +365,6 @@ static const int32_t up67_tsynmtrakzu_y[] = {-30, -40, -40, -50};
 // KL_PGRASYN67 @0x258194  x=sig_m_t  (UMR_BAR_SEC_1_10_0_S6_S3)
 static const int16_t up67_pgrasyn_x[] = {-100, -10, 100, 200, 300, 400};
 static const int32_t up67_pgrasyn_y[] = {10000, 5000, 20000, 80000, 150000, 200000};
-// KL_PORASYN67 @0x25814c  x=timer_zkzu  (UMR_BAR__1_1000_0_S6_S3)
-static const int16_t up67_porasyn_x[] = {0, 280, 300};
-static const int32_t up67_porasyn_y[] = {500, 700, 12750};
 // KL_PHKABMT67 @0x24022c  x=sig_m_t  (UMR_BAR__1_1000_0_S6_S3)
 static const int16_t up67_phkabmt_x[] = {-100, -50, -10, 10, 50, 250, 500, 750};
 static const int32_t up67_phkabmt_y[] = {2600, 2200, 1500, 1500, 2200, 3750, 5550, 7400};
@@ -399,6 +396,9 @@ static const int32_t up67_wtsgls_z[] = {540, 680, 680, 690, 490, 500, 540, 580, 
 // KL_TVGLSKZUCG67 @0x238e54  x=sig_c_getr  (UMR_MSEC__10_1_0_S6_S3)
 static const int16_t up67_tvglskzucg_x[] = {-20, 0, 30};
 static const int32_t up67_tvglskzucg_y[] = {430, 230, 110};
+// KL_TVGLSKABCG67 @0x239b88  x=sig_c_getr  (UMR_MSEC__10_1_0_S6_S3)
+static const int16_t up67_tvglskabcg_x[] = {-15, 0, 30};
+static const int32_t up67_tvglskabcg_y[] = {150, 150, 70};
 // KF_MEHAUPT67 @0x22c8c0  x=n_tkf y=sig_m_t8  (UMR_NM__6_1_M145_S6_S3)
 static const int16_t up67_mehaupt_x[] = {1408, 2400, 3392, 4416, 5408, 6400};
 static const int16_t up67_mehaupt_y[] = {-296, -32, 0, 56, 120, 200, 296, 400, 496, 648};
@@ -429,9 +429,6 @@ static const int32_t up78_tsynmtrakzu_y[] = {-30, -30, -30, -30};
 // KL_PGRASYN78 @0x258348  x=sig_m_t  (UMR_BAR_SEC_1_10_0_S6_S3)
 static const int16_t up78_pgrasyn_x[] = {-200, -20, 100, 200, 300, 400};
 static const int32_t up78_pgrasyn_y[] = {40000, 5000, 10000, 80000, 150000, 200000};
-// KL_PORASYN78 @0x258300  x=timer_zkzu  (UMR_BAR__1_1000_0_S6_S3)
-static const int16_t up78_porasyn_x[] = {0, 280, 300};
-static const int32_t up78_porasyn_y[] = {200, 700, 12750};
 // KL_PHKABMT78 @0x24041c  x=sig_m_t  (UMR_BAR__1_1000_0_S6_S3)
 static const int16_t up78_phkabmt_x[] = {-300, -50, -10, 10, 50, 250, 500, 750};
 static const int32_t up78_phkabmt_y[] = {5300, 2550, 1250, 1250, 2550, 4700, 7450, 10250};
@@ -463,6 +460,9 @@ static const int32_t up78_wtsgls_z[] = {610, 860, 860, 860, 480, 530, 560, 600, 
 // KL_TVGLSKZUCG78 @0x238ed0  x=sig_c_getr  (UMR_MSEC__10_1_0_S6_S3)
 static const int16_t up78_tvglskzucg_x[] = {-20, 0, 30};
 static const int32_t up78_tvglskzucg_y[] = {430, 230, 100};
+// KL_TVGLSKABCG78 @0x239c2c  x=sig_c_getr  (UMR_MSEC__10_1_0_S6_S3)
+static const int16_t up78_tvglskabcg_x[] = {-15, 0, 30};
+static const int32_t up78_tvglskabcg_y[] = {150, 150, 70};
 // KF_MEHAUPT78 @0x22ca20  x=n_tkf y=sig_m_t8  (UMR_NM__6_1_M145_S6_S3)
 static const int16_t up78_mehaupt_x[] = {1408, 2400, 3392, 4416, 5408, 6400};
 static const int16_t up78_mehaupt_y[] = {-296, -32, 0, 56, 120, 200, 296, 400, 496, 648};
@@ -529,6 +529,16 @@ static const int32_t dn21_mehaupt_z[] = {84, 84, 120, 132, 144, 156, 36, 36, 72,
 static const int16_t dn21_menach_x[] = {32, 992, 1504, 2016, 3200, 4704};
 static const int16_t dn21_menach_y[] = {120, 152, 248, 400, 552, 704};
 static const int32_t dn21_menach_z[] = {0, 0, 0, -18, -18, -18, -18, -18, -18, -36, -42, -42, -24, -24, -36, -36, -42, -42, -30, -30, -42, -42, -42, -42, -30, -30, -42, -42, -42, -42, -30, -30, -42, -42, -42, -42};
+// KF_WTSGLS21 @0x23a020  x=sig_n_t8 y=sig_m_t8  (UMR_MSEC__10_1_0_S6_S3)
+static const int16_t dn21_wtsgls_x[] = {512, 1216, 2208, 3200};
+static const int16_t dn21_wtsgls_y[] = {-48, 0, 104, 248, 400, 600};
+static const int32_t dn21_wtsgls_z[] = {800, 800, 950, 1070, 800, 800, 820, 920, 500, 540, 650, 720, 350, 440, 530, 590, 300, 370, 450, 510, 300, 360, 420, 470};
+// KL_TVGLSKZUCG21 @0x23b040  x=sig_c_getr  (UMR_MSEC__10_1_0_S6_S3)
+static const int16_t dn21_tvglskzucg_x[] = {-20, 0, 30};
+static const int32_t dn21_tvglskzucg_y[] = {450, 300, 300};
+// KL_TVGLSKABCG21 @0x23a078  x=sig_c_getr  (UMR_MSEC__10_1_0_S6_S3)
+static const int16_t dn21_tvglskabcg_x[] = {-15, 0, 30};
+static const int32_t dn21_tvglskabcg_y[] = {240, 180, 60};
 // KL_TRA32 @0x258d28  x=sig_m_t8  (UMR_MSEC__10_1_0_S6_S3)
 static const int16_t dn32_tra_x[] = {-120, -48, 0, 400};
 static const int32_t dn32_tra_y[] = {450, 250, 100, 100};
@@ -591,6 +601,16 @@ static const int32_t dn32_mehaupt_z[] = {102, 102, 114, 126, 138, 162, 66, 72, 7
 static const int16_t dn32_menach_x[] = {1344, 1792, 2016, 4000, 4704, 5504};
 static const int16_t dn32_menach_y[] = {-16, 0, 48, 160, 248, 400};
 static const int32_t dn32_menach_z[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, -12, -18, -24, 0, -12, -24, -30, -36, -36, -36, -42, -42, -48, -54, -60, -36, -42, -42, -48, -54, -60, -36, -42, -42, -48, -54, -60};
+// KF_WTSGLS32 @0x23a0a4  x=sig_n_t8 y=sig_m_t8  (UMR_MSEC__10_1_0_S6_S3)
+static const int16_t dn32_wtsgls_x[] = {992, 2016, 3008, 4000};
+static const int16_t dn32_wtsgls_y[] = {-48, 0, 40, 104, 248, 600};
+static const int32_t dn32_wtsgls_z[] = {750, 750, 850, 870, 750, 750, 770, 790, 540, 640, 690, 720, 460, 550, 620, 660, 400, 460, 520, 560, 350, 400, 440, 480};
+// KL_TVGLSKZUCG32 @0x23b08c  x=sig_c_getr  (UMR_MSEC__10_1_0_S6_S3)
+static const int16_t dn32_tvglskzucg_x[] = {-20, 0, 30};
+static const int32_t dn32_tvglskzucg_y[] = {350, 250, 250};
+// KL_TVGLSKABCG32 @0x23a0fc  x=sig_c_getr  (UMR_MSEC__10_1_0_S6_S3)
+static const int16_t dn32_tvglskabcg_x[] = {-15, 0, 30};
+static const int32_t dn32_tvglskabcg_y[] = {230, 130, 100};
 // KL_TRA43 @0x258f88  x=sig_m_t8  (UMR_MSEC__10_1_0_S6_S3)
 static const int16_t dn43_tra_x[] = {-200, 0, 104, 400};
 static const int32_t dn43_tra_y[] = {300, 150, 100, 100};
@@ -653,6 +673,16 @@ static const int32_t dn43_mehaupt_z[] = {96, 96, 96, 108, 120, 126, 78, 78, 84, 
 static const int16_t dn43_menach_x[] = {1344, 1728, 3200, 4000, 4704, 5504};
 static const int16_t dn43_menach_y[] = {0, 104, 248, 400, 552, 704};
 static const int32_t dn43_menach_z[] = {0, 0, 0, 0, 0, 0, 0, -12, -12, -18, -24, -24, 0, -24, -36, -42, -48, -48, -24, -24, -36, -48, -60, -72, -24, -24, -66, -72, -84, -96, -24, -24, -72, -78, -96, -114};
+// KF_WTSGLS43 @0x23a128  x=sig_n_t8 y=sig_m_t8  (UMR_MSEC__10_1_0_S6_S3)
+static const int16_t dn43_wtsgls_x[] = {992, 2016, 3200, 4800};
+static const int16_t dn43_wtsgls_y[] = {-48, 0, 104, 248, 400, 600};
+static const int32_t dn43_wtsgls_z[] = {500, 540, 620, 720, 480, 480, 530, 620, 430, 430, 460, 530, 320, 340, 390, 460, 280, 300, 350, 410, 260, 280, 330, 380};
+// KL_TVGLSKZUCG43 @0x23b0d8  x=sig_c_getr  (UMR_MSEC__10_1_0_S6_S3)
+static const int16_t dn43_tvglskzucg_x[] = {-20, 0, 30};
+static const int32_t dn43_tvglskzucg_y[] = {350, 250, 120};
+// KL_TVGLSKABCG43 @0x23a180  x=sig_c_getr  (UMR_MSEC__10_1_0_S6_S3)
+static const int16_t dn43_tvglskabcg_x[] = {-15, 0, 30};
+static const int32_t dn43_tvglskabcg_y[] = {400, 180, 90};
 // KL_TRA54 @0x2591e8  x=sig_m_t8  (UMR_MSEC__10_1_0_S6_S3)
 static const int16_t dn54_tra_x[] = {-200, 0, 104, 400};
 static const int32_t dn54_tra_y[] = {300, 150, 150, 150};
@@ -715,6 +745,16 @@ static const int32_t dn54_mehaupt_z[] = {84, 84, 96, 102, 120, 120, 66, 66, 84, 
 static const int16_t dn54_menach_x[] = {1344, 1728, 3200, 4000, 4704, 5504};
 static const int16_t dn54_menach_y[] = {0, 104, 200, 400, 552, 704};
 static const int32_t dn54_menach_z[] = {0, 0, 0, 0, 0, 0, 0, 0, -18, -24, -24, -24, -18, -18, -18, -24, -30, -30, -24, -18, -18, -24, -30, -30, -24, -24, -24, -24, -30, -30, -24, -24, -24, -24, -30, -30};
+// KF_WTSGLS54 @0x23a1ac  x=sig_n_t8 y=sig_m_t8  (UMR_MSEC__10_1_0_S6_S3)
+static const int16_t dn54_wtsgls_x[] = {992, 2208, 3616, 4992};
+static const int16_t dn54_wtsgls_y[] = {-48, 0, 104, 248, 400, 600};
+static const int32_t dn54_wtsgls_z[] = {540, 540, 590, 640, 510, 510, 560, 610, 440, 440, 480, 530, 330, 370, 420, 480, 280, 360, 390, 450, 280, 360, 380, 430};
+// KL_TVGLSKZUCG54 @0x23b124  x=sig_c_getr  (UMR_MSEC__10_1_0_S6_S3)
+static const int16_t dn54_tvglskzucg_x[] = {-20, 0, 30};
+static const int32_t dn54_tvglskzucg_y[] = {200, 150, 150};
+// KL_TVGLSKABCG54 @0x23a204  x=sig_c_getr  (UMR_MSEC__10_1_0_S6_S3)
+static const int16_t dn54_tvglskabcg_x[] = {-15, 0, 30};
+static const int32_t dn54_tvglskabcg_y[] = {230, 130, 80};
 // KL_TRA65 @0x259448  x=sig_m_t8  (UMR_MSEC__10_1_0_S6_S3)
 static const int16_t dn65_tra_x[] = {-200, 0, 104, 400};
 static const int32_t dn65_tra_y[] = {300, 150, 150, 150};
@@ -777,6 +817,16 @@ static const int32_t dn65_mehaupt_z[] = {48, 78, 126, 144, 150, 156, 42, 48, 96,
 static const int16_t dn65_menach_x[] = {1344, 1728, 3200, 4000, 4704, 5504};
 static const int16_t dn65_menach_y[] = {0, 40, 104, 248, 400, 552};
 static const int32_t dn65_menach_z[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -6, -6, -6, -6, -6, -12, -18, -30, -42, -12, -18, -24, -36, -60, -72, -12, -24, -30, -42, -60, -72};
+// KF_WTSGLS65 @0x23a230  x=sig_n_t8 y=sig_m_t8  (UMR_MSEC__10_1_0_S6_S3)
+static const int16_t dn65_wtsgls_x[] = {992, 2208, 3616, 4992};
+static const int16_t dn65_wtsgls_y[] = {-48, 0, 104, 248, 400, 600};
+static const int32_t dn65_wtsgls_z[] = {520, 500, 500, 550, 520, 500, 500, 540, 420, 420, 430, 470, 340, 380, 420, 450, 300, 340, 360, 390, 280, 320, 340, 370};
+// KL_TVGLSKZUCG65 @0x23b170  x=sig_c_getr  (UMR_MSEC__10_1_0_S6_S3)
+static const int16_t dn65_tvglskzucg_x[] = {-15, 0, 30};
+static const int32_t dn65_tvglskzucg_y[] = {300, 200, 130};
+// KL_TVGLSKABCG65 @0x23a288  x=sig_c_getr  (UMR_MSEC__10_1_0_S6_S3)
+static const int16_t dn65_tvglskabcg_x[] = {-15, 0, 30};
+static const int32_t dn65_tvglskabcg_y[] = {200, 130, 80};
 // KL_TRA76 @0x2596a8  x=sig_m_t8  (UMR_MSEC__10_1_0_S6_S3)
 static const int16_t dn76_tra_x[] = {-200, 0, 104, 400};
 static const int32_t dn76_tra_y[] = {300, 150, 100, 100};
@@ -839,6 +889,16 @@ static const int32_t dn76_mehaupt_z[] = {66, 84, 96, 108, 114, 120, 30, 66, 78, 
 static const int16_t dn76_menach_x[] = {1728, 2496, 3200, 4000, 4704, 5504};
 static const int16_t dn76_menach_y[] = {0, 104, 248, 400, 552, 704};
 static const int32_t dn76_menach_z[] = {0, 0, 0, 0, 0, 0, 0, -24, -30, -42, -48, -48, -18, -24, -42, -60, -60, -60, -18, -30, -42, -60, -72, -72, -18, -36, -54, -66, -78, -78, -18, -48, -54, -66, -78, -78};
+// KF_WTSGLS76 @0x23a2b4  x=sig_n_t8 y=sig_m_t8  (UMR_MSEC__10_1_0_S6_S3)
+static const int16_t dn76_wtsgls_x[] = {992, 2496, 4000, 5504};
+static const int16_t dn76_wtsgls_y[] = {-48, 0, 104, 248, 400, 600};
+static const int32_t dn76_wtsgls_z[] = {400, 450, 500, 550, 400, 450, 500, 550, 320, 370, 430, 460, 280, 340, 380, 400, 280, 300, 340, 360, 280, 300, 320, 340};
+// KL_TVGLSKZUCG76 @0x23b1bc  x=sig_c_getr  (UMR_MSEC__10_1_0_S6_S3)
+static const int16_t dn76_tvglskzucg_x[] = {-15, 0, 30};
+static const int32_t dn76_tvglskzucg_y[] = {230, 150, 100};
+// KL_TVGLSKABCG76 @0x23a30c  x=sig_c_getr  (UMR_MSEC__10_1_0_S6_S3)
+static const int16_t dn76_tvglskabcg_x[] = {-15, 0, 30};
+static const int32_t dn76_tvglskabcg_y[] = {170, 130, 100};
 // KL_TRA87 @0x259908  x=sig_m_t8  (UMR_MSEC__10_1_0_S6_S3)
 static const int16_t dn87_tra_x[] = {-248, 0, 104, 400};
 static const int32_t dn87_tra_y[] = {250, 150, 150, 70};
@@ -901,6 +961,16 @@ static const int32_t dn87_mehaupt_z[] = {84, 96, 102, 114, 132, 138, 60, 66, 72,
 static const int16_t dn87_menach_x[] = {1728, 2496, 3200, 4000, 4704, 5504};
 static const int16_t dn87_menach_y[] = {0, 24, 104, 248, 400, 552};
 static const int32_t dn87_menach_z[] = {0, 0, 0, 0, 0, 0, 0, -12, -12, -12, -6, -12, 0, -12, -18, -24, -24, -18, 0, -12, -18, -24, -24, -24, 0, -12, -24, -30, -42, -42, -12, -24, -36, -36, -48, -48};
+// KF_WTSGLS87 @0x23a338  x=sig_n_t8 y=sig_m_t8  (UMR_MSEC__10_1_0_S6_S3)
+static const int16_t dn87_wtsgls_x[] = {1504, 2496, 4000, 5504};
+static const int16_t dn87_wtsgls_y[] = {-48, 48, 104, 248, 400, 600};
+static const int32_t dn87_wtsgls_z[] = {420, 450, 500, 570, 500, 450, 500, 570, 360, 410, 440, 500, 340, 360, 380, 380, 310, 320, 330, 360, 310, 320, 330, 360};
+// KL_TVGLSKZUCG87 @0x23b208  x=sig_c_getr  (UMR_MSEC__10_1_0_S6_S3)
+static const int16_t dn87_tvglskzucg_x[] = {-15, 0, 30};
+static const int32_t dn87_tvglskzucg_y[] = {230, 150, 100};
+// KL_TVGLSKABCG87 @0x23a390  x=sig_c_getr  (UMR_MSEC__10_1_0_S6_S3)
+static const int16_t dn87_tvglskabcg_x[] = {-15, 0, 40};
+static const int32_t dn87_tvglskabcg_y[] = {170, 100, 50};
 // KF_PSFCGMT_A @0x224824  x=sig_c_getr y=sig_m_t8  (UMR_BAR__1_1000_0_S6_S3)
 static const int16_t clA_psfcgmt_x[] = {-30, -20, -10, 0, 10, 50, 90, 110};
 static const int16_t clA_psfcgmt_y[] = {-56, -24, 0, 16};
@@ -1133,7 +1203,6 @@ const UpShiftCal calUp[CAL_NUM_PAIRS] = {
    {6, 4, up12_pgokzumtnt_x, up12_pgokzumtnt_y, up12_pgokzumtnt_z}, // pgokzumtnt
    {4, up12_tsynmtrakzu_x, up12_tsynmtrakzu_y}, // tsynmtrakzu
    {6, up12_pgrasyn_x, up12_pgrasyn_y}, // pgrasyn
-   {3, up12_porasyn_x, up12_porasyn_y}, // porasyn
    300, // t_syn T_SYN12 @0x26e8d3
    0, // t_vkabhs T_VKABHS12 @0x26e70d
    {8, up12_phkabmt_x, up12_phkabmt_y}, // phkabmt
@@ -1155,6 +1224,7 @@ const UpShiftCal calUp[CAL_NUM_PAIRS] = {
    3, // kp_glskab KP_GLSKAB12 @0x26da28
    11, // ki_glskab KI_GLSKAB12 @0x26da24
    {3, up12_tvglskzucg_x, up12_tvglskzucg_y}, // tvglskzucg
+   {3, up12_tvglskabcg_x, up12_tvglskabcg_y}, // tvglskabcg
    {6, 10, up12_mehaupt_x, up12_mehaupt_y, up12_mehaupt_z}, // mehaupt
    100, // t_ramee T_RAMEE12 @0x26e586
 },
@@ -1167,7 +1237,6 @@ const UpShiftCal calUp[CAL_NUM_PAIRS] = {
    {6, 4, up23_pgokzumtnt_x, up23_pgokzumtnt_y, up23_pgokzumtnt_z}, // pgokzumtnt
    {4, up23_tsynmtrakzu_x, up23_tsynmtrakzu_y}, // tsynmtrakzu
    {6, up23_pgrasyn_x, up23_pgrasyn_y}, // pgrasyn
-   {3, up23_porasyn_x, up23_porasyn_y}, // porasyn
    300, // t_syn T_SYN23 @0x26e8d7
    0, // t_vkabhs T_VKABHS23 @0x26e70e
    {8, up23_phkabmt_x, up23_phkabmt_y}, // phkabmt
@@ -1189,6 +1258,7 @@ const UpShiftCal calUp[CAL_NUM_PAIRS] = {
    2, // kp_glskab KP_GLSKAB23 @0x26da4a
    11, // ki_glskab KI_GLSKAB23 @0x26da46
    {3, up23_tvglskzucg_x, up23_tvglskzucg_y}, // tvglskzucg
+   {3, up23_tvglskabcg_x, up23_tvglskabcg_y}, // tvglskabcg
    {6, 10, up23_mehaupt_x, up23_mehaupt_y, up23_mehaupt_z}, // mehaupt
    100, // t_ramee T_RAMEE23 @0x26e587
 },
@@ -1201,7 +1271,6 @@ const UpShiftCal calUp[CAL_NUM_PAIRS] = {
    {6, 4, up34_pgokzumtnt_x, up34_pgokzumtnt_y, up34_pgokzumtnt_z}, // pgokzumtnt
    {4, up34_tsynmtrakzu_x, up34_tsynmtrakzu_y}, // tsynmtrakzu
    {6, up34_pgrasyn_x, up34_pgrasyn_y}, // pgrasyn
-   {3, up34_porasyn_x, up34_porasyn_y}, // porasyn
    300, // t_syn T_SYN34 @0x26e8db
    0, // t_vkabhs T_VKABHS34 @0x26e70f
    {8, up34_phkabmt_x, up34_phkabmt_y}, // phkabmt
@@ -1223,6 +1292,7 @@ const UpShiftCal calUp[CAL_NUM_PAIRS] = {
    3, // kp_glskab KP_GLSKAB34 @0x26da6c
    11, // ki_glskab KI_GLSKAB34 @0x26da68
    {3, up34_tvglskzucg_x, up34_tvglskzucg_y}, // tvglskzucg
+   {3, up34_tvglskabcg_x, up34_tvglskabcg_y}, // tvglskabcg
    {6, 10, up34_mehaupt_x, up34_mehaupt_y, up34_mehaupt_z}, // mehaupt
    100, // t_ramee T_RAMEE34 @0x26e588
 },
@@ -1235,7 +1305,6 @@ const UpShiftCal calUp[CAL_NUM_PAIRS] = {
    {6, 4, up45_pgokzumtnt_x, up45_pgokzumtnt_y, up45_pgokzumtnt_z}, // pgokzumtnt
    {4, up45_tsynmtrakzu_x, up45_tsynmtrakzu_y}, // tsynmtrakzu
    {6, up45_pgrasyn_x, up45_pgrasyn_y}, // pgrasyn
-   {3, up45_porasyn_x, up45_porasyn_y}, // porasyn
    260, // t_syn T_SYN45 @0x26e8df
    0, // t_vkabhs T_VKABHS45 @0x26e710
    {8, up45_phkabmt_x, up45_phkabmt_y}, // phkabmt
@@ -1257,6 +1326,7 @@ const UpShiftCal calUp[CAL_NUM_PAIRS] = {
    3, // kp_glskab KP_GLSKAB45 @0x26da8e
    11, // ki_glskab KI_GLSKAB45 @0x26da8a
    {3, up45_tvglskzucg_x, up45_tvglskzucg_y}, // tvglskzucg
+   {3, up45_tvglskabcg_x, up45_tvglskabcg_y}, // tvglskabcg
    {6, 10, up45_mehaupt_x, up45_mehaupt_y, up45_mehaupt_z}, // mehaupt
    100, // t_ramee T_RAMEE45 @0x26e589
 },
@@ -1269,7 +1339,6 @@ const UpShiftCal calUp[CAL_NUM_PAIRS] = {
    {6, 4, up56_pgokzumtnt_x, up56_pgokzumtnt_y, up56_pgokzumtnt_z}, // pgokzumtnt
    {4, up56_tsynmtrakzu_x, up56_tsynmtrakzu_y}, // tsynmtrakzu
    {6, up56_pgrasyn_x, up56_pgrasyn_y}, // pgrasyn
-   {3, up56_porasyn_x, up56_porasyn_y}, // porasyn
    300, // t_syn T_SYN56 @0x26e8e3
    0, // t_vkabhs T_VKABHS56 @0x26e711
    {8, up56_phkabmt_x, up56_phkabmt_y}, // phkabmt
@@ -1291,6 +1360,7 @@ const UpShiftCal calUp[CAL_NUM_PAIRS] = {
    2, // kp_glskab KP_GLSKAB56 @0x26dab0
    11, // ki_glskab KI_GLSKAB56 @0x26daac
    {3, up56_tvglskzucg_x, up56_tvglskzucg_y}, // tvglskzucg
+   {3, up56_tvglskabcg_x, up56_tvglskabcg_y}, // tvglskabcg
    {6, 10, up56_mehaupt_x, up56_mehaupt_y, up56_mehaupt_z}, // mehaupt
    100, // t_ramee T_RAMEE56 @0x26e58a
 },
@@ -1303,7 +1373,6 @@ const UpShiftCal calUp[CAL_NUM_PAIRS] = {
    {6, 4, up67_pgokzumtnt_x, up67_pgokzumtnt_y, up67_pgokzumtnt_z}, // pgokzumtnt
    {4, up67_tsynmtrakzu_x, up67_tsynmtrakzu_y}, // tsynmtrakzu
    {6, up67_pgrasyn_x, up67_pgrasyn_y}, // pgrasyn
-   {3, up67_porasyn_x, up67_porasyn_y}, // porasyn
    250, // t_syn T_SYN67 @0x26e8e7
    0, // t_vkabhs T_VKABHS67 @0x26e712
    {8, up67_phkabmt_x, up67_phkabmt_y}, // phkabmt
@@ -1325,6 +1394,7 @@ const UpShiftCal calUp[CAL_NUM_PAIRS] = {
    2, // kp_glskab KP_GLSKAB67 @0x26dad2
    11, // ki_glskab KI_GLSKAB67 @0x26dace
    {3, up67_tvglskzucg_x, up67_tvglskzucg_y}, // tvglskzucg
+   {3, up67_tvglskabcg_x, up67_tvglskabcg_y}, // tvglskabcg
    {6, 10, up67_mehaupt_x, up67_mehaupt_y, up67_mehaupt_z}, // mehaupt
    100, // t_ramee T_RAMEE67 @0x26e58b
 },
@@ -1337,7 +1407,6 @@ const UpShiftCal calUp[CAL_NUM_PAIRS] = {
    {6, 4, up78_pgokzumtnt_x, up78_pgokzumtnt_y, up78_pgokzumtnt_z}, // pgokzumtnt
    {4, up78_tsynmtrakzu_x, up78_tsynmtrakzu_y}, // tsynmtrakzu
    {6, up78_pgrasyn_x, up78_pgrasyn_y}, // pgrasyn
-   {3, up78_porasyn_x, up78_porasyn_y}, // porasyn
    260, // t_syn T_SYN78 @0x26e8eb
    0, // t_vkabhs T_VKABHS78 @0x26e713
    {8, up78_phkabmt_x, up78_phkabmt_y}, // phkabmt
@@ -1359,6 +1428,7 @@ const UpShiftCal calUp[CAL_NUM_PAIRS] = {
    2, // kp_glskab KP_GLSKAB78 @0x26daf4
    11, // ki_glskab KI_GLSKAB78 @0x26daf0
    {3, up78_tvglskzucg_x, up78_tvglskzucg_y}, // tvglskzucg
+   {3, up78_tvglskabcg_x, up78_tvglskabcg_y}, // tvglskabcg
    {6, 10, up78_mehaupt_x, up78_mehaupt_y, up78_mehaupt_z}, // mehaupt
    100, // t_ramee T_RAMEE78 @0x26e58c
 }
@@ -1388,6 +1458,13 @@ const DownShiftCal calDown[CAL_NUM_PAIRS] = {
    8000, // p_sysmin P_SYSMIN21 @0x26dee6
    {6, 10, dn21_mehaupt_x, dn21_mehaupt_y, dn21_mehaupt_z}, // mehaupt
    {6, 6, dn21_menach_x, dn21_menach_y, dn21_menach_z}, // menach
+   {4, 6, dn21_wtsgls_x, dn21_wtsgls_y, dn21_wtsgls_z}, // wtsgls
+   2, // kp_glskzu KP_GLSKZU21 @0x26db6c
+   8, // ki_glskzu KI_GLSKZU21 @0x26db68
+   1, // kp_glskab KP_GLSKAB21 @0x26db84
+   13, // ki_glskab KI_GLSKAB21 @0x26db80
+   {3, dn21_tvglskzucg_x, dn21_tvglskzucg_y}, // tvglskzucg
+   {3, dn21_tvglskabcg_x, dn21_tvglskabcg_y}, // tvglskabcg
 },
 {
    0, // t_vkzu T_VKZU32 @0x26e9a9
@@ -1412,6 +1489,13 @@ const DownShiftCal calDown[CAL_NUM_PAIRS] = {
    8000, // p_sysmin P_SYSMIN32 @0x26deec
    {6, 10, dn32_mehaupt_x, dn32_mehaupt_y, dn32_mehaupt_z}, // mehaupt
    {6, 6, dn32_menach_x, dn32_menach_y, dn32_menach_z}, // menach
+   {4, 6, dn32_wtsgls_x, dn32_wtsgls_y, dn32_wtsgls_z}, // wtsgls
+   4, // kp_glskzu KP_GLSKZU32 @0x26db8e
+   15, // ki_glskzu KI_GLSKZU32 @0x26db8a
+   3, // kp_glskab KP_GLSKAB32 @0x26dba6
+   35, // ki_glskab KI_GLSKAB32 @0x26dba2
+   {3, dn32_tvglskzucg_x, dn32_tvglskzucg_y}, // tvglskzucg
+   {3, dn32_tvglskabcg_x, dn32_tvglskabcg_y}, // tvglskabcg
 },
 {
    0, // t_vkzu T_VKZU43 @0x26e9ae
@@ -1436,6 +1520,13 @@ const DownShiftCal calDown[CAL_NUM_PAIRS] = {
    8000, // p_sysmin P_SYSMIN43 @0x26def2
    {6, 10, dn43_mehaupt_x, dn43_mehaupt_y, dn43_mehaupt_z}, // mehaupt
    {6, 6, dn43_menach_x, dn43_menach_y, dn43_menach_z}, // menach
+   {4, 6, dn43_wtsgls_x, dn43_wtsgls_y, dn43_wtsgls_z}, // wtsgls
+   4, // kp_glskzu KP_GLSKZU43 @0x26dbb0
+   20, // ki_glskzu KI_GLSKZU43 @0x26dbac
+   3, // kp_glskab KP_GLSKAB43 @0x26dbc8
+   30, // ki_glskab KI_GLSKAB43 @0x26dbc4
+   {3, dn43_tvglskzucg_x, dn43_tvglskzucg_y}, // tvglskzucg
+   {3, dn43_tvglskabcg_x, dn43_tvglskabcg_y}, // tvglskabcg
 },
 {
    0, // t_vkzu T_VKZU54 @0x26e9b3
@@ -1460,6 +1551,13 @@ const DownShiftCal calDown[CAL_NUM_PAIRS] = {
    8000, // p_sysmin P_SYSMIN54 @0x26def8
    {6, 10, dn54_mehaupt_x, dn54_mehaupt_y, dn54_mehaupt_z}, // mehaupt
    {6, 6, dn54_menach_x, dn54_menach_y, dn54_menach_z}, // menach
+   {4, 6, dn54_wtsgls_x, dn54_wtsgls_y, dn54_wtsgls_z}, // wtsgls
+   3, // kp_glskzu KP_GLSKZU54 @0x26dbd2
+   15, // ki_glskzu KI_GLSKZU54 @0x26dbce
+   3, // kp_glskab KP_GLSKAB54 @0x26dbea
+   30, // ki_glskab KI_GLSKAB54 @0x26dbe6
+   {3, dn54_tvglskzucg_x, dn54_tvglskzucg_y}, // tvglskzucg
+   {3, dn54_tvglskabcg_x, dn54_tvglskabcg_y}, // tvglskabcg
 },
 {
    0, // t_vkzu T_VKZU65 @0x26e9b8
@@ -1484,6 +1582,13 @@ const DownShiftCal calDown[CAL_NUM_PAIRS] = {
    8000, // p_sysmin P_SYSMIN65 @0x26defe
    {6, 10, dn65_mehaupt_x, dn65_mehaupt_y, dn65_mehaupt_z}, // mehaupt
    {6, 6, dn65_menach_x, dn65_menach_y, dn65_menach_z}, // menach
+   {4, 6, dn65_wtsgls_x, dn65_wtsgls_y, dn65_wtsgls_z}, // wtsgls
+   4, // kp_glskzu KP_GLSKZU65 @0x26dbf4
+   10, // ki_glskzu KI_GLSKZU65 @0x26dbf0
+   3, // kp_glskab KP_GLSKAB65 @0x26dc0c
+   40, // ki_glskab KI_GLSKAB65 @0x26dc08
+   {3, dn65_tvglskzucg_x, dn65_tvglskzucg_y}, // tvglskzucg
+   {3, dn65_tvglskabcg_x, dn65_tvglskabcg_y}, // tvglskabcg
 },
 {
    0, // t_vkzu T_VKZU76 @0x26e9bd
@@ -1508,6 +1613,13 @@ const DownShiftCal calDown[CAL_NUM_PAIRS] = {
    8000, // p_sysmin P_SYSMIN76 @0x26df04
    {6, 10, dn76_mehaupt_x, dn76_mehaupt_y, dn76_mehaupt_z}, // mehaupt
    {6, 6, dn76_menach_x, dn76_menach_y, dn76_menach_z}, // menach
+   {4, 6, dn76_wtsgls_x, dn76_wtsgls_y, dn76_wtsgls_z}, // wtsgls
+   3, // kp_glskzu KP_GLSKZU76 @0x26dc16
+   20, // ki_glskzu KI_GLSKZU76 @0x26dc12
+   4, // kp_glskab KP_GLSKAB76 @0x26dc2e
+   40, // ki_glskab KI_GLSKAB76 @0x26dc2a
+   {3, dn76_tvglskzucg_x, dn76_tvglskzucg_y}, // tvglskzucg
+   {3, dn76_tvglskabcg_x, dn76_tvglskabcg_y}, // tvglskabcg
 },
 {
    0, // t_vkzu T_VKZU87 @0x26e9c2
@@ -1532,6 +1644,13 @@ const DownShiftCal calDown[CAL_NUM_PAIRS] = {
    8000, // p_sysmin P_SYSMIN87 @0x26df0a
    {6, 10, dn87_mehaupt_x, dn87_mehaupt_y, dn87_mehaupt_z}, // mehaupt
    {6, 6, dn87_menach_x, dn87_menach_y, dn87_menach_z}, // menach
+   {4, 6, dn87_wtsgls_x, dn87_wtsgls_y, dn87_wtsgls_z}, // wtsgls
+   3, // kp_glskzu KP_GLSKZU87 @0x26dc38
+   20, // ki_glskzu KI_GLSKZU87 @0x26dc34
+   5, // kp_glskab KP_GLSKAB87 @0x26dc50
+   40, // ki_glskab KI_GLSKAB87 @0x26dc4c
+   {3, dn87_tvglskzucg_x, dn87_tvglskzucg_y}, // tvglskzucg
+   {3, dn87_tvglskabcg_x, dn87_tvglskabcg_y}, // tvglskabcg
 }
 };
 
@@ -1636,4 +1755,4 @@ const GlobalCal calGlobal = {
    {5, g_tvpsein_x, g_tvpsein_y}, // tvpsein KL_TVPSEIN
 };
 
-// 7196 calibration values from 450 items.
+// 7434 calibration values from 499 items.

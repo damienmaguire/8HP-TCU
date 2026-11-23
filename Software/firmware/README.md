@@ -113,9 +113,9 @@ negative as in the ROM (-30 = 30 ms before sync).
 | File | What it does | Source |
 |---|---|---|
 | `gears.*` | Gear/clutch table, ratios, single-swap off/on elements, next step (adjacent only in v1) | §4, §5.1 |
-| `interlock.*` | Hard check before any output: applied elements must be in the allowed set; <= 3 applied and forming a gear, or <= 4 inside the from/to union during a swap | §4 |
-| `sas.*` | Shift state machines with the OEM state numbers. Upshift KZU 1,2,4,9,10,13 + KAB 1,2,3,4,9,16; downshift KZU 1,2,5,9,12,18 + KAB 10..16; timeout 14 (KL_TMAXCG); GLS PI with +-3 bar clamp; torque intervention KF_MEHAUPT / KF_MENACH | §5.3-5.6, `330E_SAS_FILL_RAMP.md` |
-| `engage.*` | N->1 / N->R: V1/V2 quick fill, then the power-flow element fills and closes | §5.7 |
+| `interlock.*` | Hard check before any output, on the commanded coil currents: a clutch is open only below `IlOpenLow` (A/B, 60 mA) or above `IlOpenHigh` (C/D/E, 790 mA); every clutch outside the allowed set must be open; <= 3 applied and forming a gear, or <= 4 inside the from/to union during a swap; never 5 | §4, Ian QA2 |
+| `sas.*` | Shift state machines with the OEM state numbers. Upshift KZU 1,2,4,9,10,13 + KAB 1,2,3,4,9,16; downshift KZU 1,2,5,9,12,18 + KAB 10..16; timeout 14 (KL_TMAXCG); power-on/coast picked at shift start from the torque sign; GLS PI on KZU or KAB with the OEM scaling and +-3 bar clamp; torque intervention KF_MEHAUPT / KF_MENACH | §5.3-5.6, `330E_SAS_FILL_RAMP.md`, Ian QA2 |
+| `engage.*` | N->1 / N->R: V1/V2 quick fill, then the last clutch (per `Variant`) fills and closes, fast only with confirmed no-slip, torque near 0 and line pressure OK | §5.7, Ian QA2 |
 | `eds.*` | Pressure -> current (KL_EDSKVA..K0), KF_KIEDSCG* temperature correction, slew limit, firmware dither | §6, `330E_EDS_PWM.md` |
 | `max22200.*` | MAX22200/MAX22200A SPI driver | data sheet Rev 1 (3/25) |
 | `valveout.*` | Valve-to-channel map, two chips, fault mapping | |
@@ -184,11 +184,14 @@ agreed (Q5). Values little endian.
 * RX `CanCmdId` (default 0x300): byte 0 selector (0=P 1=R 2=N 3=D),
   byte 1 gear request (0 = hold, 1..8, used when `GearSelMode = VCU`),
   bytes 2-3 actual motor torque Nm (signed), bytes 4-5 motor rpm (signed).
-  If it stops for `CanTimeout` ms the TCU goes to neutral and uses
-  `CanLossTq` for line pressure.
+  If it stops for `CanTimeout` ms the TCU uses `CanLossTq` for line
+  pressure and follows `CanLossMode`: 0 (default) goes to neutral; 1 holds
+  the gear at `LineMax`, refuses upshifts and only steps down as the car
+  slows. No gear-in is started while the frame is missing.
 * TX `CanStatId` (default 0x301, only if `CanTxEnable = 1`): gear, mode,
   target gear, fault, torque intervention request Nm (signed), ATF + 40,
-  flags (shifting, park request, safe state). The torque intervention
+  flags (bit 0 shifting, 1 park request, 2 safe state, 3 hold motor
+  torque near 0 for gear-in, 4 CAN-loss gear hold, 5 coast shift). The torque intervention
   request is the hook for the inverter: how it reaches the inverter is
   open (Q5).
 * CAN2 log (only if `LogEnable = 1`), every 10 ms from `LogBaseId`
@@ -210,7 +213,13 @@ Implemented:
 * Gear/clutch tables, single-swap table (tested against §5.1), interlock.
 * SAS upshift and downshift phase machines with OEM state numbers, fill,
   ramps, GLS, sync detection, timeout, torque intervention and its ramp-out.
-* N->1 / N->R engage, neutral with B pre-filled.
+* Coast shifts (zug_schub_sas): picked at runtime from the sign of `m_t`
+  at the start of the shift, using the negative-torque points of the same
+  maps (there are no separate coast ROM sets). The GLS moves to the other
+  clutch: KZU for power-on upshifts and coast downshifts, KAB for coast
+  upshifts and power-on downshifts (`KP/KI_GLSKAB`, `KL_TVGLSKABCG`).
+* N->1 / N->R engage with the last clutch per gearbox variant, neutral
+  with B pre-filled.
 * Line pressure: `max(KF_PSYS_<gear>(m_t, n_mot), P_SYSMIN<xy>)` while
   shifting, `P_SYSMIN_D/R` while engaging, `KF_PSYSN` in N/P, plus
   `LineOffset`, capped at `LineMax`.
@@ -233,8 +242,11 @@ Stubbed / not done yet:
   frame.
 * Skip shifts and the OEM routing tables (0x51418 / 0x51350): v1 only does
   adjacent shifts.
-* Coast (Schub) parameter sets and the SP/SPORT/_EL sets: the Normal
-  power-on sets are used for both signs of torque.
+* `TAB_IKABENTLEER` (0x234c78), the shift-type switch for an off-going
+  current ramp, is all zeros in the 330e calibration (`CS_IKABENTLEER`
+  -40 degC), so that ramp is never active. It is not implemented; revisit
+  if another calibration sets it.
+* The SP/SPORT/_EL sets (only Normal is generated; `CAL_SET=el` exists).
 * Fill adaptation (Q8), POS valve logic (fixed `PosCurrent`), K0 (held
   open at 50 mA).
 
@@ -259,7 +271,12 @@ parameters to set once the value is known:
 | Aux pump LIN frames | not implemented (pin `lin_nslp` placeholder) | | Q6 |
 | Inverter torque CAN | `CanCmdId`, `CanStatId`, `CanTxEnable`, `TqInterv`, `TqRamp` | placeholder frames, TX off | Q5, Q11 |
 | Applied clutch pressure | `ClutchApplyP` | 16500 mbar (valve fully open) | bench |
-| Engage closing gradient | `EngageCloseGrad`, `EngageFillEq`, `EngageRamp` | 20 bar/s, 50 ms, 300 ms | bench |
+| Engage fast close | `EngageCloseGrad` (20-50 bar/s), `EngageSyncMs` (50-100 ms), `EngageTqZero`, `EngagePostSync` | 30 bar/s, 80 ms, 10 Nm, 200 ms | Ian QA2, bench |
+| Engage fill/ramp | `EngageFillEq`, `EngageRamp` | 50 ms, 300 ms | bench |
+| Gearbox variant (last clutch on gear-in) | `Variant` | 0 = 330e | Ian QA2 |
+| Interlock open thresholds | `IlOpenLow`, `IlOpenHigh` | 60 mA, 790 mA | Ian QA2 |
+| KAB GLS early start slip | `GlsKabSlipUp`, `GlsKabSlipDn` | 350 rpm, 150 rpm | Ian QA2 |
+| CAN loss behaviour | `CanLossMode` | 0 = neutral | **Damien** |
 
 ## Open questions
 
@@ -279,33 +296,47 @@ From the control spec §7:
 * **Q10** CG208 PWM frequency and dither amplitude.
 * **Q11** Motor-to-gearbox torque sign and ratio for `m_t`.
 
-Raised while writing this firmware:
+Raised while writing this firmware. Ian answered these in his QA2
+write-up (round 2, 23 Nov 2026); what the firmware now does:
 
-* **Gear-in power-flow element.** `engage.cpp` closes C last for N->1 and
-  D last for N->R, with A and B as V1/V2. That is from public 8HP
-  descriptions [H], not from the ROM. Which element does `jSasKzuGeG<n>`
-  treat as the power-flow clutch?
-* **Interlock during a swap.** The spec says never more than 3 above fill.
-  During the overlap of a single swap the off-going and on-coming elements
-  are both above fill (4 total), so the firmware allows 4 only inside the
-  from/to union while shifting. Is that how the OEM check works?
-* **GLS units and start.** KP/KI are taken as mbar per rpm/s and KI per
-  10 ms; the GLS start delay (`KL_TVGLSKZUCG`) is counted from ramp-2
-  entry. Please confirm.
-* **Downshift KAB hold.** Implemented as `KF_PKAB + KL_POHKAB` for
-  `KF_TVKABMTNMOTRS`, then ramp to `KF_PKAB` over `KL_TRAHKAB`. Your note
-  says "hold = current + KL_POHKAB". Is the base the shift pressure or the
-  pressure at shift start?
-* **Upshift KAB takeover** keeps venting with `KL_PGOMTKAB` while the KZU
-  GLS carries the load. Is there a separate takeover gradient?
-* **Gear-in gradients.** The OEM `KL_PGRASYN*` gear-in gradients are about
-  1 bar/s at low torque, which takes seconds. The firmware switches to
-  `EngageCloseGrad` once there is no slip. OK for an EV with the motor
-  stopped?
-* **Coast sets.** Which ROM sets are the coast (Schub) shifts? v1 uses the
-  power-on sets for both directions of torque.
-* **CAN loss.** On loss of the VCU frame the TCU goes to neutral. Would a
-  hold-gear policy be better?
+* **Gear-in last clutch** - resolved. Per variant: 330e (table 0x4C214)
+  closes B last for both N->1 and N->R with A+C (1st) / A+D (R)
+  pre-filled; F11 8HP (table 0x5BA08) closes C last for 1st and D for R.
+  `Variant` parameter, default 0 = 330e to match the calibration in use.
+  Only this table is variant-specific; Ian's wider F11 vs 330e comparison
+  waits for Damien's OK.
+* **Interlock** - resolved. Done on commanded coil currents: open = A/B
+  below 60 mA, C/D/E above 790 mA (normally high). Every clutch outside
+  from-gear + to-gear must be open; 4 applied is allowed during a swap,
+  never 5.
+* **GLS units and start** - resolved. KP 1 count = 0.02 mbar per rpm/s,
+  KI 1 count = 0.02/64 mbar per rpm/s per 10 ms, output x50/64, clamped
+  +-3 bar. KZU start delay `KL_TVGLSKZUCG` (180-200 ms) from ramp 2. KAB
+  start delay `KL_TVGLSKABCG` (250/150/50 ms) from the KAB shift-pressure
+  phase, or earlier once the slip reaches 350 rpm (up) / 150 rpm (down).
+* **Downshift KAB hold** - resolved, unchanged: `KF_PKAB + KL_POHKAB`
+  (0.4-1.0 bar), then a `KL_TRAHKAB` (100 ms) ramp to `KF_PKAB`. Upshifts
+  use the absolute `KL_PHKABMT` against torque.
+* **Upshift takeover gradient** - resolved. No separate gradient:
+  on-coming `KF_PGOKZUMTNT`, off-going `KL_PGOMTKAB`. After sync
+  `KL_PGRASYN` for `T_SYN` (300 ms), then a ramp to max over `T_RAMAX`.
+  The old third phase (`KL_PORASYN`) has been removed.
+* **Gear-in gradients** - resolved. Fast close (`EngageCloseGrad`,
+  default 30 bar/s, 20-50) only with no slip confirmed for `EngageSyncMs`
+  on valid speed sensors, `|m_t| <= EngageTqZero` (the TCU asks for 0 Nm
+  until clamped: status flag bit 3) and adequate line pressure. Otherwise
+  the OEM 1-15 bar/s gradients, and "in gear" only after 200 ms with no
+  slip.
+* **Coast** - resolved, implemented as above. Needs checking against an
+  OEM coast-shift log.
+* **CAN loss** - open, **for Damien**. `CanLossMode` 0 = neutral (current
+  default), 1 = hold gear with high line pressure and no upshifts. Ian
+  recommends 1, with neutral only for hydraulic/electrical faults (those
+  already go to the safe state).
+* **Still open:** Ian's QA2 notes file (`330E_SAM_QA2.md`) was not on the
+  shared box when this was written, so these changes follow the summary
+  passed on with his answers and the raw `qa2/` Ghidra extracts. Worth a
+  read-through against his full write-up.
 
 ### For Bob
 

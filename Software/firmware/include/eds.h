@@ -110,6 +110,13 @@ public:
    static int32_t PressureToCurrent(EdsValve v, int32_t p_mbar);
    /// OEM temperature correction to add to a current, 0.1 mA.
    static int32_t TempCorrection(EdsValve v, int32_t i_0p1mA, int32_t atfTemp);
+   /** Target current for a pressure command, 0.1 mA: OEM curve, optional
+    * temperature correction, clamped to 0..iMax. This is exactly what
+    * SetPressure() loads as the target, so the interlock can check the
+    * same numbers. A command of 0 mbar is the valve's end stop and gets no
+    * temperature correction (so "open" stays clearly open). */
+   static int32_t CommandCurrent(EdsValve v, int32_t p_mbar, int32_t atfTemp,
+                                 bool tempCorrection, int32_t iMax);
    /// Dither offset at a given time, 0.1 mA.
    static int32_t DitherValue(uint32_t ms, int32_t amp, uint8_t periodMs,
                               uint8_t shape);

@@ -23,25 +23,27 @@
 
 #define ENG_TICK_MS 10
 
-/* Power-flow element per engage gear [H]. See engage.h. */
-int Engage::PowerFlowClutch(int g) {
-  if (g == GEAR_1)
-    return CL_C;
-  if (g == GEAR_R)
-    return CL_D;
+/* Last clutch in per variant and gear. See engage.h. */
+int Engage::PowerFlowClutch(int g, int variant) {
+  if (g != GEAR_1 && g != GEAR_R)
+    return -1;
+  if (variant == ENG_VAR_F11)
+    return g == GEAR_1 ? CL_C : CL_D; // table 0x5BA08
+  if (variant == ENG_VAR_330E)
+    return CL_B; // table 0x4C214
   return -1;
 }
 
 Engage::Engage()
     : cfg(), phase(ENG_IDLE), gear(0), idx(0), clV1(CL_A), clV2(CL_B),
-      clPower(-1), t(0), tPower(0), fillV1(0), fillV2(0), pStart(0),
-      v1Closing(false), v2Closing(false) {
+      clPower(-1), t(0), tPower(0), tNoSlip(0), tAtMax(0), fillV1(0),
+      fillV2(0), pStart(0), v1Closing(false), v2Closing(false), fast(false) {
   for (int i = 0; i < 5; i++)
     p[i] = 0;
 }
 
 bool Engage::Start(int g, const EngageConfig &c) {
-  clPower = PowerFlowClutch(g);
+  clPower = PowerFlowClutch(g, c.variant);
   if (clPower < 0)
     return false;
   cfg = c;
@@ -58,8 +60,9 @@ bool Engage::Start(int g, const EngageConfig &c) {
         clV2 = cl;
     }
   }
-  t = tPower = 0;
+  t = tPower = tNoSlip = tAtMax = 0;
   v1Closing = v2Closing = false;
+  fast = false;
   fillV1 = fillV2 = -1;
   for (int i = 0; i < 5; i++)
     p[i] = 0;
@@ -96,18 +99,18 @@ void Engage::Tick(const EngageInputs &in) {
   }
 
   int32_t slip = in.n_t - Gears::SyncSpeed(gear, in.n_ab);
-  bool synced = slip < cfg.syncBand && slip > -cfg.syncBand;
+  bool synced = in.speedsValid && slip < cfg.syncBand && slip > -cfg.syncBand;
+  tNoSlip = synced ? tNoSlip + ENG_TICK_MS : 0;
+  int32_t tq = in.m_t < 0 ? -in.m_t : in.m_t;
+  // Fast close only with confirmed no-slip, torque held near 0 and enough
+  // line pressure. It drops back to the OEM gradients if any of those go.
+  fast = tNoSlip >= cfg.syncConfirmMs && tq <= cfg.tqZeroNm && in.lineOk &&
+         cfg.fastCloseGrad > 0;
   int32_t g1 = Cal::Curve(e.pgrasynv1, in.m_t);
   int32_t g2 = Cal::Curve(e.pgrasynv2, in.m_t);
   int32_t gp = Cal::Curve(e.pgrasyn, in.m_t);
-  if (synced) {
-    if (g1 < cfg.syncCloseGrad)
-      g1 = cfg.syncCloseGrad;
-    if (g2 < cfg.syncCloseGrad)
-      g2 = cfg.syncCloseGrad;
-    if (gp < cfg.syncCloseGrad)
-      gp = cfg.syncCloseGrad;
-  }
+  if (fast)
+    g1 = g2 = gp = cfg.fastCloseGrad; // rate limit for the fast close
 
   // V1 and V2: fill, then close with their own gradients.
   if (!v1Closing) {
@@ -128,9 +131,13 @@ void Engage::Tick(const EngageInputs &in) {
   // Power-flow element starts once both others are closing.
   int32_t delay = Cal::Curve(e.tvkzu, in.n_ab);
   int32_t tsf = Cal::Curve(calClutch[clPower].tsfcg, in.temp);
+  // B is kept at fill pressure in neutral (OEM). When B is the last clutch
+  // in (330e) it stays there while V1/V2 fill instead of being dumped.
+  int32_t preFill = clPower == CL_B ? Cal::Curve(calClutch[CL_B].pfcg, in.temp) : 0;
+
   switch (phase) {
   case ENG_FILL:
-    p[clPower] = 0;
+    p[clPower] = preFill;
     if (v1Closing && v2Closing) {
       phase = ENG_POWER;
       tPower = 0;
@@ -138,7 +145,7 @@ void Engage::Tick(const EngageInputs &in) {
     break;
   case ENG_POWER:
     if (tPower < delay) {
-      p[clPower] = 0;
+      p[clPower] = preFill;
     } else if (tPower < delay + tsf + cfg.fillEqMs) {
       p[clPower] = FillPressure(clPower, tPower - delay, tsf + cfg.fillEqMs, in);
       pStart = p[clPower];
@@ -155,8 +162,14 @@ void Engage::Tick(const EngageInputs &in) {
     break;
   case ENG_CLOSE:
     p[clPower] += (gp * ENG_TICK_MS) / 1000;
-    if (p[clPower] >= cfg.pMax && p[clV1] >= cfg.pMax && p[clV2] >= cfg.pMax)
-      phase = ENG_DONE;
+    if (p[clPower] >= cfg.pMax && p[clV1] >= cfg.pMax && p[clV2] >= cfg.pMax) {
+      tAtMax += ENG_TICK_MS;
+      // In gear once fully clamped and there has been no slip for the
+      // OEM 200 ms after sync. Without working speed sensors there is no
+      // way to see sync, so wait the same time at full pressure instead.
+      if (tNoSlip >= cfg.postSyncMs || (!in.speedsValid && tAtMax >= cfg.postSyncMs))
+        phase = ENG_DONE;
+    }
     break;
   default:
     break;

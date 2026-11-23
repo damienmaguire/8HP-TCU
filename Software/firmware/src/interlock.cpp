@@ -20,10 +20,16 @@
 
 namespace Interlock {
 
+bool NormallyLow(int cl) { return cl == CL_A || cl == CL_B; }
+
+bool IsOpen(int cl, int32_t i, int32_t openLow, int32_t openHigh) {
+  return NormallyLow(cl) ? i < openLow : i > openHigh;
+}
+
 uint8_t AppliedMask(const InterlockInput &in) {
   uint8_t m = 0;
   for (int c = 0; c < CL_COUNT; c++)
-    if (in.pressure[c] > in.fillLevel[c])
+    if (!IsOpen(c, in.current[c], in.openLow, in.openHigh))
       m |= CLUTCH_BIT(c);
   return m;
 }
@@ -39,15 +45,12 @@ InterlockResult Check(const InterlockInput &in) {
   uint8_t applied = AppliedMask(in);
   int n = Gears::CountClutches(applied);
 
+  if (n >= 5)
+    return IL_TOO_MANY;
   if (applied & ~in.allowedMask)
     return IL_NOT_ALLOWED;
-
-  if (in.shifting) {
-    if (n > 4)
-      return IL_TOO_MANY;
-    return IL_OK;
-  }
-
+  if (in.shifting)
+    return n > 4 ? IL_TOO_MANY : IL_OK;
   if (n > 3)
     return IL_TOO_MANY;
   if (n == 3 && !IsGearMask(applied))

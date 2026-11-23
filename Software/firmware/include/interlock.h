@@ -23,46 +23,53 @@
 #include <stdint.h>
 
 /* Hard clutch interlock, checked every 10 ms after the hydraulic layer has
- * produced its pressure commands and before anything reaches the driver.
+ * produced its commands and before anything reaches the driver.
  *
- * Ian's rule [I]: never command more than three elements above fill
- * pressure, because four applied elements lock the gearbox. A single-swap
- * shift is the one case where four elements legitimately carry pressure at
- * the same time (the off-going one is slipping out while the on-coming one
- * slips in), so the rule is applied like this:
+ * It works on the commanded coil currents (the targets handed to the
+ * MAX22200 layer, before slew and dither), not on pressures, so it checks
+ * what the valves will actually be told. Rules, from Ian (QA2):
  *
- *  1. Every element above its fill pressure must be in the "allowed" set
- *     the sequencer declares: the current gear, the gear being engaged,
- *     or (during a shift) the union of the from-gear and to-gear.
- *  2. Outside a shift, at most three elements may be above fill, and if
- *     three are, they must be a real gear. (A C E is the one three-element
- *     combination that is not a gear.)
- *  3. During a shift, at most four, and only the four of the swap.
+ *  1. A clutch counts as "open" only when its coil current is past the
+ *     open threshold for its valve type:
+ *       A, B (normally low, 0 A = no pressure):  open below  60 mA
+ *       C, D, E (normally high, 0 A = full):     open above 790 mA
+ *     Anything else counts as applied (filling, slipping or closed).
+ *  2. Every clutch outside the allowed set must be open. The allowed set
+ *     is the current gear, the gear being engaged, or during a shift the
+ *     from-gear plus the to-gear.
+ *  3. During a single swap four applied clutches are allowed (off-going
+ *     slipping out while on-coming slips in). Five is never allowed.
+ *  4. Outside a swap at most three, and three must be a real gear (A C E
+ *     is the one three-element combination that is not).
  *
  * A violation sends the TCU to its safe state. The OEM uses an ASIL
- * current-plausibility table (jHydEdsLogik) instead; this simpler check is
- * what Ian recommended in 330E_EDS_PWM.md section 7.
+ * current-plausibility table (jHydEdsLogik) instead.
  */
 
 enum InterlockResult
 {
    IL_OK = 0,
-   IL_NOT_ALLOWED, // an element outside the allowed set is above fill
-   IL_TOO_MANY,    // more than 3 (or 4 in a swap) elements above fill
-   IL_NOT_A_GEAR,  // three elements applied that do not form a gear
+   IL_NOT_ALLOWED, // a clutch outside the allowed set is not open
+   IL_TOO_MANY,    // more than 3 (or 4 in a swap) clutches applied, or all 5
+   IL_NOT_A_GEAR,  // three clutches applied that do not form a gear
 };
 
 struct InterlockInput
 {
-   int32_t pressure[CL_COUNT];  // commanded pressure per element, mbar
-   int32_t fillLevel[CL_COUNT]; // above this an element counts as applied, mbar
-   uint8_t allowedMask;         // CLUTCH_BIT set the sequencer may apply
-   bool shifting;               // true while a single swap is running
+   int32_t current[CL_COUNT]; // commanded coil current per clutch, 0.1 mA
+   int32_t openLow;           // A/B open below this, 0.1 mA (600 = 60 mA)
+   int32_t openHigh;          // C/D/E open above this, 0.1 mA (7900 = 790 mA)
+   uint8_t allowedMask;       // CLUTCH_BIT set the sequencer may apply
+   bool shifting;             // true while a single swap is running
 };
 
 namespace Interlock
 {
-/// Mask of the elements whose command is above their fill level.
+/// True if the clutch's valve is normally low (A, B): more current = more pressure.
+bool NormallyLow(int clutch);
+/// True if this current puts the clutch in its open state.
+bool IsOpen(int clutch, int32_t current, int32_t openLow, int32_t openHigh);
+/// Mask of the clutches that are not open.
 uint8_t AppliedMask(const InterlockInput &in);
 /// Run the check. Returns IL_OK if the command is safe to send.
 InterlockResult Check(const InterlockInput &in);

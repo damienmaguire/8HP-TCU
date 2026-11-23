@@ -28,6 +28,7 @@
    3. Display values
  */
 // Next param id (increase when adding a new parameter!): 127
+// (ids 9 and 101-108 were free slots and are used below)
 //
 // Anything marked TBD below has not been measured yet. The defaults are
 // placeholders chosen so the firmware runs on a bench, not values to drive
@@ -41,6 +42,7 @@
   PARAM_ENTRY(CAT_SETUP, CmdSource, CMDSRC, 0, 1, 0, 3)                        \
   PARAM_ENTRY(CAT_SETUP, NtSource, NTSRC, 0, 1, 0, 7)                          \
   PARAM_ENTRY(CAT_SETUP, FaultClear, ONOFF, 0, 1, 0, 8)                        \
+  PARAM_ENTRY(CAT_SETUP, Variant, VARIANTS, 0, 1, 0, 9)                        \
   PARAM_ENTRY(CAT_SPEED, TeethIn, "", 1, 200, 60, 10)                          \
   PARAM_ENTRY(CAT_SPEED, TeethOut, "", 1, 200, 60, 11)                         \
   PARAM_ENTRY(CAT_SPEED, TeethAux, "", 1, 200, 60, 12)                         \
@@ -99,7 +101,7 @@
   PARAM_ENTRY(CAT_SHIFT, EngageMaxRpm, "rpm", 0, 2000, 300, 87)                \
   PARAM_ENTRY(CAT_SHIFT, EngageFillEq, "ms", 0, 1000, 50, 88)                  \
   PARAM_ENTRY(CAT_SHIFT, EngageRamp, "ms", 0, 3000, 300, 89)                   \
-  PARAM_ENTRY(CAT_SHIFT, EngageCloseGrad, "mbar/s", 1000, 100000, 20000, 90)   \
+  PARAM_ENTRY(CAT_SHIFT, EngageCloseGrad, "mbar/s", 20000, 50000, 30000, 90)   \
   PARAM_ENTRY(CAT_SHIFT, AutoUpRpm, "rpm", 500, 10000, 4000, 91)               \
   PARAM_ENTRY(CAT_SHIFT, AutoDownRpm, "rpm", 200, 8000, 1500, 92)              \
   PARAM_ENTRY(CAT_SHIFT, TqInterv, TQINTERV, 0, 2, 1, 93)                      \
@@ -110,11 +112,19 @@
   PARAM_ENTRY(CAT_SHIFT, GearChkMinNab, "rpm", 50, 2000, 200, 98)              \
   PARAM_ENTRY(CAT_SHIFT, UvLimit, "mV", 0, 12000, 7400, 99)                    \
   PARAM_ENTRY(CAT_SHIFT, VbatScale, "mV", 1000, 60000, 23100, 100)             \
+  PARAM_ENTRY(CAT_SHIFT, EngageSyncMs, "ms", 50, 100, 80, 101)                 \
+  PARAM_ENTRY(CAT_SHIFT, EngagePostSync, "ms", 0, 1000, 200, 102)              \
+  PARAM_ENTRY(CAT_SHIFT, EngageTqZero, "Nm", 0, 100, 10, 103)                  \
+  PARAM_ENTRY(CAT_SHIFT, IlOpenLow, "mA", 0, 200, 60, 104)                     \
+  PARAM_ENTRY(CAT_SHIFT, IlOpenHigh, "mA", 500, 1000, 790, 105)                \
+  PARAM_ENTRY(CAT_SHIFT, GlsKabSlipUp, "rpm", 0, 2000, 350, 106)               \
+  PARAM_ENTRY(CAT_SHIFT, GlsKabSlipDn, "rpm", 0, 2000, 150, 107)               \
   PARAM_ENTRY(CAT_COMM, CanCmdId, "", 1, 2047, 768, 110)                       \
   PARAM_ENTRY(CAT_COMM, CanStatId, "", 1, 2047, 769, 111)                      \
   PARAM_ENTRY(CAT_COMM, CanTimeout, "ms", 50, 5000, 500, 112)                  \
   PARAM_ENTRY(CAT_COMM, CanTxEnable, ONOFF, 0, 1, 0, 113)                      \
   PARAM_ENTRY(CAT_COMM, CanLossTq, "Nm", 0, 1000, 400, 114)                    \
+  PARAM_ENTRY(CAT_COMM, CanLossMode, CANLOSSMODES, 0, 1, 0, 108)               \
   PARAM_ENTRY(CAT_COMM, SdoNodeId, "", 1, 127, 22, 115)                        \
   PARAM_ENTRY(CAT_COMM, Can1Baud, CANBAUDS, 0, 4, 2, 116)                      \
   PARAM_ENTRY(CAT_COMM, LogEnable, ONOFF, 0, 1, 0, 117)                        \
@@ -167,7 +177,10 @@
   VALUE_ENTRY(drvFlags1, "bits", 2037)                                         \
   VALUE_ENTRY(valveFault, "bits", 2038)                                        \
   VALUE_ENTRY(canAct, ONOFF, 2039)                                             \
-  VALUE_ENTRY(cpuload, "%", 2040)
+  VALUE_ENTRY(cpuload, "%", 2040)                                              \
+  VALUE_ENTRY(tqHold, ONOFF, 2041)                                             \
+  VALUE_ENTRY(canHold, ONOFF, 2042)                                            \
+  VALUE_ENTRY(coast, ONOFF, 2043)
 
 // Generate the version string. This must be formatted without spaces to meet
 // the format requirements of the "units".
@@ -177,6 +190,8 @@
 
 #define ONOFF "0=Off, 1=On"
 #define GSELMODES "0=VCU, 1=Auto"
+#define VARIANTS "0=330e, 1=F11"
+#define CANLOSSMODES "0=Neutral, 1=HoldGear"
 #define CMDSRC "0=CAN, 1=Param"
 #define NTSRC "0=Sensor, 1=CanMotorRpm"
 #define ATFSRC "0=Fixed, 1=Sensor"

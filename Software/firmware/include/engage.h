@@ -26,21 +26,32 @@
  * Source: 330E_OPEN_TCU_CONTROL_SPEC.md section 5.7 and
  * 330E_SAS_FILL_RAMP.md section 6 [C names]. The OEM fills the two
  * non-power-flow elements first (V1, V2: KL_TFV1_n, KL_TFCGV2_n, closing
- * gradients KL_PGRASYNV1/V2_n) and then closes the power-flow element
- * (KL_TVKZU_n delay, KF_PKZU_n, KL_PGRASYN_n).
+ * gradients KL_PGRASYNV1/V2_n) and then closes the power-flow element, the
+ * last clutch in (KL_TVKZU_n delay, KF_PKZU_n, KL_PGRASYN_n).
  *
- * Which element is the power-flow one is not stated in Ian's notes. This
- * code assumes it is the element that tells 1st and R apart: C for 1st
- * (A B C) and D for R (A B D), with A and B as V1 and V2 [H, ask Ian].
- * It is a table at the top of engage.cpp so it is easy to change.
+ * Which clutch closes last depends on the gearbox variant (Ian, QA2):
+ *   330e (table 0x4C214): B for both N->1 and N->R; A+C pre-filled for 1st,
+ *                         A+D for R. This matches the calibration in use.
+ *   F11 8HP (table 0x5BA08): C for 1st and D for R, with A+B pre-filled.
+ * The variant is the Variant parameter; only this table differs for now.
  *
- * The OEM closed-loop gear-in (KF_WNGTNDSYNCGGE_n) is not implemented; the
- * power-flow element is closed open-loop with the OEM gradients. The OEM
- * low-torque closing gradients are slow (1 bar/s), which suits an engine
- * dragging the turbine but not an EV motor sitting at 0 rpm. So once the
- * input speed matches the gear (no slip) the elements close with the
- * faster of the OEM gradient and syncCloseGrad [Sam].
+ * Closing (Ian, QA2):
+ *  - Normal: the OEM gradients (1-15 bar/s against torque), and the gear
+ *    only counts as in once there has been no slip for 200 ms after sync.
+ *  - Fast: a faster, rate-limited close (default 30 bar/s, 20-50) that
+ *    reaches full pressure well inside 1.5 s. Only allowed when no slip has
+ *    been confirmed for 50-100 ms on valid speed sensors, the motor torque
+ *    is near 0 (the TCU asks for it to be held there until the gear is
+ *    clamped, see TorqueHold()), and line pressure is adequate.
+ *
+ * The OEM closed-loop gear-in (KF_WNGTNDSYNCGGE_n) is not implemented.
  */
+
+enum EngageVariant
+{
+   ENG_VAR_330E = 0, // OEM table 0x4C214: B last for 1st and R
+   ENG_VAR_F11 = 1,  // OEM table 0x5BA08: C last for 1st, D last for R
+};
 
 enum EngagePhase
 {
@@ -57,12 +68,18 @@ struct EngageConfig
    int32_t fillEqMs;   // fill-equalise time for the power-flow element
    int32_t rampMs;     // ramp to KF_PKZU_n
    int32_t syncBand;   // |n_t - n_ab x ratio| below this = no slip, rpm
-   int32_t syncCloseGrad; // closing gradient once there is no slip, mbar/s
+   int32_t fastCloseGrad; // fast closing gradient, mbar/s (Ian: ~30000, 20000-50000)
+   int32_t syncConfirmMs; // no slip this long before the fast close, ms (Ian: 50-100)
+   int32_t postSyncMs;    // normal close: no slip this long before "in gear", ms (OEM 200)
+   int32_t tqZeroNm;      // |m_t| at or below this counts as "held near 0", Nm
+   uint8_t variant;       // EngageVariant
 };
 
 struct EngageInputs
 {
    int32_t m_t, n_t, n_ab, temp; // Nm, rpm, rpm, degC
+   bool speedsValid;             // input and output speed sensors working
+   bool lineOk;                  // commanded line pressure is adequate
 };
 
 class Engage
@@ -81,8 +98,13 @@ public:
    /// Pressure for each of A..E, mbar.
    int32_t Pressure(int clutch) const { return p[clutch]; }
    int PowerClutch() const { return clPower; }
+   /// The motor torque should be held near 0 until the gear is clamped.
+   bool TorqueHold() const { return Active(); }
+   /// The fast close is running (for logging/tests).
+   bool FastClose() const { return fast; }
 
-   static int PowerFlowClutch(int gear);
+   /// Last clutch in for gear (GEAR_1 or GEAR_R) on a variant, -1 if none.
+   static int PowerFlowClutch(int gear, int variant);
 
 private:
    int32_t FillPressure(int clutch, int32_t tInPhase, int32_t fillTotal,
@@ -92,10 +114,13 @@ private:
    EngagePhase phase;
    int gear, idx, clV1, clV2, clPower;
    int32_t t, tPower;
+   int32_t tNoSlip;  // ms with no slip on valid sensors
+   int32_t tAtMax;   // ms with every element at full pressure
    int32_t fillV1, fillV2; // total fill times, ms
    int32_t p[5];
    int32_t pStart;
    bool v1Closing, v2Closing;
+   bool fast;
 };
 
 #endif // ENGAGE_H

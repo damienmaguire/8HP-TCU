@@ -16,6 +16,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+#include "cal_330e.h"
 #include "gears.h"
 #include "sas.h"
 #include "test.h"
@@ -29,6 +30,9 @@ struct ShiftRun {
   bool done = false, timedOut = false, sawTq = false;
   int ms = 0;
   int32_t maxKzu = 0;
+  std::vector<int> glsKzu, glsKab; // states seen while the GLS was non-zero
+  int syncToIdleMs = -1;           // upshift: from reaching sync to KZU idle
+  bool coast = false;
 };
 
 static void Push(std::vector<int> &v, int s) {
@@ -42,14 +46,16 @@ static SasConfig Cfg() {
   c.syncBand = 30;
   c.glsGainPct = 100;
   c.rampMaxDownMs = 1000;
+  c.glsKabSlipUp = 350;
+  c.glsKabSlipDown = 150;
   return c;
 }
 
-static ShiftRun Run(int from, int to, int32_t m_t, bool plantMoves) {
+static ShiftRun Run(int from, int to, int32_t m_t, bool plantMoves,
+                    int32_t rate = 3000 /* rpm/s */) {
   const int32_t nab = 1000;
   int32_t nt = Gears::SyncSpeed(from, nab);
   int32_t target = Gears::SyncSpeed(to, nab);
-  const int32_t rate = 3000; // rpm/s
   int off, on;
   Gears::SingleSwap(from, to, off, on);
   SasShift s;
@@ -70,8 +76,14 @@ static ShiftRun Run(int from, int to, int32_t m_t, bool plantMoves) {
     return in;
   };
   CHECK(s.Start(from, to, off, on, Cfg(), inputs()));
+  r.coast = s.IsCoast();
+  int syncAt = -1;
   for (int i = 0; i < 1000 && s.Active(); i++) {
     const SasOutputs &o = s.Out();
+    if (syncAt < 0 && o.zKzu == KZU_RAMP3 && nt == target)
+      syncAt = r.ms;
+    if (syncAt >= 0 && r.syncToIdleMs < 0 && o.zKzu == KZU_IDLE)
+      r.syncToIdleMs = r.ms - syncAt;
     Push(r.kzu, o.zKzu);
     Push(r.kab, o.zKab);
     if (o.pKzu > r.maxKzu)
@@ -90,13 +102,21 @@ static ShiftRun Run(int from, int to, int32_t m_t, bool plantMoves) {
       else if (nt > target)
         nt = nt - step < target ? target : nt - step;
     }
+    // Note the states a tick started in, and whether it ran the GLS.
+    int pk = o.zKzu, pa = o.zKab;
     s.Tick(inputs());
+    if (s.Out().gls != 0) {
+      Push(r.glsKzu, pk);
+      Push(r.glsKab, pa);
+    }
     r.ms += 10;
   }
   Push(r.kzu, s.Out().zKzu);
   Push(r.kab, s.Out().zKab);
   if (s.Out().pKzu > r.maxKzu)
     r.maxKzu = s.Out().pKzu;
+  if (syncAt >= 0 && r.syncToIdleMs < 0 && s.Out().zKzu == KZU_IDLE)
+    r.syncToIdleMs = r.ms - syncAt;
   r.done = s.Out().done;
   r.timedOut = s.Out().timedOut;
   return r;
@@ -173,7 +193,74 @@ static void TestRejects() {
   CHECK(!s.Active());
 }
 
+
+/* GLS scaling (Ian, QA2): KP 1 count = 0.02 mbar per rpm/s, KI 1 count =
+ * 0.02/64 mbar per rpm/s per 10 ms, output x50/64. */
+static void TestGlsScaling() {
+  // 50 KP counts = 1 mbar per rpm/s; 64 rpm/s -> 64 mbar -> x50/64 = 50.
+  CHECK_EQ(SasShift::GlsScale(50, 64, 0), 50);
+  CHECK_EQ(SasShift::GlsScale(50, -64, 0), -50);
+  CHECK_EQ(SasShift::GlsScale(1, 1000, 0), 15); // 20 mbar x 50/64 = 15.6
+  // KI: 3200 x 64 accumulated counts = 64 mbar -> 50 mbar.
+  CHECK_EQ(SasShift::GlsScale(0, 0, 3200 * 64), 50);
+  // OEM 1->2: KP 2, KI 27. 1000 rpm/s error for one step:
+  // P = 40 mbar, I = 27000/3200 = 8.4 mbar, sum x50/64 = 37 mbar.
+  CHECK_EQ(calUp[0].kp_glskzu, 2);
+  CHECK_EQ(calUp[0].ki_glskzu, 27);
+  CHECK_EQ(SasShift::GlsScale(2, 1000, 27 * 1000), 37);
+  // The +/-3 bar clamp comes from P_MAXOBGLS / P_MAXUNGLS.
+  CHECK_EQ(calGlobal.p_maxobgls, 3000);
+  CHECK_EQ(calGlobal.p_maxungls, 3000);
+  // KAB start delay KL_TVGLSKABCG12 is 250/150/50 ms over -15/0/30 degC.
+  CHECK_EQ(Cal::Curve(calUp[0].tvglskabcg, -15), 250);
+  CHECK_EQ(Cal::Curve(calUp[0].tvglskabcg, 0), 150);
+  CHECK_EQ(Cal::Curve(calUp[0].tvglskabcg, 30), 50);
+  // KZU start delay KL_TVGLSKZUCG12 is 180-200 ms.
+  CHECK(Cal::Curve(calUp[0].tvglskzucg, 60) >= 180);
+  CHECK(Cal::Curve(calUp[0].tvglskzucg, -20) <= 200);
+}
+
+/* Which clutch carries the slip controller: power-on upshift KZU, coast
+ * upshift KAB, power-on downshift KAB, coast downshift KZU. */
+static void TestGlsOwner() {
+  ShiftRun up = Run(1, 2, 150, true);
+  CHECK(!up.coast);
+  CHECK(Seq(up.glsKzu, {KZU_RAMP2}));
+  ShiftRun upC = Run(1, 2, -40, true);
+  CHECK(upC.coast);
+  CHECK(upC.done);
+  CHECK(!upC.timedOut);
+  for (int s : upC.glsKab)
+    CHECK(s == KAB_SHIFT_P_UP || s == KAB_TAKEOVER);
+  CHECK(!upC.glsKab.empty());
+  ShiftRun dn = Run(2, 1, 150, true);
+  CHECK(!dn.coast);
+  CHECK(Seq(dn.glsKab, {KAB_SLIP_DOWN}));
+  // Slower speed change so the KZU start delay (KL_TVGLSKZUCG21) passes
+  // before sync in this simple plant.
+  ShiftRun dnC = Run(2, 1, -40, true, 1000);
+  CHECK(dnC.coast);
+  CHECK(dnC.done);
+  for (int s : dnC.glsKzu)
+    CHECK(s == KZU_HOLD_SYNC);
+  CHECK(!dnC.glsKzu.empty());
+}
+
+/* No third ramp: after sync KL_PGRASYN runs for T_SYN, then a ramp to max
+ * over T_RAMAX, then the on-coming clutch is done. */
+static void TestUpshiftAfterSync() {
+  CHECK_EQ(calUp[0].t_syn, 300);
+  ShiftRun r = Run(1, 2, 150, true);
+  CHECK(r.done);
+  CHECK(r.syncToIdleMs >= calUp[0].t_syn);
+  CHECK(r.syncToIdleMs <= calUp[0].t_syn + calUp[0].t_ramax + 30);
+  CHECK_EQ(r.maxKzu, 12750);
+}
+
 void TestSas() {
+  TestGlsScaling();
+  TestGlsOwner();
+  TestUpshiftAfterSync();
   TestUpshift12();
   TestDownshift21();
   TestAllPairsFinish();

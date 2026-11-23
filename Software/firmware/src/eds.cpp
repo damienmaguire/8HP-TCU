@@ -55,13 +55,24 @@ int32_t Eds::TempCorrection(EdsValve v, int32_t i_0p1mA, int32_t atfTemp) {
   return Cal::Map(m, i_0p1mA / 10, atfTemp);
 }
 
+int32_t Eds::CommandCurrent(EdsValve v, int32_t p_mbar, int32_t atfTemp,
+                            bool tempCorrection, int32_t iMax) {
+  if (v >= EDS_NUM_PRESSURE)
+    return 0;
+  int32_t i = PressureToCurrent(v, p_mbar);
+  if (tempCorrection && p_mbar > 0)
+    i += TempCorrection(v, i, atfTemp);
+  if (i < 0)
+    i = 0;
+  if (i > iMax)
+    i = iMax;
+  return i;
+}
+
 void Eds::SetPressure(EdsValve v, int32_t p_mbar, int32_t atfTemp) {
   if (v >= EDS_NUM_PRESSURE)
     return;
-  int32_t i = PressureToCurrent(v, p_mbar);
-  if (cfg.tempCorrection)
-    i += TempCorrection(v, i, atfTemp);
-  SetCurrent(v, i);
+  SetCurrent(v, CommandCurrent(v, p_mbar, atfTemp, cfg.tempCorrection, cfg.iMax));
 }
 
 void Eds::SetCurrent(EdsValve v, int32_t i) {

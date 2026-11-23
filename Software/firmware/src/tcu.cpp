@@ -19,6 +19,7 @@
 #include "tcu.h"
 #include "cal_330e.h"
 #include "caltypes.h"
+#include "eds.h"
 
 #define TCU_TICK_MS 10
 
@@ -44,11 +45,9 @@ Tcu::Tcu()
   out.tSyn = SAS_TSYN_NONE;
 }
 
-int32_t Tcu::FillLevel(int cl, int32_t temp) {
-  if (cl < 0 || cl >= CL_COUNT)
-    return 0;
-  return Cal::Curve(calClutch[cl].pfcg, temp) +
-         Cal::Curve(calClutch[cl].pfhyscg, temp);
+int32_t Tcu::CommandCurrent(int cl, int32_t p, int32_t temp) const {
+  // Clutch A..E map straight onto EDS_A..EDS_E.
+  return Eds::CommandCurrent((EdsValve)cl, p, temp, cfg.tempCorrection, cfg.iMax);
 }
 
 void Tcu::ForceSafe(TcuFault f) {
@@ -62,6 +61,8 @@ void Tcu::ForceSafe(TcuFault f) {
     out.p[c] = 0;
   out.pSys = 0;
   out.tqDelta = 0;
+  out.tqHold = false;
+  out.canLossHold = false;
   tqRamp = 0;
   out.gear = GEAR_LIMP; // what the hydraulics fall into with no current
   out.target = GEAR_LIMP;
@@ -108,6 +109,14 @@ int Tcu::ChooseTarget(const TcuInputs &in) const {
   int top = cfg.topGear < 1 ? 1 : (cfg.topGear > 8 ? 8 : cfg.topGear);
   if (g == GEAR_R || !Gears::IsDriveGear(g))
     return g;
+  if (!in.canOk && cfg.canLossMode == CANLOSS_HOLD) {
+    // CAN lost, hold mode: no upshifts. Still step down as the car slows
+    // so it does not lug in a tall gear (same rule as GSEL_AUTO).
+    if (g > 1 && in.n_t < cfg.autoDownRpm &&
+        Gears::SyncSpeed(g - 1, in.n_ab) < cfg.autoUpRpm - 200)
+      return g - 1;
+    return g;
+  }
   if (cfg.gearSelMode == GSEL_VCU) {
     int r = in.gearReq;
     if (r < 1)
@@ -210,7 +219,9 @@ void Tcu::Tick10ms(const TcuInputs &in) {
     return;
   }
   out.safeOutputs = false;
+  out.tqHold = false;
   int32_t shiftTq = 0;
+  bool canHold = !in.canOk && cfg.canLossMode == CANLOSS_HOLD;
 
   // ---- Mode logic ---------------------------------------------------
   bool wantN = in.selector == SEL_N || in.selector == SEL_P;
@@ -227,9 +238,12 @@ void Tcu::Tick10ms(const TcuInputs &in) {
       fromPark = true;
     SetNeutral(in);
     allowed = CLUTCH_BIT(CL_B);
-    if (!wantN && in.n_ab <= cfg.engageMaxNab && engage.Start(wantDir, cfg.engage)) {
+    // No gear-in without the VCU frames.
+    if (!wantN && in.canOk && in.n_ab <= cfg.engageMaxNab &&
+        engage.Start(wantDir, cfg.engage)) {
       out.mode = TCU_ENGAGE;
       out.target = (uint8_t)wantDir;
+      out.tqHold = engage.TorqueHold(); // ask for 0 Nm from the first tick
     }
     break;
   case TCU_ENGAGE:
@@ -240,16 +254,20 @@ void Tcu::Tick10ms(const TcuInputs &in) {
       allowed = CLUTCH_BIT(CL_B);
       break;
     }
+    minLine = out.target == GEAR_R ? calGlobal.p_sysmin_r : calGlobal.p_sysmin_d;
+    if (fromPark)
+      minLine = Max(minLine, calGlobal.p_sysminpsaus); // park release needs 17 bar
     {
-      EngageInputs ei = {in.m_t, in.n_t, in.n_ab, in.temp};
+      // Line pressure is adequate if the command can reach the OEM minimum
+      // for gear-in (it cannot if LineMax is set below it).
+      EngageInputs ei = {in.m_t, in.n_t, in.n_ab, in.temp, in.speedsValid,
+                         LinePressure(in, minLine) >= minLine};
       engage.Tick(ei);
     }
     for (int c = 0; c < CL_COUNT; c++)
       out.p[c] = engage.Pressure(c);
+    out.tqHold = engage.TorqueHold();
     allowed = Gears::ClutchMask(out.target) | CLUTCH_BIT(CL_B);
-    minLine = out.target == GEAR_R ? calGlobal.p_sysmin_r : calGlobal.p_sysmin_d;
-    if (fromPark)
-      minLine = Max(minLine, calGlobal.p_sysminpsaus); // park release needs 17 bar
     if (engage.Done()) {
       out.gear = out.target;
       out.mode = TCU_DRIVE;
@@ -270,7 +288,10 @@ void Tcu::Tick10ms(const TcuInputs &in) {
     allowed = Gears::ClutchMask(out.gear);
     int tgt = ChooseTarget(in);
     out.target = (uint8_t)tgt;
-    if (tgt != out.gear && in.canOk && in.speedsValid) {
+    // Shifts need the VCU frames, except the downshifts CanLossMode 1
+    // makes as the car slows.
+    if (tgt != out.gear && (in.canOk || (canHold && tgt < out.gear)) &&
+        in.speedsValid) {
       int next = Gears::NextStep(out.gear, tgt);
       StartShift(in, next);
       if (out.mode == TCU_SHIFT)
@@ -324,6 +345,9 @@ void Tcu::Tick10ms(const TcuInputs &in) {
     out.zKzu = 0;
     out.zKab = 0;
     out.gls = 0;
+    out.coast = false;
+  } else {
+    out.coast = sas.IsCoast();
   }
 
   // ---- Torque intervention, ramped out after the shift (T_RAMEE) ------
@@ -341,15 +365,21 @@ void Tcu::Tick10ms(const TcuInputs &in) {
 
   // ---- Line pressure --------------------------------------------------
   out.pSys = LinePressure(in, minLine);
+  // CanLossMode 1: hold the gear at high line pressure so nothing slips.
+  out.canLossHold = canHold && (out.mode == TCU_DRIVE || out.mode == TCU_SHIFT);
+  if (out.canLossHold)
+    out.pSys = cfg.lineMax;
   out.engPhase = engage.Phase();
   out.parkRequest = out.mode == TCU_PARK && in.n_ab < 5;
 
   // ---- Interlock: last check before anything reaches the valves ------
   InterlockInput il;
-  for (int c = 0; c < CL_COUNT; c++) {
-    il.pressure[c] = out.p[c];
-    il.fillLevel[c] = FillLevel(c, in.temp);
-  }
+  // Checked on the coil currents the EDS layer will be given for these
+  // pressures (targets, before slew and dither).
+  for (int c = 0; c < CL_COUNT; c++)
+    il.current[c] = CommandCurrent(c, out.p[c], in.temp);
+  il.openLow = cfg.ilOpenLow;
+  il.openHigh = cfg.ilOpenHigh;
   il.allowedMask = allowed;
   il.shifting = out.mode == TCU_SHIFT;
   InterlockResult r = Interlock::Check(il);

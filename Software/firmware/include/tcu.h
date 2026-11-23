@@ -91,6 +91,18 @@ struct TcuConfig
    int32_t dntTauMs;      // input speed gradient filter (OEM T_FNGTGLS = 70 ms)
    uint8_t topGear;       // highest gear allowed (1..8)
    uint8_t tqInterv;      // 0 = no torque intervention, 1 = upshifts, 2 = both
+   uint8_t canLossMode;   // CanLossMode: what to do when the VCU frames stop
+   // Interlock, on commanded coil currents (see interlock.h)
+   int32_t ilOpenLow;     // A/B open below this, 0.1 mA (Ian: 60 mA)
+   int32_t ilOpenHigh;    // C/D/E open above this, 0.1 mA (Ian: 790 mA)
+   int32_t iMax;          // coil current ceiling, 0.1 mA (same as the EDS layer)
+   bool tempCorrection;   // EDS temperature correction on (same as the EDS layer)
+};
+
+enum CanLossMode
+{
+   CANLOSS_NEUTRAL = 0, // drop to neutral (current default, Damien to decide)
+   CANLOSS_HOLD = 1,    // hold the gear at high line pressure, no upshifts
 };
 
 struct TcuInputs
@@ -122,9 +134,12 @@ struct TcuOutputs
    uint8_t engPhase;    // EngagePhase
    uint8_t fault;       // TcuFault (latched)
    uint8_t interlock;   // last InterlockResult
-   uint8_t applied;     // CLUTCH_BIT mask above fill
+   uint8_t applied;     // CLUTCH_BIT mask of clutches not open (interlock)
    bool parkRequest;    // park lock should be engaged
    bool safeOutputs;    // caller must switch every coil off
+   bool tqHold;         // gear-in: hold motor torque near 0 until clamped
+   bool canLossHold;    // CAN lost, holding the gear (CanLossMode 1)
+   bool coast;          // the running shift is a coast (negative torque) shift
    int32_t tSyn;        // predicted ms to sync, for logging
    int32_t gls;         // GLS correction, mbar
 };
@@ -141,8 +156,8 @@ public:
    void ForceSafe(TcuFault f);
    const TcuOutputs &Out() const { return out; }
 
-   /// Fill level used by the interlock, mbar: OEM kiss pressure + hysteresis.
-   static int32_t FillLevel(int clutch, int32_t temp);
+   /// Coil current the EDS layer will be given for a pressure, 0.1 mA.
+   int32_t CommandCurrent(int clutch, int32_t p_mbar, int32_t temp) const;
 
 private:
    void SetNeutral(const TcuInputs &in);

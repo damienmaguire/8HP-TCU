@@ -125,11 +125,17 @@ static void ConfigureTcu() {
   c.sas.syncBand = Param::GetInt(Param::SyncBand);
   c.sas.glsGainPct = Param::GetInt(Param::GlsGain);
   c.sas.rampMaxDownMs = Param::GetInt(Param::RampMaxDown);
+  c.sas.glsKabSlipUp = Param::GetInt(Param::GlsKabSlipUp);
+  c.sas.glsKabSlipDown = Param::GetInt(Param::GlsKabSlipDn);
   c.engage.pMax = Param::GetInt(Param::ShiftPMax);
   c.engage.fillEqMs = Param::GetInt(Param::EngageFillEq);
   c.engage.rampMs = Param::GetInt(Param::EngageRamp);
   c.engage.syncBand = Param::GetInt(Param::SyncBand);
-  c.engage.syncCloseGrad = Param::GetInt(Param::EngageCloseGrad);
+  c.engage.fastCloseGrad = Param::GetInt(Param::EngageCloseGrad);
+  c.engage.syncConfirmMs = Param::GetInt(Param::EngageSyncMs);
+  c.engage.postSyncMs = Param::GetInt(Param::EngagePostSync);
+  c.engage.tqZeroNm = Param::GetInt(Param::EngageTqZero);
+  c.engage.variant = Param::GetInt(Param::Variant);
   c.gearSelMode = Param::GetInt(Param::GearSelMode);
   c.applyP = Param::GetInt(Param::ClutchApplyP);
   c.lineOffset = Param::GetInt(Param::LineOffset);
@@ -145,6 +151,12 @@ static void ConfigureTcu() {
   c.dntTauMs = Param::GetInt(Param::DntTau);
   c.topGear = Param::GetInt(Param::TopGear);
   c.tqInterv = Param::GetInt(Param::TqInterv);
+  c.canLossMode = Param::GetInt(Param::CanLossMode);
+  c.ilOpenLow = Param::GetInt(Param::IlOpenLow) * 10;
+  c.ilOpenHigh = Param::GetInt(Param::IlOpenHigh) * 10;
+  // Must match ConfigureEds() so the interlock sees the real targets.
+  c.iMax = Param::GetInt(Param::IMaxCoil) * 10;
+  c.tempCorrection = Param::GetBool(Param::TempCorr);
   tcu.Configure(c);
 }
 
@@ -171,6 +183,10 @@ static void StartDrivers() {
   driversUp = false;
   ConfigureValveMap();
   configError = !valves.Validate();
+  // C/D/E are only "open" above IlOpenHigh. If IMaxCoil cannot get there,
+  // neutral would always look like an applied clutch to the interlock.
+  if (Param::GetInt(Param::IMaxCoil) <= Param::GetInt(Param::IlOpenHigh))
+    configError = true;
   if (configError) {
     ErrorMessage::Post(ERR_VALVEMAP);
     return;
@@ -255,7 +271,9 @@ static void SendStatus(const TcuOutputs &o, int32_t temp) {
    *  byte 3  fault
    *  byte 4-5 torque intervention request, Nm, signed (0 = none)
    *  byte 6  ATF temperature + 40 degC
-   *  byte 7  bit 0 shifting, bit 1 park request, bit 2 safe state
+   *  byte 7  bit 0 shifting, bit 1 park request, bit 2 safe state,
+   *          bit 3 hold motor torque near 0 (gear-in), bit 4 CAN-loss
+   *          gear hold, bit 5 coast shift
    */
   uint8_t b[8];
   b[0] = o.gear;
@@ -267,7 +285,8 @@ static void SendStatus(const TcuOutputs &o, int32_t temp) {
   int32_t t = temp + 40;
   b[6] = t < 0 ? 0 : (t > 255 ? 255 : t);
   b[7] = (o.mode == TCU_SHIFT ? 1 : 0) | (o.parkRequest ? 2 : 0) |
-         (o.safeOutputs ? 4 : 0);
+         (o.safeOutputs ? 4 : 0) | (o.tqHold ? 8 : 0) |
+         (o.canLossHold ? 16 : 0) | (o.coast ? 32 : 0);
   can1->Send(Param::GetInt(Param::CanStatId), b, 8);
 }
 
@@ -327,8 +346,11 @@ static void Ms10Task() {
   in.m_t = fromParam ? Param::GetInt(Param::TorqueSet) : rxTorque;
   in.n_mot = fromParam ? Param::GetInt(Param::MotorRpmSet) : rxMotorRpm;
   if (!fromParam && !canOk) {
-    // No VCU: hold what we have, assume high torque for line pressure.
-    in.selector = SEL_N;
+    // No VCU. CanLossMode 0 (default): go to neutral. CanLossMode 1: keep
+    // the last selector so the TCU holds the gear (no upshifts, high line
+    // pressure). Either way assume high torque for line pressure.
+    if (Param::GetInt(Param::CanLossMode) != CANLOSS_HOLD)
+      in.selector = SEL_N;
     in.gearReq = 0;
     in.m_t = Param::GetInt(Param::CanLossTq);
   }
@@ -433,6 +455,9 @@ static void Ms10Task() {
   Param::SetInt(Param::iK0, eds.Setpoint(EDS_K0) / 10);
   Param::SetInt(Param::tSyn, o.tSyn);
   Param::SetInt(Param::gls, o.gls);
+  Param::SetInt(Param::tqHold, o.tqHold);
+  Param::SetInt(Param::canHold, o.canLossHold);
+  Param::SetInt(Param::coast, o.coast);
   Param::SetInt(Param::canAct, canOk);
 }
 

@@ -35,7 +35,6 @@ struct UpShiftCal
    CalMap pgokzumtnt; // KF_PGOKZUMTNTxy
    CalCurve tsynmtrakzu; // KL_TSYNMTRAKZUxy
    CalCurve pgrasyn; // KL_PGRASYNxy
-   CalCurve porasyn; // KL_PORASYNxy
    int32_t t_syn; // T_SYNxy
    int32_t t_vkabhs; // T_VKABHSxy
    CalCurve phkabmt; // KL_PHKABMTxy
@@ -57,6 +56,7 @@ struct UpShiftCal
    int32_t kp_glskab; // KP_GLSKABxy
    int32_t ki_glskab; // KI_GLSKABxy
    CalCurve tvglskzucg; // KL_TVGLSKZUCGxy
+   CalCurve tvglskabcg; // KL_TVGLSKABCGxy
    CalMap mehaupt; // KF_MEHAUPTxy
    int32_t t_ramee; // T_RAMEExy
 };
@@ -85,6 +85,13 @@ struct DownShiftCal
    int32_t p_sysmin; // P_SYSMINxy
    CalMap mehaupt; // KF_MEHAUPTxy
    CalMap menach; // KF_MENACHxy
+   CalMap wtsgls; // KF_WTSGLSxy
+   int32_t kp_glskzu; // KP_GLSKZUxy
+   int32_t ki_glskzu; // KI_GLSKZUxy
+   int32_t kp_glskab; // KP_GLSKABxy
+   int32_t ki_glskab; // KI_GLSKABxy
+   CalCurve tvglskzucg; // KL_TVGLSKZUCGxy
+   CalCurve tvglskabcg; // KL_TVGLSKABCGxy
 };
 
 struct ClutchFillCal

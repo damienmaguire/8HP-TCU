@@ -20,53 +20,143 @@
 #include "gears.h"
 #include "test.h"
 
-static EngageConfig Cfg() {
+static EngageConfig Cfg(int variant) {
   EngageConfig c;
   c.pMax = 12750;
   c.fillEqMs = 50;
   c.rampMs = 300;
   c.syncBand = 30;
-  c.syncCloseGrad = 20000;
+  c.fastCloseGrad = 30000;
+  c.syncConfirmMs = 80;
+  c.postSyncMs = 200;
+  c.tqZeroNm = 10;
+  c.variant = (uint8_t)variant;
   return c;
 }
 
-static void RunEngage(int gear) {
+struct EngResult
+{
+  int ms;          // total time to done (or the limit)
+  int closeMs;     // time spent in ENG_CLOSE
+  bool done;
+  bool sawFast;
+  int32_t maxStep; // largest per-tick rise of the power-flow element in ENG_CLOSE
+};
+
+static EngResult RunEngage(int gear, int variant, EngageInputs in, int limitMs = 10000) {
+  EngResult r = {0, 0, false, false, 0};
   Engage e;
-  CHECK(e.Start(gear, Cfg()));
-  int pc = Engage::PowerFlowClutch(gear);
+  CHECK(e.Start(gear, Cfg(variant)));
+  int pc = Engage::PowerFlowClutch(gear, variant);
+  CHECK_EQ(e.PowerClutch(), pc);
   uint8_t mask = Gears::ClutchMask(gear);
   int lastPhase = ENG_FILL;
   bool order = true;
-  int ms = 0;
-  EngageInputs in = {20, 0, 0, 40}; // standstill, motor stopped
-  while (!e.Done() && ms < 10000) {
+  int32_t lastP = 0;
+  while (!e.Done() && r.ms < limitMs) {
     e.Tick(in);
     if (e.Phase() < lastPhase)
       order = false;
     lastPhase = e.Phase();
-    // Only the elements of the target gear ever get pressure
+    // Only the elements of the target gear ever get pressure.
     for (int c = 0; c < CL_COUNT; c++)
       if (!(mask & CLUTCH_BIT(c)))
         CHECK_EQ(e.Pressure(c), 0);
-    // The power-flow element waits until the other two are filled
+    // The power-flow element waits until the other two are filled (B
+    // stays at its neutral pre-fill on the 330e).
     if (e.Phase() == ENG_FILL)
-      CHECK_EQ(e.Pressure(pc), 0);
-    ms += 10;
+      CHECK_EQ(e.Pressure(pc), pc == CL_B ? 550 : 0);
+    if (e.Phase() == ENG_CLOSE || e.Done()) {
+      int32_t step = e.Pressure(pc) - lastP;
+      if (step > r.maxStep)
+        r.maxStep = step;
+      r.closeMs += 10;
+    }
+    // Torque must be held near 0 for as long as the gear is not clamped.
+    CHECK(e.TorqueHold() == !e.Done());
+    if (e.FastClose())
+      r.sawFast = true;
+    lastP = e.Pressure(pc);
+    r.ms += 10;
   }
-  CHECK(e.Done());
+  r.done = e.Done();
   CHECK(order);
-  CHECK(ms < 5000);
-  for (int c = 0; c < CL_COUNT; c++)
-    if (mask & CLUTCH_BIT(c))
-      CHECK(e.Pressure(c) >= 12750);
+  if (r.done)
+    for (int c = 0; c < CL_COUNT; c++)
+      if (mask & CLUTCH_BIT(c))
+        CHECK(e.Pressure(c) >= 12750);
+  return r;
 }
 
 void TestEngage() {
-  CHECK_EQ(Engage::PowerFlowClutch(GEAR_1), CL_C);
-  CHECK_EQ(Engage::PowerFlowClutch(GEAR_R), CL_D);
-  CHECK_EQ(Engage::PowerFlowClutch(GEAR_2), -1);
+  // Last clutch in, per variant (Ian, QA2).
+  CHECK_EQ(Engage::PowerFlowClutch(GEAR_1, ENG_VAR_330E), CL_B);
+  CHECK_EQ(Engage::PowerFlowClutch(GEAR_R, ENG_VAR_330E), CL_B);
+  CHECK_EQ(Engage::PowerFlowClutch(GEAR_1, ENG_VAR_F11), CL_C);
+  CHECK_EQ(Engage::PowerFlowClutch(GEAR_R, ENG_VAR_F11), CL_D);
+  CHECK_EQ(Engage::PowerFlowClutch(GEAR_2, ENG_VAR_330E), -1);
+  CHECK_EQ(Engage::PowerFlowClutch(GEAR_1, 7), -1);
   Engage e;
-  CHECK(!e.Start(GEAR_2, Cfg()));
-  RunEngage(GEAR_1);
-  RunEngage(GEAR_R);
+  CHECK(!e.Start(GEAR_2, Cfg(ENG_VAR_330E)));
+  CHECK(!e.Start(GEAR_1, Cfg(9)));
+
+  // 330e: A+C (1st) and A+D (R) are the pre-filled pair.
+  EngageInputs still = {0, 0, 0, 40, true, true}; // standstill, torque 0
+  for (int v = 0; v < 2; v++) {
+    for (int g = 0; g < 2; g++) {
+      int gear = g ? GEAR_R : GEAR_1;
+      // Fast close: no slip on valid sensors, torque near 0, line OK.
+      EngResult fast = RunEngage(gear, v, still);
+      CHECK(fast.done);
+      CHECK(fast.sawFast);
+      CHECK(fast.ms < 5000);
+      CHECK(fast.closeMs <= 1500); // full within about 1.5 s
+      CHECK(fast.maxStep <= 30000 * 10 / 1000); // rate limited
+      // Torque not near 0: OEM gradients, slower.
+      EngageInputs tq = still;
+      tq.m_t = 40;
+      EngResult oem = RunEngage(gear, v, tq, 30000);
+      CHECK(oem.done);
+      CHECK(!oem.sawFast);
+      CHECK(oem.closeMs > fast.closeMs);
+      CHECK(oem.maxStep <= 15000 * 10 / 1000 + 1); // OEM 1-15 bar/s
+      // Line pressure not adequate: no fast close.
+      EngageInputs line = still;
+      line.lineOk = false;
+      EngResult lo = RunEngage(gear, v, line, 30000);
+      CHECK(lo.done);
+      CHECK(!lo.sawFast);
+      // Speed sensors not valid: no fast close, but it still finishes.
+      EngageInputs ns = still;
+      ns.speedsValid = false;
+      EngResult nsr = RunEngage(gear, v, ns, 30000);
+      CHECK(nsr.done);
+      CHECK(!nsr.sawFast);
+      // Persistent slip: no fast close and never "in gear".
+      EngageInputs slip = still;
+      slip.n_t = 300;
+      EngResult sl = RunEngage(gear, v, slip, 4000);
+      CHECK(!sl.done);
+      CHECK(!sl.sawFast);
+    }
+  }
+
+  // The fast close waits for the no-slip confirm time.
+  Engage f;
+  CHECK(f.Start(GEAR_1, Cfg(ENG_VAR_330E)));
+  EngageInputs in = still;
+  in.n_t = 300;
+  for (int i = 0; i < 100; i++)
+    f.Tick(in);
+  CHECK(!f.FastClose());
+  in.n_t = 0;
+  for (int i = 0; i < 7; i++) {
+    f.Tick(in);
+    CHECK(!f.FastClose());
+  }
+  f.Tick(in);
+  CHECK(f.FastClose()); // 80 ms of no slip
+  in.m_t = 50;          // torque comes back: drop out of the fast close
+  f.Tick(in);
+  CHECK(!f.FastClose());
 }
