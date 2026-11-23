@@ -31,10 +31,10 @@
  *    speed at most the gear-in limit); a blocked request flashes the
  *    display where the lever has one;
  *  - every lever has an RX timeout; when it runs out the TCU uses the
- *    CanLossMode rule (hold the gear or neutral);
+ *    CAN loss rule (COMM_CANLOSS_MODE) (hold the gear or neutral);
  *  - VCU-only features are not ported (PKP2300 regen / heater toggles and
  *    the state-of-charge bar);
- *  - TX only with LeverTxEnable and CanTxEnable (both off by default).
+ *  - TX only with COMM_LEVER_TX and CanTxEnable (both off by default).
  *    0x202 (BMW backlight) is never sent.
  *
  * Types (ShifterType ids; 1 = Analog is not a CAN lever):
@@ -45,7 +45,7 @@
  *  5 Blink Marine PKP-2300-SI CANopen keypad (node 0x15), RX TPDO1
  *    0x195, TX RPDO1 0x215 LEDs every 100 ms and NMT start 0x000 while
  *    the keypad is silent
- *  6 VCU frame (the CanCmdId selector, no lever)
+ *  6 VCU frame (the COMM_CMD_ID selector, no lever)
  */
 
 #include "canif.h"

@@ -86,7 +86,7 @@ void CanLever::Configure(const LeverConfig &c) {
   gws.Configure(g);
 }
 
-// Lever timeout in use (the type's default when LeverTimeout = 0).
+// Lever timeout in use (the type's default when COMM_LEVER_TIMEOUT_MS = 0).
 uint16_t CanLever::TimeoutMs() const {
   return cfg.timeoutMs ? cfg.timeoutMs : defTimeout[cfg.type];
 }
@@ -264,7 +264,7 @@ void CanLever::Tick10ms(bool engageOk) {
   }
 }
 
-// Display / LED frames due this cycle (only sent with LeverTxEnable).
+// Display / LED frames due this cycle (only sent with COMM_LEVER_TX).
 int CanLever::Tx10ms(const LeverTxIn &in, CanFrame out[LEVER_MAX_TX]) {
   int n = 0;
   uint8_t st = State();

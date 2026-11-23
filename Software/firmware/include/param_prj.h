@@ -35,14 +35,19 @@
 // 28-33 AtfT1..6 and 137-142 AtfR1..6: the ATF curve is now a fixed table
 // (anaconv.h). 155, 156, 164-166, 168-170, 195-203: LIN pump settings now
 // fixed in stm32_tcu.cpp (ConfigureLin). 230-242: adaptation entry
-// conditions and rule, now fixed in stm32_tcu.cpp (ConfigureTcu). 2037 is a
-// retired spot value id.
+// conditions and rule, now fixed in stm32_tcu.cpp (ConfigureTcu). 108,
+// 110, 111, 115, 117, 118, 215, 216, 218-228, 249, 250, 262, 263:
+// communication settings now fixed in stm32_tcu.cpp (COMM_*); 181 F11TqTx
+// was removed with its 0x0B0 torque frame. 2037, 2110 (tq0B0) and 2111
+// (tqQual) are retired spot value ids.
 #define PARAM_RETIRED_IDS                                                      \
   1, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 40, 42, 53, 54,   \
       69, 70, 102, 106, 107, 137, 138, 139, 140, 141, 142, 155, 156, 157, 158, \
       159, 160, 161, 162, 164, 165, 166, 168, 169, 170, 195, 196, 197, 198,    \
       199, 200, 201, 202, 203, 230, 231, 232, 233, 234, 235, 236, 237, 238,    \
-      239, 240, 241, 242, 2037
+      239, 240, 241, 242, 108, 110, 111, 115, 117, 118, 181, 215, 216, 218,    \
+      219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 249, 250, 262, 263,    \
+      2037, 2110, 2111
 // (ids 9, 101, 103-105 and 108 were free slots and are used below; 102,
 // 106 and 107 were used by an unreleased draft and are left free. The V4
 // update dropped 1, 22-27, 34, 35, 40, 42, 53, 54, 69 and 70; they are
@@ -175,38 +180,14 @@
   PARAM_ENTRY(CAT_SHIFT, GearInMinP, "mbar", 0, 20000, 8000, 191)              \
   PARAM_ENTRY(CAT_SHIFT, GearInPumpMs, "ms", 0, 10000, 1000, 192)              \
   PARAM_ENTRY(CAT_SHIFT, GearInMotRpm, "rpm", 0, 3000, 100, 193)               \
-  PARAM_ENTRY(CAT_COMM, CanCmdId, "", 1, 2047, 768, 110)                       \
-  PARAM_ENTRY(CAT_COMM, CanStatId, "", 1, 2047, 769, 111)                      \
   PARAM_ENTRY(CAT_COMM, CanTimeout, "ms", 50, 5000, 500, 112)                  \
   PARAM_ENTRY(CAT_COMM, CanTxEnable, ONOFF, 0, 1, 0, 113)                      \
   PARAM_ENTRY(CAT_COMM, CanLossTq, "Nm", 0, 1000, 600, 114)                    \
-  PARAM_ENTRY(CAT_COMM, CanLossMode, CANLOSSMODES, 0, 1, 1, 108)               \
-  PARAM_ENTRY(CAT_COMM, SdoNodeId, "", 1, 127, 22, 115)                        \
   PARAM_ENTRY(CAT_COMM, Can1Baud, CANBAUDS, 0, 4, 2, 116)                      \
-  PARAM_ENTRY(CAT_COMM, LogEnable, ONOFF, 0, 1, 0, 117)                        \
-  PARAM_ENTRY(CAT_COMM, LogBaseId, "", 1, 2040, 1520, 118)                     \
   PARAM_ENTRY(CAT_COMM, Can2Baud, CANBAUDS, 0, 4, 2, 119)                      \
   PARAM_ENTRY(CAT_COMM, Can2Enable, ONOFF, 0, 1, 1, 163)                       \
-  PARAM_ENTRY(CAT_COMM, F11TqTx, ONOFF, 0, 1, 0, 181)                          \
-  PARAM_ENTRY(CAT_COMM, TqCeilTx, ONOFF, 0, 1, 0, 215)                         \
-  PARAM_ENTRY(CAT_COMM, TqCeilNm, "Nm", 0, 2000, 0, 216)                       \
   PARAM_ENTRY(CAT_COMM, LeverBus, LEVERBUSES, 0, 1, 0, 217)                    \
-  PARAM_ENTRY(CAT_COMM, LeverTxEnable, ONOFF, 0, 1, 0, 218)                    \
-  PARAM_ENTRY(CAT_COMM, LeverTimeout, "ms", 0, 2000, 0, 219)                   \
-  PARAM_ENTRY(CAT_COMM, LeverDeb, "frames", 1, 10, 2, 220)                     \
-  PARAM_ENTRY(CAT_COMM, LeverMSub, "", 0, 7, 1, 221)                           \
-  PARAM_ENTRY(CAT_COMM, LeverB34, LEVERB34S, 0, 1, 0, 222)                     \
-  PARAM_ENTRY(CAT_COMM, TqModel, ONOFF, 0, 1, 0, 223)                          \
-  PARAM_ENTRY(CAT_COMM, TqModelScale, "%", 10, 500, 100, 224)                  \
-  PARAM_ENTRY(CAT_COMM, TqBoostPct, "%", 0, 200, 100, 225)                     \
-  PARAM_ENTRY(CAT_COMM, MapKpa, "kPa", 0, 400, 100, 226)                       \
-  PARAM_ENTRY(CAT_COMM, TqNoRedVal, "Nm", -32768, 32767, 0, 227)               \
-  PARAM_ENTRY(CAT_COMM, PedalPct, "%", -1, 100, -1, 228)                       \
-  PARAM_ENTRY(CAT_COMM, FrzTime, "ms", 0, 60000, 3000, 249)                    \
-  PARAM_ENTRY(CAT_COMM, FrzRpm, "rpm", 0, 5000, 300, 250)                      \
   PARAM_ENTRY(CAT_COMM, StreamEnable, ONOFF, 0, 1, 0, 261)                     \
-  PARAM_ENTRY(CAT_COMM, StreamBaseId, "", 1, 2044, 1728, 262)                  \
-  PARAM_ENTRY(CAT_COMM, StreamBus, LEVERBUSES, 0, 1, 0, 263)                   \
   PARAM_ENTRY(CAT_IO, GpOut1Func, GPOUTFUNCS, 0, 2, 0, 147)                    \
   PARAM_ENTRY(CAT_IO, GpOut2Func, GPOUTFUNCS, 0, 2, 0, 148)                    \
   PARAM_ENTRY(CAT_IO, GpPwmFreq, "Hz", 10, 20000, 200, 150)                    \
@@ -345,8 +326,6 @@
   VALUE_ENTRY(lpBusFlt, ONOFF, 2107)                                           \
   VALUE_ENTRY(parkSt, PARKSTATES, 2108)                                        \
   VALUE_ENTRY(canLoss, ONOFF, 2109)                                            \
-  VALUE_ENTRY(tq0B0, "Nm", 2110)                                               \
-  VALUE_ENTRY(tqQual, TQQUALS, 2111)                                           \
   VALUE_ENTRY(solSetAct, SOLSETS, 2112)                                        \
   VALUE_ENTRY(tqClass, "Nm", 2113)                                             \
   VALUE_ENTRY(revLimNm, "Nm", 2114)                                            \
@@ -430,14 +409,12 @@
 // tcu.h). Input = the 12 V brake switch input on J1.46 (PD1).
 #define PARKBRAKES "0=VcuCan, 1=Param, 2=Bypass, 3=Input"
 #define PARAMSRCS "0=Defaults, 1=Flash, 2=Foreign"
-#define TQQUALS "0=None, 1=Raise, 2=Reduce"
 // ShifterType: 0 and 1 keep their ids (0 = CAN is now the BMW GWS lever,
 // with the VCU-frame selector as fallback until the lever is seen).
 #define SHIFTERS                                                               \
   "0=BMW_GWS, 1=Analog, 2=BMW_E65, 3=JLR_G1, 4=JLR_G2, 5=PKP2300, "            \
   "6=VCU_Frame"
 #define LEVERBUSES "0=CAN1, 1=CAN2"
-#define LEVERB34S "0=OEM_FCFF, 1=ZV_Gear"
 #define TCCMODES "0=Simple, 1=Schedule"
 #define TQSRCS "0=CAN, 1=Model, 2=Substitute, 3=Param"
 #define DIAGCODES "0=OK, 1=Open, 2=ShortBat, 3=ShortGnd, 4=RHigh, 5=RLow"
@@ -447,7 +424,6 @@
 #define GPOUTFUNCS "0=Off, 1=On, 2=StarterLock"
 #define LINREQS "0=Off, 1=Auto, 2=Force"
 #define LPSTATES "0=Off, 1=Idle, 2=Run"
-#define CANLOSSMODES "0=Neutral, 1=HoldGear"
 #define CMDSRC "0=CAN, 1=Param"
 #define NTSRC "0=Sensor, 1=CanMotorRpm"
 #define ATFSRC "0=Fixed, 1=Sensor"

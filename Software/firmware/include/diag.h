@@ -30,7 +30,7 @@
  *    (TF_SPEED) and the existing gear-hold rules;
  *  - frozen torque                                -> torque substitute
  *    (high clamping pressure);
- *  - CAN timeout                                  -> CanLossMode;
+ *  - CAN timeout                                  -> COMM_CANLOSS_MODE;
  *  - firmware / calibration mismatch at boot      -> configuration error,
  *    safe state.
  *

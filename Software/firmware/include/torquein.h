@@ -23,17 +23,17 @@
  * the TCU always needs a number it can trust:
  *  1. the torque the VCU / engine ECU sends on CAN (default);
  *  2. if that value is the "not available" code 0x8000 or 0x7FFF (an ECU
- *     convention) or frozen, and TqModel = On: an estimate from engine
+ *     convention) or frozen, and COMM_TQ_MODEL = true: an estimate from engine
  *     speed and manifold pressure (MAP);
  *  3. otherwise the safe substitute CanLossTq (600 Nm by default, the OEM
  *     substitute): high torque means high clamping pressure, so a clutch
  *     never slips for lack of torque information.
  *
- * Model: Nm = table(rpm, MAP up to 100 kPa) x TqModelScale %; above
+ * Model: Nm = table(rpm, MAP up to 100 kPa) x COMM_TQ_MODEL_SCALE %; above
  * 100 kPa (boost) the 100 kPa value is scaled by MAP / 100 and by the
- * boost multiplier TqBoostPct %. The table is a PLACEHOLDER shape for a
+ * boost multiplier COMM_TQ_BOOST_PCT %. The table is a PLACEHOLDER shape for a
  * generic engine, 1.0 = 100 % of a 300 Nm peak; scale it with
- * TqModelScale = (real peak Nm / 300) x 100, then check it reads about
+ * COMM_TQ_MODEL_SCALE = (real peak Nm / 300) x 100, then check it reads about
  * friction torque (10-20 Nm) at idle and at steady free revs. */
 
 #include <stdint.h>
@@ -50,8 +50,8 @@ struct TorqueModelIn
 {
    int32_t rpm;       // engine / motor speed, rpm
    int32_t mapKpa;    // manifold pressure, kPa absolute
-   int32_t scalePct;  // TqModelScale, %
-   int32_t boostPct;  // TqBoostPct, % (100 = MAP ratio only)
+   int32_t scalePct;  // COMM_TQ_MODEL_SCALE, %
+   int32_t boostPct;  // COMM_TQ_BOOST_PCT, % (100 = MAP ratio only)
 };
 
 namespace TorqueIn

@@ -87,15 +87,9 @@ static const Frozen frozen[] = {
     {"IlOpenHigh", 105}, {"ParkRelRpm", 183}, {"ParkRelP", 184},
     {"ParkRelHold", 185}, {"ParkPNDelay", 186}, {"ParkCtrl", 187},
     {"ParkMagMin", 189}, {"ParkMagMax", 190}, {"GearInMinP", 191},
-    {"GearInPumpMs", 192}, {"GearInMotRpm", 193}, {"CanCmdId", 110},
-    {"CanStatId", 111}, {"CanTimeout", 112}, {"CanTxEnable", 113},
-    {"CanLossTq", 114}, {"CanLossMode", 108}, {"SdoNodeId", 115},
-    {"Can1Baud", 116}, {"LogEnable", 117}, {"LogBaseId", 118},
-    {"Can2Baud", 119}, {"Can2Enable", 163}, {"F11TqTx", 181},
-    {"TqCeilTx", 215}, {"TqCeilNm", 216}, {"SolCurveSet", 214},
-    {"LeverBus", 217}, {"LeverTxEnable", 218}, {"LeverTimeout", 219},
-    {"LeverDeb", 220}, {"LeverMSub", 221}, {"LeverB34", 222},
-    {"GpOut1Func", 147}, {"GpOut2Func", 148}, {"GpPwmFreq", 150},
+    {"GearInPumpMs", 192}, {"GearInMotRpm", 193}, {"CanTimeout", 112}, {"CanTxEnable", 113},
+    {"CanLossTq", 114}, {"Can1Baud", 116}, {"Can2Baud", 119}, {"Can2Enable", 163}, {"SolCurveSet", 214},
+    {"LeverBus", 217}, {"GpOut1Func", 147}, {"GpOut2Func", 148}, {"GpPwmFreq", 150},
     {"GpPwmDuty", 151}, {"LinPumpEnable", 152}, {"LinPumpReq", 153},
     {"LinPumpRpm", 154}, {"LinPumpP", 167},
     {"PumpFaultAct", 194}, {"SelectorSet", 120},
@@ -137,21 +131,17 @@ static const Frozen frozen[] = {
     {"tBoard", 2099}, {"ratio", 2100}, {"slip", 2101},
     {"selGear", 2102}, {"inertia", 2103}, {"drvMode", 2104},
     {"shiftMd", 2105}, {"pSysMeas", 2106}, {"lpBusFlt", 2107},
-    {"parkSt", 2108}, {"canLoss", 2109}, {"tq0B0", 2110},
-    {"tqQual", 2111}, {"solSetAct", 2112}, {"tqClass", 2113},
+    {"parkSt", 2108}, {"canLoss", 2109}, {"solSetAct", 2112}, {"tqClass", 2113},
     {"revLimNm", 2114}, {"safeOfsNm", 2115}, {"k0Present", 2116},
     {"tBoardSrc", 2117}, {"lvMove", 2118}, {"lvPBtn", 2119},
     {"lvState", 2120}, {"lvCrcErr", 2121}, {"lvCntErr", 2122}, {"lvTmo", 2123},
-    {"TqModel", 223}, {"TqModelScale", 224}, {"TqBoostPct", 225},
-    {"MapKpa", 226}, {"TqNoRedVal", 227}, {"PedalPct", 228},
     {"AdaptEnable", 229}, {"AdaStep", 243},
     {"AdaMax", 244}, {"DiagRBand", 245}, {"DiagRWire", 246},
-    {"TccSlipMax", 247}, {"TccSlipMs", 248}, {"FrzTime", 249},
-    {"FrzRpm", 250}, {"CalSigExp", 251}, {"TccMode", 252},
+    {"TccSlipMax", 247}, {"TccSlipMs", 248}, {"CalSigExp", 251}, {"TccMode", 252},
     {"TccMinRpm", 253}, {"TccHyst", 254}, {"TccKp", 255},
     {"TccKi", 256}, {"TccStartP", 257}, {"TccSlipTgt", 258},
     {"TccSlipGear", 259}, {"TccSlipRpm", 260}, {"StreamEnable", 261},
-    {"StreamBaseId", 262}, {"StreamBus", 263}, {"DiagSpdOpen", 264},
+    {"DiagSpdOpen", 264},
     {"DiagSpdShort", 265}, {"DiagSpdNoSig", 266},
     {"ParkEngKmh", 267}, {"NabPerKmh", 268}, {"ParkEngNab", 269},
     {"ParkBrake", 270}, {"BrakeIn", 271}, {"GpOutCurrent", 272},
@@ -246,6 +236,21 @@ static void TestFlashGuard() {
   const int keptAda[] = {229, 243, 244}; // AdaptEnable, AdaStep, AdaMax
   for (int id : keptAda)
     CHECK(!Retired((uint16_t)id) && OurParamId((uint16_t)id));
+  // The communication settings that became fixed values, and F11TqTx.
+  const int oldComm[] = {108, 110, 111, 115, 117, 118, 181, 215, 216, 218, 219,
+                         220, 221, 222, 223, 224, 225, 226, 227, 228, 249, 250,
+                         262, 263};
+  for (int id : oldComm) {
+    CHECK(Retired((uint16_t)id));
+    if (k < 255)
+      page[k++] = {(uint16_t)id, 0, 0, 0};
+  }
+  CHECK_EQ(UnknownKeys(page, 255, OurParamId), 0);
+  // Can1Baud, Can2Baud, CanTimeout, CanTxEnable, CanLossTq, Can2Enable,
+  // LeverBus, StreamEnable stay parameters.
+  const int keptComm[] = {116, 119, 112, 113, 114, 163, 217, 261};
+  for (int id : keptComm)
+    CHECK(!Retired((uint16_t)id) && OurParamId((uint16_t)id));
   CHECK(!Retired(5) && !Retired(6));
 
   // Every parameter id of the ZombieVerter (Stm32-vcu param_prj.h): even
@@ -312,7 +317,7 @@ void TestParams() {
       "iPOS", "itA", "itB", "itC", "itD", "itE", "itSYS", "itCh7", "itPOS",
       "itPZYL", "fA", "fB", "fC", "fD", "fE", "fSYS", "fCh7", "fPOS", "fPZYL",
       "tBoard", "ratio", "slip", "selGear", "inertia", "drvMode", "shiftMd",
-      "pSysMeas", "lpBusFlt", "parkSt", "canLoss", "tq0B0", "tqQual",
+      "pSysMeas", "lpBusFlt", "parkSt", "canLoss",
       "solSetAct", "tqClass", "revLimNm", "safeOfsNm", "k0Present", "tBoardSrc"};
   int missing = 0;
   for (const char *s : spot) {
