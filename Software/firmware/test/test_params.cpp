@@ -18,6 +18,7 @@
  */
 #include "test.h"
 #include "param_prj.h"
+#include "flashguard.h"
 #include <string.h>
 
 /* Parameter and spot value ids. openinverter stores parameters by id and
@@ -43,7 +44,7 @@ static const Entry entries[] = {PARAM_LIST};
 #undef VALUE_ENTRY
 
 static const int kNextParamId = 273; // keep equal to param_prj.h
-static const int kNextValueId = 2162;
+static const int kNextValueId = 2164;
 
 static const int retired[] = {1, 22, 23, 24, 25, 26, 27, 34, 35, 40, 42, 53, 54, 69, 70, 102, 106, 107, 157, 158, 159, 160, 161, 162, 2037};
 
@@ -179,6 +180,7 @@ static const Frozen frozen[] = {
     {"canBus", 2151}, {"calSig", 2152}, {"tccSlip", 2153},
     {"tccSlipFlt", 2154}, {"parkInh", 2155}, {"brake", 2156},
     {"parkBrkW", 2157}, {"drvFlags1", 2158}, {"gpFault", 2159}, {"spdLoad", 2160}, {"brakePin", 2161},
+    {"paramSrc", 2162}, {"bootStage", 2163},
 };
 
 static const Entry *Find(const char *name) {
@@ -188,7 +190,52 @@ static const Entry *Find(const char *name) {
   return 0;
 }
 
+// Our parameter ids, as the firmware's NumFromId check sees them.
+static bool OurParamId(uint16_t id) {
+  for (const Entry &e : entries)
+    if (!e.value && e.id == id)
+      return true;
+  return false;
+}
+
+/* A ZombieVerter parameter page must not be taken as ours (it shares the
+ * flash page and its CRC is valid), while our own and a blank page are.
+ */
+static void TestFlashGuard() {
+  using namespace FlashGuard;
+  StoredParam page[255];
+  for (StoredParam &p : page)
+    p = {KEY_BLANK, 0xFF, 0xFF, 0xFFFFFFFFu};
+  CHECK_EQ(UnknownKeys(page, 255, OurParamId), 0); // blank page
+
+  int k = 0;
+  for (const Entry &e : entries)
+    if (!e.value && k < 255)
+      page[k++] = {(uint16_t)e.id, 0, 0, 0};
+  CHECK_EQ(UnknownKeys(page, 255, OurParamId), 0); // a page we saved
+
+  // Some ZombieVerter ids (Stm32-vcu param_prj.h): 5 Inverter, 6 Vehicle,
+  // 39 interface, 116 BrkVacHyst (= our Can1Baud). The ZV page holds all
+  // of its ids, so the ones we do not have show it is foreign.
+  StoredParam zv[255];
+  for (StoredParam &p : zv)
+    p = {KEY_BLANK, 0xFF, 0xFF, 0xFFFFFFFFu};
+  zv[0] = {5, 0, 0, 0};
+  zv[1] = {6, 0, 0, 0};
+  zv[2] = {39, 0, 0, 0};
+  zv[3] = {116, 0, 0, 2500 << 5};
+  CHECK_EQ(UnknownKeys(zv, 255, OurParamId), 3);
+  CHECK(!OurParamId(5) && !OurParamId(6) && !OurParamId(39));
+  CHECK(OurParamId(116)); // the shared id that would break Can1Baud
+
+  CHECK_EQ(InRange(2, 0, 4, 2), 2);
+  CHECK_EQ(InRange(2500, 0, 4, 2), 2);
+  CHECK_EQ(InRange(-1, 0, 4, 2), 2);
+  CHECK_EQ(InRange(4, 0, 4, 2), 4);
+}
+
 void TestParams() {
+  TestFlashGuard();
   const int n = sizeof(entries) / sizeof(entries[0]);
   CHECK(n > 100);
   int dupId = 0, dupName = 0;

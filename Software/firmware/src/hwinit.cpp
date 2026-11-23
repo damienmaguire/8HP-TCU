@@ -51,6 +51,14 @@ void clock_setup(void) {
   rcc_periph_clock_enable(RCC_ADC2);
   rcc_periph_clock_enable(RCC_CAN1);
   rcc_periph_clock_enable(RCC_CAN2); // CAN2 needs the CAN1 clock as well
+  // CRC unit: libopeninv checks the stored parameters and CAN map with
+  // it. Without its clock it reads as 0, so nothing stored ever loads (the
+  // ZombieVerter turns it on here too).
+  rcc_periph_clock_enable(RCC_CRC);
+  // Power and backup domain: the RTC and the backup register that keeps
+  // the start-up stage across a watchdog reset (see BootStage).
+  rcc_periph_clock_enable(RCC_PWR);
+  rcc_periph_clock_enable(RCC_BKP);
 }
 
 /* 1 s RTC tick, used by libopeninv for CAN timestamps. */

@@ -55,6 +55,9 @@
 #include <libopencm3/stm32/dma.h>
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/iwdg.h>
+#include <libopencm3/stm32/f1/bkp.h>
+#include <libopencm3/stm32/pwr.h>
+#include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/timer.h>
 #include <libopencm3/stm32/usart.h>
 #include <new>
@@ -63,6 +66,7 @@
 #include "anaconv.h"
 #include "cal_sig.h"
 #include "diag.h"
+#include "flashguard.h"
 #include "statstream.h"
 #include "torquein.h"
 #include "calset.h"
@@ -556,7 +560,12 @@ static void LinTick1ms() {
     DigIo::lin_nslp.Clear();
 }
 
-extern "C" void tim4_isr(void) { scheduler->Run(); }
+// The scheduler object is made after the interrupts are switched on, so
+// ignore a timer interrupt that comes before it exists.
+extern "C" void tim4_isr(void) {
+  if (scheduler)
+    scheduler->Run();
+}
 
 // ---------------------------------------------------------------------
 // CAN
@@ -692,6 +701,91 @@ static void SendLog(const TcuOutputs &o, const TcuInputs &in) {
 
 static uint32_t AdaptAddr() {
   return FLASH_BASE + desig_get_flash_size() * 1024 - ADAPT_BLKNUM * FLASH_PAGE_SIZE;
+}
+
+// ---------------------------------------------------------------------
+// Start-up checks
+
+/* Start-up stage, kept in backup register 1, which survives a watchdog
+ * reset. If the watchdog restarts the board, the next start blinks the
+ * LED once per stage reached (see main), so a board that never gets as
+ * far as the terminal still shows where it stopped. 15 = running.
+ */
+enum BootStages {
+  BOOT_CLOCKS = 1, BOOT_DIGIO, BOOT_SPEED_ADC, BOOT_SLOW_ADC, BOOT_PARAMS,
+  BOOT_ADAPT, BOOT_SPI_LIN, BOOT_PARAM_CHANGE, BOOT_NVIC, BOOT_CAN1,
+  BOOT_CAN2, BOOT_CANMAP, BOOT_DRIVERS, BOOT_SCHEDULER, BOOT_RUNNING
+};
+
+static void BootStage(int stage) {
+  BKP_DR1 = (uint32_t)stage;
+  iwdg_reset(); // start-up is short, but keep the watchdog fed while in it
+}
+
+// Busy wait in ms on the cycle counter (72 MHz), feeding the watchdog.
+static void WaitMs(uint32_t ms) {
+  for (uint32_t i = 0; i < ms; i++) {
+    uint32_t t0 = DWT_CYCCNT;
+    while (DWT_CYCCNT - t0 < 72000) {
+    }
+    iwdg_reset();
+  }
+}
+
+/* After a watchdog reset, blink the stage the last start got to: that
+ * many short flashes (200 ms on, 300 ms off), then 1 s dark. The stage
+ * is then shown as bootStage. A normal power-up does not blink. 1 = clock
+ * and RTC set-up, 2 = pins, 3 = speed ADC, 4 = slow ADC, 5 = parameter
+ * load, 6 = adaptation load, 7 = SPI and LIN UART, 8 = applying the
+ * parameters, 9 = interrupts, 10 = terminal and CAN1, 11 = CAN2,
+ * 12 = CAN map, 13 = valve drivers, 14 = scheduler, 15 = running.
+ */
+static int ShowLastBootStage(uint32_t prevStage) {
+  int last = (int)(prevStage & 0xFF);
+  bool wdg = (RCC_CSR & RCC_CSR_IWDGRSTF) != 0;
+  RCC_CSR |= RCC_CSR_RMVF; // clear the reset flags for next time
+  if (!wdg)
+    return 0;
+  if (last < 1 || last > BOOT_RUNNING)
+    last = 0;
+  for (int i = 0; i < last; i++) {
+    DigIo::led_out.Clear(); // active low: on
+    WaitMs(200);
+    DigIo::led_out.Set();
+    WaitMs(300);
+  }
+  WaitMs(1000);
+  return last;
+}
+
+static bool OurParamId(uint16_t id) {
+  Param::PARAM_NUM i = Param::NumFromId(id);
+  return i != Param::PARAM_INVALID && Param::GetType(i) == Param::TYPE_PARAM;
+}
+
+/* Load the saved parameters, unless the page was written by other firmware
+ * (see flashguard.h: a ZombieVerter page has a valid CRC but its ids mean
+ * other things here). Every loaded value is then checked against its
+ * min / max, and one outside goes back to its default, so no stored value
+ * can index past a table. Returns the paramSrc value: 0 defaults (blank
+ * page or bad CRC), 1 loaded, 2 foreign page ignored.
+ */
+static int LoadParams() {
+  const FlashGuard::StoredParam *page = (const FlashGuard::StoredParam *)(
+      FLASH_BASE + desig_get_flash_size() * 1024 - PARAM_BLKNUM * PARAM_BLKSIZE);
+  const int entries = (PARAM_BLKSIZE - 8) / sizeof(FlashGuard::StoredParam);
+  if (FlashGuard::UnknownKeys(page, entries, OurParamId) > 0)
+    return 2;
+  if (parm_load() != 0)
+    return 0;
+  for (int i = 0; i < Param::PARAM_LAST; i++) {
+    Param::PARAM_NUM p = (Param::PARAM_NUM)i;
+    if (Param::GetType(p) != Param::TYPE_PARAM)
+      continue;
+    const Param::Attributes *a = Param::GetAttrib(p);
+    Param::SetFixed(p, FlashGuard::InRange(Param::Get(p), a->min, a->max, a->def));
+  }
+  return 1;
 }
 
 // Read the adaptation page at start-up (all zero if blank or bad).
@@ -1193,6 +1287,8 @@ static void Ms10Task() {
 
 // 100 ms task: battery, temperatures, faults, diagnosis, slow spot values.
 static void Ms100Task() {
+  if (BKP_DR1 != BOOT_RUNNING)
+    BootStage(BOOT_RUNNING);
   DigIo::led_out.Toggle();
   // Feed the watchdog. The openinverter bootloader starts the hardware
   // watchdog before jumping to this firmware, and once started it cannot be
@@ -1382,9 +1478,15 @@ void Param::Change(Param::PARAM_NUM paramNum) {
 extern "C" int main(void) {
   extern const TERM_CMD TermCmds[];
 
+  // Every peripheral clock (CRC, PWR and BKP included) is on before
+  // anything uses it.
   clock_setup();
+  pwr_disable_backup_domain_write_protect(); // BootStage writes BKP_DR1
+  uint32_t prevStage = BKP_DR1; // how far the last start got
+  BootStage(BOOT_CLOCKS);
   rtc_setup();
-  afio_setup(); // SWD only, TIM3 full remap, CAN2 on PB5/PB6
+  BootStage(BOOT_DIGIO);
+  afio_setup(); // SWD only, CAN2 on PB5/PB6
   DIG_IO_CONFIGURE(DIG_IO_LIST);
   DigIo::max_enable.Clear(); // drivers off before anything else
   DigIo::max_cs0.Set();
@@ -1395,16 +1497,27 @@ extern "C" int main(void) {
   DigIo::park_hold.Clear();
   DigIo::lin_nslp.Clear(); // LIN transceiver asleep
   DigIo::led_out.Set();    // active low: off
-  dwt_enable_cycle_counter(); // for the spdLoad measurement
+  dwt_enable_cycle_counter(); // for the spdLoad measurement and WaitMs
+  int lastStage = ShowLastBootStage(prevStage);
+  BootStage(BOOT_SPEED_ADC);
   speed_adc_setup(spdBuf); // ADC1 first: SlowAdc uses its injected group
+  BootStage(BOOT_SLOW_ADC);
   SlowAdc::Start();
-  parm_load();
+  BootStage(BOOT_PARAMS);
+  int paramSrc = LoadParams();
+  BootStage(BOOT_ADAPT);
   AdaptLoad();
+  BootStage(BOOT_SPI_LIN);
   max_spi_setup();
   lin_usart_setup();
+  BootStage(BOOT_PARAM_CHANGE);
   Param::Change(Param::PARAM_LAST);
+  Param::SetInt(Param::paramSrc, paramSrc);
+  Param::SetInt(Param::bootStage, lastStage);
+  BootStage(BOOT_NVIC);
   nvic_setup();
 
+  BootStage(BOOT_CAN1);
   Terminal t(USART3, TermCmds);
   const CanHardware::baudrates bauds[] = {
       CanHardware::Baud125, CanHardware::Baud250, CanHardware::Baud500,
@@ -1415,6 +1528,7 @@ extern "C" int main(void) {
   // Placement new into static storage: no heap, no guard variable.
   alignas(Stm32Can) static uint8_t can2mem[sizeof(Stm32Can)];
   can2 = 0;
+  BootStage(BOOT_CAN2);
   if (Param::GetBool(Param::Can2Enable))
     can2 = new (can2mem) Stm32Can(CAN2, bauds[Param::GetInt(Param::Can2Baud)], true);
   FunctionPointerCallback cb(CanCallback, SetCanFilters);
@@ -1425,13 +1539,19 @@ extern "C" int main(void) {
     SetCan2Filters();
   }
   SetCanFilters();
-  CanMap cm(&c);
+  BootStage(BOOT_CANMAP);
+  // The CAN map shares its flash page with the ZombieVerter's too. Only
+  // load it when the parameter page was ours (or blank): a foreign map
+  // names parameters by ids that are not ours.
+  CanMap cm(&c, paramSrc != 2);
   CanSdo sdo(&c, &cm);
   sdo.SetNodeId(Param::GetInt(Param::SdoNodeId));
   TerminalCommands::SetCanMap(&cm);
 
+  BootStage(BOOT_DRIVERS);
   StartDrivers(); // speed sensor supply is always on
 
+  BootStage(BOOT_SCHEDULER);
   Stm32Scheduler s(TIM4);
   scheduler = &s;
   s.AddTask(Ms1Task, 1);

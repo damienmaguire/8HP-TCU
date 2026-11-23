@@ -28,7 +28,7 @@
    3. Display values
  */
 // Next param id (increase when adding a new parameter!): 273
-// Next value id: 2162. Retired ids are never reused (test_params.cpp).
+// Next value id: 2164. Retired ids are never reused (test_params.cpp).
 // (ids 9, 101, 103-105 and 108 were free slots and are used below; 102,
 // 106 and 107 were used by an unreleased draft and are left free. The V4
 // update dropped 1, 22-27, 34, 35, 40, 42, 53, 54, 69 and 70; they are
@@ -424,7 +424,9 @@
   VALUE_ENTRY(drvFlags1, "bits", 2158)                                         \
   VALUE_ENTRY(gpFault, "bits", 2159)                                           \
   VALUE_ENTRY(spdLoad, "0.1%", 2160)                                           \
-  VALUE_ENTRY(brakePin, ONOFF, 2161)
+  VALUE_ENTRY(brakePin, ONOFF, 2161)                                          \
+  VALUE_ENTRY(paramSrc, PARAMSRCS, 2162)                                       \
+  VALUE_ENTRY(bootStage, "stage", 2163)
 
 // Generate the version string. This must be formatted without spaces to meet
 // the format requirements of the "units".
@@ -456,6 +458,7 @@
 // Where the footbrake for the park release comes from (ParkBrakeSrc in
 // tcu.h). Input = the 12 V brake switch input on J1.46 (PD1).
 #define PARKBRAKES "0=VcuCan, 1=Param, 2=Bypass, 3=Input"
+#define PARAMSRCS "0=Defaults, 1=Flash, 2=Foreign"
 #define TQQUALS "0=None, 1=Raise, 2=Reduce"
 // ShifterType: 0 and 1 keep their ids (0 = CAN is now the BMW GWS lever,
 // with the VCU-frame selector as fallback until the lever is seen).
