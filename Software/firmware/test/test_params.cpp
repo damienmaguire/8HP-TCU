@@ -42,8 +42,8 @@ static const Entry entries[] = {PARAM_LIST};
 #undef PARAM_ENTRY
 #undef VALUE_ENTRY
 
-static const int kNextParamId = 217; // keep equal to param_prj.h
-static const int kNextValueId = 2118;
+static const int kNextParamId = 223; // keep equal to param_prj.h
+static const int kNextValueId = 2124;
 
 static const int retired[] = {1, 22, 23, 24, 25, 26, 27, 34, 35, 40, 42, 53, 54, 69, 70, 102, 106, 107, 157, 158, 159, 160, 161, 162, 2037};
 
@@ -96,6 +96,8 @@ static const Frozen frozen[] = {
     {"Can1Baud", 116}, {"LogEnable", 117}, {"LogBaseId", 118},
     {"Can2Baud", 119}, {"Can2Enable", 163}, {"F11TqTx", 181},
     {"TqCeilTx", 215}, {"TqCeilNm", 216}, {"SolCurveSet", 214},
+    {"LeverBus", 217}, {"LeverTxEnable", 218}, {"LeverTimeout", 219},
+    {"LeverDeb", 220}, {"LeverMSub", 221}, {"LeverB34", 222},
     {"GpOut1Func", 147}, {"GpOut2Func", 148}, {"GpPwmFreq", 150},
     {"GpPwmDuty", 151}, {"LinPumpEnable", 152}, {"LinPumpReq", 153},
     {"LinPumpRpm", 154}, {"LinPumpHyst", 155}, {"LinChecksum", 156},
@@ -146,7 +148,8 @@ static const Frozen frozen[] = {
     {"parkSt", 2108}, {"canLoss", 2109}, {"tq0B0", 2110},
     {"tqQual", 2111}, {"solSetAct", 2112}, {"tqClass", 2113},
     {"revLimNm", 2114}, {"safeOfsNm", 2115}, {"k0Present", 2116},
-    {"tBoardSrc", 2117},
+    {"tBoardSrc", 2117}, {"lvMove", 2118}, {"lvPBtn", 2119},
+    {"lvState", 2120}, {"lvCrcErr", 2121}, {"lvCntErr", 2122}, {"lvTmo", 2123},
 };
 
 static const Entry *Find(const char *name) {

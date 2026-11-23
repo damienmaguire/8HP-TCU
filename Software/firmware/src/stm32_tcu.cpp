@@ -62,6 +62,7 @@
 #include "linpump.h"
 #include "max22200.h"
 #include "shifter.h"
+#include "canlever.h"
 #include "speedsens.h"
 #include "tcu.h"
 #include "valveout.h"
@@ -113,6 +114,17 @@ static ValveOut valves;
 static Eds eds;
 static Tcu tcu;
 static Shifter shifter;
+static CanLever lever;
+// Lever frames are copied in the CAN interrupt and decoded in the 10 ms
+// task, so the lever state is only ever touched from one context.
+struct LeverRxBuf
+{
+  uint32_t id;
+  uint8_t dlc;
+  uint8_t d[8];
+};
+static volatile uint8_t leverHead = 0, leverTail = 0;
+static LeverRxBuf leverBuf[8];
 static LinPump linPump;
 static LinPumpRule linRule;
 // Speed sensors: ISS n_t (index 0, PA0), OSS n_ab (index 1, PA1) and, on
@@ -252,13 +264,22 @@ static void ConfigureSpeed() {
 
 static void ConfigureShifter() {
   ShifterConfig c;
-  c.type = Param::GetInt(Param::ShifterType);
+  // Every CAN lever type falls back to the VCU-frame selector fields
+  // until its own frames are seen; Analog uses the board inputs.
+  c.type = Param::GetInt(Param::ShifterType) == LEVER_ANALOG ? SHIFTER_ANALOG : SHIFTER_CAN;
   c.tip12Samples = Param::GetInt(Param::Tip12Deb) / 10;
   c.anaRMax = Param::GetInt(Param::ShAnaR);
   c.anaNMax = Param::GetInt(Param::ShAnaN);
   c.anaMin = Param::GetInt(Param::ShAnaMin);
   c.anaMax = Param::GetInt(Param::ShAnaMax);
   shifter.Configure(c);
+  LeverConfig l;
+  l.type = Param::GetInt(Param::ShifterType);
+  l.timeoutMs = Param::GetInt(Param::LeverTimeout);
+  l.debounce = Param::GetInt(Param::LeverDeb);
+  l.mSub = Param::GetInt(Param::LeverMSub);
+  l.b34 = Param::GetInt(Param::LeverB34);
+  lever.Configure(l);
 }
 
 static void ConfigureLin() {
@@ -460,7 +481,42 @@ extern "C" void tim4_isr(void) { scheduler->Run(); }
 // ---------------------------------------------------------------------
 // CAN
 
+/// Queue a lever frame from the CAN interrupt (dropped if the queue is full).
+static bool LeverRx(int bus, uint32_t id, const uint32_t data[2], uint8_t dlc) {
+  uint32_t ids[2];
+  int n = lever.IsCan() && Param::GetInt(Param::LeverBus) == bus ? lever.RxIds(ids) : 0;
+  for (int i = 0; i < n; i++) {
+    if (ids[i] != id)
+      continue;
+    uint8_t next = (uint8_t)((leverHead + 1) & 7);
+    if (next != leverTail) {
+      LeverRxBuf &b = leverBuf[leverHead];
+      b.id = id;
+      b.dlc = dlc > 8 ? 8 : dlc;
+      const uint8_t *src = (const uint8_t *)data;
+      for (int k = 0; k < 8; k++)
+        b.d[k] = src[k];
+      leverHead = next;
+    }
+    return true;
+  }
+  return false;
+}
+
+static bool Can2Callback(uint32_t id, uint32_t data[2], uint8_t dlc) {
+  return LeverRx(1, id, data, dlc);
+}
+
+static void SetCan2Filters() {
+  uint32_t ids[2];
+  int n = lever.IsCan() && Param::GetInt(Param::LeverBus) == 1 ? lever.RxIds(ids) : 0;
+  for (int i = 0; i < n; i++)
+    can2->RegisterUserMessage(ids[i]);
+}
+
 static bool CanCallback(uint32_t id, uint32_t data[2], uint8_t dlc) {
+  if (LeverRx(0, id, data, dlc))
+    return true;
   CanRx rx;
   if (!CanIf::Rx(Param::GetInt(Param::EcuType), Param::GetInt(Param::CanCmdId),
                  id, (const uint8_t *)data, dlc, &rx))
@@ -480,6 +536,10 @@ static void SetCanFilters() {
                        Param::GetInt(Param::CanCmdId), ids);
   for (int i = 0; i < n; i++)
     can1->RegisterUserMessage(ids[i]);
+  uint32_t lids[2];
+  int nl = lever.IsCan() && Param::GetInt(Param::LeverBus) == 0 ? lever.RxIds(lids) : 0;
+  for (int i = 0; i < nl; i++)
+    can1->RegisterUserMessage(lids[i]);
 }
 
 /// Status frames for the selected EcuType (canif.cpp), the 0x0B0 torque
@@ -577,7 +637,7 @@ static void Ms10Task() {
   raw.notParkIn = DigIo::notpark_in.Get();
   raw.anaMv = 2 * AnaConv::ToMv(AnaIn::ana_in.Get()); // /2 on the board
   shifter.Update(raw);
-  bool canShifter = Param::GetInt(Param::ShifterType) == SHIFTER_CAN;
+  bool canShifter = Param::GetInt(Param::ShifterType) != LEVER_ANALOG;
 
   TcuInputs in = {};
   if (fromParam)
@@ -588,6 +648,31 @@ static void Ms10Task() {
     in.selector = shifter.Selector();
   in.tipUp = !fromParam && shifter.TipUp();
   in.tipDown = !fromParam && shifter.TipDown();
+  // CAN gear lever (ShifterType 0, 2..5): it owns the selector once its
+  // frames have been seen. A new R / D / P is only taken at or below the
+  // gear-in output speed and with no TCU fault. If the lever goes quiet
+  // the CanLossMode rule applies: hold the last position or go to N.
+  if (lever.IsCan()) {
+    while (leverTail != leverHead) {
+      const LeverRxBuf &b = leverBuf[leverTail];
+      lever.OnFrame(b.id, b.d, b.dlc);
+      leverTail = (uint8_t)((leverTail + 1) & 7);
+    }
+    bool engageOk = spdOut.Rpm() <= Param::GetInt(Param::EngageMaxRpm) &&
+                    tcu.Out().mode != TCU_SAFE;
+    lever.Tick10ms(engageOk);
+    if (!fromParam && lever.Seen()) {
+      if (lever.Valid()) {
+        in.selector = lever.Selector();
+        in.tipUp = in.tipUp || lever.TipUp();
+        in.tipDown = in.tipDown || lever.TipDown();
+      } else {
+        in.selector = Param::GetInt(Param::CanLossMode) == CANLOSS_HOLD
+                          ? lever.Selector() : (uint8_t)SEL_N;
+        in.tipUp = in.tipDown = false;
+      }
+    }
+  }
   in.gearReq = fromParam ? Param::GetInt(Param::GearSet) : canRx.gearReq;
   in.m_t = fromParam ? Param::GetInt(Param::TorqueSet) : canRx.torque;
   in.n_mot = fromParam ? Param::GetInt(Param::MotorRpmSet) : canRx.motorRpm;
@@ -726,6 +811,23 @@ static void Ms10Task() {
 
   if (Param::GetBool(Param::CanTxEnable))
     SendStatus(o, atfTemp);
+  // Lever display / LEDs: only with LeverTxEnable and CanTxEnable. Only
+  // one node may own these ids (see README "CAN gear levers").
+  if (lever.IsCan() && Param::GetBool(Param::CanTxEnable) &&
+      Param::GetBool(Param::LeverTxEnable)) {
+    LeverTxIn lt = {Param::GetBool(Param::t15), in.selector, o.gear};
+    CanFrame lf[LEVER_MAX_TX];
+    int nl = lever.Tx10ms(lt, lf);
+    CanHardware *bus = Param::GetInt(Param::LeverBus) == 1 ? can2 : can1;
+    for (int i = 0; i < nl && bus; i++)
+      bus->Send(lf[i].id, lf[i].data, lf[i].dlc);
+  }
+  Param::SetInt(Param::lvMove, lever.RawMove());
+  Param::SetInt(Param::lvPBtn, lever.PButton());
+  Param::SetInt(Param::lvState, lever.State());
+  Param::SetInt(Param::lvCrcErr, lever.CrcErrors());
+  Param::SetInt(Param::lvCntErr, lever.CounterErrors());
+  Param::SetInt(Param::lvTmo, lever.Seen() && !lever.Valid());
   if (Param::GetBool(Param::LogEnable) && can2)
     SendLog(o, in);
 
@@ -1014,6 +1116,11 @@ extern "C" int main(void) {
     can2 = new (can2mem) Stm32Can(CAN2, bauds[Param::GetInt(Param::Can2Baud)], true);
   FunctionPointerCallback cb(CanCallback, SetCanFilters);
   c.AddCallback(&cb);
+  FunctionPointerCallback cb2(Can2Callback, SetCan2Filters);
+  if (can2) {
+    can2->AddCallback(&cb2);
+    SetCan2Filters();
+  }
   SetCanFilters();
   CanMap cm(&c);
   CanSdo sdo(&c, &cm);

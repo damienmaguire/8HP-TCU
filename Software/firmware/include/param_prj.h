@@ -33,8 +33,8 @@
    2. Temporary parameters (id = 0)
    3. Display values
  */
-// Next param id (increase when adding a new parameter!): 217
-// Next value id: 2118. Retired ids are never reused (test_params.cpp).
+// Next param id (increase when adding a new parameter!): 223
+// Next value id: 2124. Retired ids are never reused (test_params.cpp).
 // (ids 9, 101, 103-105 and 108 were free slots and are used below; 102,
 // 106 and 107 were used by an unreleased draft and are left free. The V4
 // update dropped 1, 22-27, 34, 35, 40, 42, 53, 54, 69 and 70; they are
@@ -55,7 +55,7 @@
   PARAM_ENTRY(CAT_SETUP, GearboxType, GBOXTYPES, 0, 6, 0, 9)                   \
   PARAM_ENTRY(CAT_SETUP, SolCurveSet, SOLSETS, 0, 4, 0, 214)                   \
   PARAM_ENTRY(CAT_SETUP, ShiftMode, SHIFTMODES, 0, 2, 0, 127)                  \
-  PARAM_ENTRY(CAT_SETUP, ShifterType, SHIFTERS, 0, 1, 0, 128)                  \
+  PARAM_ENTRY(CAT_SETUP, ShifterType, SHIFTERS, 0, 6, 0, 128)                  \
   PARAM_ENTRY(CAT_SETUP, ShAnaR, "mV", 0, 6600, 1500, 129)                     \
   PARAM_ENTRY(CAT_SETUP, ShAnaN, "mV", 0, 6600, 3000, 130)                     \
   PARAM_ENTRY(CAT_SETUP, ShAnaMin, "mV", 0, 6600, 200, 131)                    \
@@ -180,6 +180,12 @@
   PARAM_ENTRY(CAT_COMM, F11TqTx, ONOFF, 0, 1, 0, 181)                          \
   PARAM_ENTRY(CAT_COMM, TqCeilTx, ONOFF, 0, 1, 0, 215)                         \
   PARAM_ENTRY(CAT_COMM, TqCeilNm, "Nm", 0, 2000, 0, 216)                       \
+  PARAM_ENTRY(CAT_COMM, LeverBus, LEVERBUSES, 0, 1, 0, 217)                    \
+  PARAM_ENTRY(CAT_COMM, LeverTxEnable, ONOFF, 0, 1, 0, 218)                    \
+  PARAM_ENTRY(CAT_COMM, LeverTimeout, "ms", 0, 2000, 0, 219)                   \
+  PARAM_ENTRY(CAT_COMM, LeverDeb, "frames", 1, 10, 2, 220)                     \
+  PARAM_ENTRY(CAT_COMM, LeverMSub, "", 0, 7, 1, 221)                           \
+  PARAM_ENTRY(CAT_COMM, LeverB34, LEVERB34S, 0, 1, 0, 222)                     \
   PARAM_ENTRY(CAT_IO, GpOut1Func, GPOUTFUNCS, 0, 2, 0, 147)                    \
   PARAM_ENTRY(CAT_IO, GpOut2Func, GPOUTFUNCS, 0, 2, 0, 148)                    \
   PARAM_ENTRY(CAT_IO, GpPwmFreq, "Hz", 10, 20000, 200, 150)                    \
@@ -330,7 +336,13 @@
   VALUE_ENTRY(revLimNm, "Nm", 2114)                                            \
   VALUE_ENTRY(safeOfsNm, "Nm", 2115)                                           \
   VALUE_ENTRY(k0Present, ONOFF, 2116)                                          \
-  VALUE_ENTRY(tBoardSrc, TBOARDSRCS, 2117)
+  VALUE_ENTRY(tBoardSrc, TBOARDSRCS, 2117)                                     \
+  VALUE_ENTRY(lvMove, "", 2118)                                                \
+  VALUE_ENTRY(lvPBtn, ONOFF, 2119)                                             \
+  VALUE_ENTRY(lvState, LEVERSTATES, 2120)                                      \
+  VALUE_ENTRY(lvCrcErr, "", 2121)                                              \
+  VALUE_ENTRY(lvCntErr, "", 2122)                                              \
+  VALUE_ENTRY(lvTmo, ONOFF, 2123)
 
 // Generate the version string. This must be formatted without spaces to meet
 // the format requirements of the "units".
@@ -360,7 +372,14 @@
 #define DRIVEMODES "0=Normal, 1=Sport, 2=Track"
 #define PARKSTATES "0=Engaged, 1=Releasing, 2=Released, 3=Engaging"
 #define TQQUALS "0=None, 1=Raise, 2=Reduce"
-#define SHIFTERS "0=CAN, 1=Analog"
+// ShifterType: 0 and 1 keep their ids (0 = CAN is now the BMW GWS lever,
+// with the VCU-frame selector as fallback until the lever is seen).
+#define SHIFTERS                                                               \
+  "0=BMW_GWS, 1=Analog, 2=BMW_E65, 3=JLR_G1, 4=JLR_G2, 5=PKP2300, "            \
+  "6=VCU_Frame"
+#define LEVERBUSES "0=CAN1, 1=CAN2"
+#define LEVERB34S "0=OEM_FCFF, 1=ZV_Gear"
+#define LEVERSTATES "0=P, 1=R, 2=N, 3=D, 4=M"
 #define ATFINPUTS "0=TempIn1, 1=TempIn2"
 #define GPOUTFUNCS "0=Off, 1=On, 2=StarterLock"
 #define LINREQS "0=Off, 1=Auto, 2=Force"
