@@ -53,7 +53,7 @@ What each part does, the settings, and what is still open: [Software/firmware/RE
 
 ## What is in the repo
 
-- `Hardware/` — V2 board drawings, photos and pinouts, and the adapter manufacturing files (`TCU_Adapter_BoardV1.zip`). The firmware pin map is for a later V4 board, and a rev B of that board. Those drawings are not in this folder.
+- `Hardware/` — V2 board drawings, photos and pinouts, and the adapter manufacturing files (`TCU_Adapter_BoardV1.zip`). V4 STM32F107VCT6 board added today.
 - `TCM_Pinout.pdf` — pinout of the GA8P75HZ gearbox connector.
 - `Software/firmware/` — STM32 firmware, Makefile, Code::Blocks project (`tcu8hp.cbp`) and host tests. Two submodules: [libopeninv](https://github.com/damienmaguire/libopeninv) and [libopencm3](https://github.com/jsphuebner/libopencm3).
 - `CAN/` — F11 8HP CAN notes: message IDs, a CAN database (`.dbc`), and a map of the messages a controller has to handle.
