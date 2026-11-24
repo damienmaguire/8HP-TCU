@@ -4,7 +4,9 @@ Open-source transmission controller for the ZF 8HP automatic gearbox, for EV con
 
 Forum: https://openinverter.org/forum/
 
-<img width="640" alt="TCU board" src="https://github.com/user-attachments/assets/2486fc5e-2951-46a5-b27e-60c1235bf647" />
+<img width="2304" height="4096" alt="8hp_sw1" src="https://github.com/user-attachments/assets/b7de42bf-ba7d-4aa5-aae0-8b84bb7885e0" />
+<img width="1624" height="928" alt="Stm32_TCU_V4" src="https://github.com/user-attachments/assets/9ba738d9-f064-4fa4-8516-2eef33163f83" />
+
 
 Connector housing, header, plug and pins are the same as ZombieVerter VCU.
 
@@ -58,6 +60,9 @@ What each part does, the settings, and what is still open: [Software/firmware/RE
 - `CAN/` — F11 8HP CAN notes: message IDs, a CAN database (`.dbc`), and a map of the messages a controller has to handle.
 
 ## Build
+
+<img width="2304" height="4096" alt="8hp_sw1" src="https://github.com/user-attachments/assets/072ac935-9eab-4df6-b3f7-c79d3e288967" />
+
 
 Ubuntu 22.04 or later. The build writes a `.bin` and a `.hex`. The image is linked at `0x08001000`, with room for a 4 KiB bootloader in front, the same layout as other OpenInverter boards. There is no flash program in this repo.
 
