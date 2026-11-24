@@ -4,7 +4,6 @@ Open-source transmission controller for the ZF 8HP automatic gearbox, for EV con
 
 Forum: https://openinverter.org/forum/
 
-<img width="2304" height="4096" alt="8hp_sw1" src="https://github.com/user-attachments/assets/b7de42bf-ba7d-4aa5-aae0-8b84bb7885e0" />
 <img width="1624" height="928" alt="Stm32_TCU_V4" src="https://github.com/user-attachments/assets/9ba738d9-f064-4fa4-8516-2eef33163f83" />
 
 
