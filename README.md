@@ -4,7 +4,8 @@ Open-source transmission controller for the ZF 8HP automatic gearbox, for EV con
 
 Forum: https://openinverter.org/forum/
 
-<img width="1624" height="928" alt="Stm32_TCU_V4" src="https://github.com/user-attachments/assets/9ba738d9-f064-4fa4-8516-2eef33163f83" />
+<img width="1624" height="928" alt="Stm32_TCU_V5" src="https://github.com/user-attachments/assets/684fc972-fac7-4564-ae98-45893f91e95d" />
+
 
 
 Connector housing, header, plug and pins are the same as ZombieVerter VCU.
@@ -54,6 +55,7 @@ What each part does, the settings, and what is still open: [Software/firmware/RE
 ## What is in the repo
 
 - `Hardware/` — V2 board drawings, photos and pinouts, and the adapter manufacturing files (`TCU_Adapter_BoardV1.zip`). V4 STM32F107VCT6 board added today.
+-  Decided to change the proportional valve drivers on the V4 board from the MAX22200 to the Infineon TLE92466ED and go for a V5.
 - `TCM_Pinout.pdf` — pinout of the GA8P75HZ gearbox connector.
 - `Software/firmware/` — STM32 firmware, Makefile, Code::Blocks project (`tcu8hp.cbp`) and host tests. Two submodules: [libopeninv](https://github.com/damienmaguire/libopeninv) and [libopencm3](https://github.com/jsphuebner/libopencm3).
 - `CAN/` — F11 8HP CAN notes: message IDs, a CAN database (`.dbc`), and a map of the messages a controller has to handle.
