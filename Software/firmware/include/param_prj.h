@@ -28,7 +28,7 @@
    3. Display values
  */
 // Next param id (increase when adding a new parameter!): 273
-// Next value id: 2164. Retired ids are never reused (test_params.cpp).
+// Next value id: 2190. Retired ids are never reused (test_params.cpp).
 // Retired parameter ids: once used by this firmware, now removed. A saved
 // parameter page may still hold them, so the start-up flash check
 // (flashguard.h) treats them as ours and parm_load() skips them.
@@ -39,7 +39,12 @@
 // 110, 111, 115, 117, 118, 215, 216, 218-228, 249, 250, 262, 263:
 // communication settings now fixed in stm32_tcu.cpp (COMM_*); 181 F11TqTx
 // was removed with its 0x0B0 torque frame. 2037, 2110 (tq0B0) and 2111
-// (tqQual) are retired spot value ids.
+// (tqQual) are retired spot value ids. V5 board (TLE92466ED drivers): 41
+// MaxIfs, 43 MaxFreq, 44 MaxFreqDiv, 146 MaxHfsMask (old driver chip
+// settings), 49 DitherAmp, 50 DitherPeriod, 51 DitherShape (the dither is
+// now a fixed table made by the driver chip, valveout.h) and 272
+// GpOutCurrent (OUT1..3 are plain switches now); spot values 2148
+// diagPair and 2159 gpFault.
 #define PARAM_RETIRED_IDS                                                      \
   1, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 40, 42, 53, 54,   \
       69, 70, 102, 106, 107, 137, 138, 139, 140, 141, 142, 155, 156, 157, 158, \
@@ -47,7 +52,7 @@
       199, 200, 201, 202, 203, 230, 231, 232, 233, 234, 235, 236, 237, 238,    \
       239, 240, 241, 242, 108, 110, 111, 115, 117, 118, 181, 215, 216, 218,    \
       219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 249, 250, 262, 263,    \
-      2037, 2110, 2111
+      2037, 2110, 2111, 41, 43, 44, 146, 49, 50, 51, 272, 2148, 2159
 // (ids 9, 101, 103-105 and 108 were free slots and are used below; 102,
 // 106 and 107 were used by an unreleased draft and are left free. The V4
 // update dropped 1, 22-27, 34, 35, 40, 42, 53, 54, 69 and 70; they are
@@ -89,28 +94,21 @@
   PARAM_ENTRY(CAT_ATF, AtfInput, ATFINPUTS, 0, 1, 0, 143)                      \
   PARAM_ENTRY(CAT_ATF, AtfRMin, "ohm", 0, 200000, 30, 144)                     \
   PARAM_ENTRY(CAT_ATF, AtfRMax, "ohm", 0, 200000, 100000, 145)                 \
-  PARAM_ENTRY(CAT_VALVE, MaxIfs, "mA", 150, 1000, 1000, 41)                    \
-  PARAM_ENTRY(CAT_VALVE, MaxHfsMask, "bits", 0, 255, 0, 146)                   \
-  PARAM_ENTRY(CAT_VALVE, MaxFreq, MAXFREQ, 0, 1, 0, 43)                        \
-  PARAM_ENTRY(CAT_VALVE, MaxFreqDiv, MAXDIV, 0, 3, 0, 44)                      \
   PARAM_ENTRY(CAT_VALVE, MaxOpenLoad, ONOFF, 0, 1, 1, 45)                      \
   PARAM_ENTRY(CAT_VALVE, IMaxCoil, "mA", 100, 1000, 850, 46)                   \
   PARAM_ENTRY(CAT_VALVE, IMinCoil, "mA", 0, 200, 50, 47)                       \
   PARAM_ENTRY(CAT_VALVE, SlewRate, "mA/10ms", 0, 500, 60, 48)                  \
-  PARAM_ENTRY(CAT_VALVE, DitherAmp, "mA", 0, 100, 30, 49)                      \
-  PARAM_ENTRY(CAT_VALVE, DitherPeriod, "ms", 2, 50, 8, 50)                     \
-  PARAM_ENTRY(CAT_VALVE, DitherShape, DSHAPE, 0, 1, 1, 51)                     \
   PARAM_ENTRY(CAT_VALVE, TempCorr, ONOFF, 0, 1, 1, 52)                         \
   PARAM_ENTRY(CAT_VALVE, PosCurrent, "mA", 0, 1000, 0, 55)                     \
   PARAM_ENTRY(CAT_VALVE, ChanA, "ch", 0, 255, 0, 60)                           \
   PARAM_ENTRY(CAT_VALVE, ChanB, "ch", 0, 255, 1, 61)                           \
   PARAM_ENTRY(CAT_VALVE, ChanC, "ch", 0, 255, 2, 62)                           \
   PARAM_ENTRY(CAT_VALVE, ChanD, "ch", 0, 255, 3, 63)                           \
-  PARAM_ENTRY(CAT_VALVE, ChanE, "ch", 0, 255, 4, 64)                           \
-  PARAM_ENTRY(CAT_VALVE, ChanSYS, "ch", 0, 255, 5, 65)                         \
-  PARAM_ENTRY(CAT_VALVE, ChanK0, "ch", 0, 255, 7, 66)                          \
-  PARAM_ENTRY(CAT_VALVE, ChanPOS, "ch", 0, 255, 6, 67)                         \
-  PARAM_ENTRY(CAT_VALVE, ChanPZYL, "ch", 0, 255, 8, 68)                        \
+  PARAM_ENTRY(CAT_VALVE, ChanE, "ch", 0, 255, 8, 64)                           \
+  PARAM_ENTRY(CAT_VALVE, ChanSYS, "ch", 0, 255, 9, 65)                         \
+  PARAM_ENTRY(CAT_VALVE, ChanK0, "ch", 0, 255, 11, 66)                         \
+  PARAM_ENTRY(CAT_VALVE, ChanPOS, "ch", 0, 255, 10, 67)                        \
+  PARAM_ENTRY(CAT_VALVE, ChanPZYL, "ch", 0, 255, 5, 68)                        \
   PARAM_ENTRY(CAT_VALVE, Ch7Mode, CH7MODES, 0, 3, 0, 174)                      \
   PARAM_ENTRY(CAT_VALVE, K0Press, "mbar", 0, 20000, 0, 175)                    \
   PARAM_ENTRY(CAT_VALVE, TccPress, "mbar", 0, 12000, 6000, 176)                \
@@ -127,7 +125,7 @@
   PARAM_ENTRY(CAT_VALVE, TccSlipTgt, "rpm", 0, 500, 0, 258)                    \
   PARAM_ENTRY(CAT_VALVE, TccSlipGear, "", 1, 8, 3, 259)                        \
   PARAM_ENTRY(CAT_VALVE, TccSlipRpm, "rpm", 0, 6000, 1800, 260)                \
-  PARAM_ENTRY(CAT_VALVE, PzylCurrent, "mA", 0, 1000, 550, 188)                 \
+  PARAM_ENTRY(CAT_VALVE, PzylCurrent, "mA", 0, 1000, 400, 188)                 \
   PARAM_ENTRY(CAT_SHIFT, ClutchApplyP, "mbar", 5000, 25000, 16500, 80)         \
   PARAM_ENTRY(CAT_SHIFT, LineOffset, "mbar", -5000, 10000, 0, 81)              \
   PARAM_ENTRY(CAT_SHIFT, LineMax, "mbar", 5000, 30000, 25000, 82)              \
@@ -192,7 +190,6 @@
   PARAM_ENTRY(CAT_IO, GpOut2Func, GPOUTFUNCS, 0, 2, 0, 148)                    \
   PARAM_ENTRY(CAT_IO, GpPwmFreq, "Hz", 10, 20000, 200, 150)                    \
   PARAM_ENTRY(CAT_IO, GpPwmDuty, "%", 0, 100, 0, 151)                          \
-  PARAM_ENTRY(CAT_IO, GpOutCurrent, "mA", 0, 1000, 400, 272)                   \
   PARAM_ENTRY(CAT_LIN, LinPumpEnable, ONOFF, 0, 1, 0, 152)                     \
   PARAM_ENTRY(CAT_LIN, LinPumpReq, LINREQS, 0, 2, 1, 153)                      \
   PARAM_ENTRY(CAT_LIN, LinPumpRpm, "rpm", 0, 3000, 500, 154)                   \
@@ -362,7 +359,6 @@
   VALUE_ENTRY(dgCh7, DIAGCODES, 2145)                                          \
   VALUE_ENTRY(dgPos, DIAGCODES, 2146)                                          \
   VALUE_ENTRY(dgPzyl, DIAGCODES, 2147)                                         \
-  VALUE_ENTRY(diagPair, "", 2148)                                              \
   VALUE_ENTRY(spdInDiag, SPDDIAGS, 2149)                                       \
   VALUE_ENTRY(spdOutDiag, SPDDIAGS, 2150)                                      \
   VALUE_ENTRY(canBus, "", 2151)                                                \
@@ -373,11 +369,36 @@
   VALUE_ENTRY(brake, ONOFF, 2156)                                              \
   VALUE_ENTRY(parkBrkW, ONOFF, 2157)                                           \
   VALUE_ENTRY(drvFlags1, "bits", 2158)                                         \
-  VALUE_ENTRY(gpFault, "bits", 2159)                                           \
   VALUE_ENTRY(spdLoad, "0.1%", 2160)                                           \
   VALUE_ENTRY(brakePin, ONOFF, 2161)                                          \
   VALUE_ENTRY(paramSrc, PARAMSRCS, 2162)                                       \
-  VALUE_ENTRY(bootStage, "stage", 2163)
+  VALUE_ENTRY(bootStage, "stage", 2163)                                        \
+  VALUE_ENTRY(imA, "mA", 2164)                                                 \
+  VALUE_ENTRY(imB, "mA", 2165)                                                 \
+  VALUE_ENTRY(imC, "mA", 2166)                                                 \
+  VALUE_ENTRY(imD, "mA", 2167)                                                 \
+  VALUE_ENTRY(imE, "mA", 2168)                                                 \
+  VALUE_ENTRY(imSYS, "mA", 2169)                                               \
+  VALUE_ENTRY(imCh7, "mA", 2170)                                               \
+  VALUE_ENTRY(imPOS, "mA", 2171)                                               \
+  VALUE_ENTRY(imPZYL, "mA", 2172)                                              \
+  VALUE_ENTRY(imPHOLD, "mA", 2173)                                             \
+  VALUE_ENTRY(iPHOLD, "mA", 2174)                                              \
+  VALUE_ENTRY(tleSup, "bits", 2175)                                            \
+  VALUE_ENTRY(tleVbat, "mV", 2176)                                             \
+  VALUE_ENTRY(tleTemp, "C", 2177)                                              \
+  VALUE_ENTRY(tleComErr, "", 2178)                                             \
+  VALUE_ENTRY(parkHold, ONOFF, 2179)                                           \
+  VALUE_ENTRY(rA, "mOhm", 2180)                                                \
+  VALUE_ENTRY(rB, "mOhm", 2181)                                                \
+  VALUE_ENTRY(rC, "mOhm", 2182)                                                \
+  VALUE_ENTRY(rD, "mOhm", 2183)                                                \
+  VALUE_ENTRY(rE, "mOhm", 2184)                                                \
+  VALUE_ENTRY(rSYS, "mOhm", 2185)                                              \
+  VALUE_ENTRY(rCh7, "mOhm", 2186)                                              \
+  VALUE_ENTRY(rPOS, "mOhm", 2187)                                              \
+  VALUE_ENTRY(rPZYL, "mOhm", 2188)                                             \
+  VALUE_ENTRY(rPHOLD, "mOhm", 2189)
 
 // Generate the version string. This must be formatted without spaces to meet
 // the format requirements of the "units".
@@ -406,7 +427,7 @@
 #define DRIVEMODES "0=Normal, 1=Sport, 2=Track"
 #define PARKSTATES "0=Engaged, 1=Releasing, 2=Released, 3=Engaging, 4=Unheld"
 // Where the footbrake for the park release comes from (ParkBrakeSrc in
-// tcu.h). Input = the 12 V brake switch input on J1.46 (PD1).
+// tcu.h). Input = the 12 V brake switch input on PD1.
 #define PARKBRAKES "0=VcuCan, 1=Param, 2=Bypass, 3=Input"
 #define PARAMSRCS "0=Defaults, 1=Flash, 2=Foreign"
 // ShifterType: 0 and 1 keep their ids (0 = CAN is now the BMW GWS lever,
@@ -427,9 +448,6 @@
 #define CMDSRC "0=CAN, 1=Param"
 #define NTSRC "0=Sensor, 1=CanMotorRpm"
 #define ATFSRC "0=Fixed, 1=Sensor"
-#define MAXFREQ "0=100kHz, 1=80kHz"
-#define MAXDIV "0=Div4, 1=Div3, 2=Div2, 3=Div1"
-#define DSHAPE "0=Square, 1=Triangle"
 #define TQINTERV "0=Off, 1=Upshift, 2=UpAndDown"
 #define CANBAUDS "0=125k, 1=250k, 2=500k, 3=800k, 4=1M"
 #define SELECTORS "0=P, 1=R, 2=N, 3=D"
@@ -456,7 +474,7 @@
 #define CAT_ADAPT "Adaptation"
 #define CAT_DIAG "Diagnostics"
 
-/// Value of a ChanX parameter for a valve that is not on any MAX22200.
+/// Value of a ChanX parameter for a valve that is not on any driver channel.
 #define CHAN_NOT_FITTED 255
 
 extern const char *errorListString;

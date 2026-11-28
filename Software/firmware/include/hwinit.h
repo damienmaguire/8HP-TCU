@@ -27,12 +27,15 @@ extern "C" {
 
 void clock_setup(void);
 void rtc_setup(void);
-/// SWD only, CAN2 on PB5/PB6.
+/// SWD only (PA15 free), CAN2 on PB5/PB6, TIM3_CH1 on PC6.
 void afio_setup(void);
 void nvic_setup(void);
-/// SPI1 for the MAX22200: mode 0 (CPOL 0, CPHA 0), MSB first, 8 bit.
-void max_spi_setup(void);
-uint8_t max_spi_transfer(uint8_t tx);
+/// SPI1 for the TLE92466ED: mode 1 (CPOL 0, CPHA 1), MSB first, 16 bit.
+void tle_spi_setup(void);
+uint16_t tle_spi_xfer16(uint16_t tx);
+/// OUT3 (PC6) PWM on TIM3_CH1: frequency once at start-up, duty in %.
+void gp_pwm_setup(uint32_t hz);
+void gp_pwm_duty(uint32_t pct);
 /// Speed sensor pins: ADC1 continuous scan, circular DMA into buf
 /// (2 x SPEED_HALF_SCANS x SPEED_NUM samples).
 void speed_adc_setup(volatile uint16_t *buf);

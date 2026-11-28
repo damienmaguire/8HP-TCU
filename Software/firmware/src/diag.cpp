@@ -48,20 +48,13 @@ uint8_t Resistance(int32_t mV, int32_t mA, int32_t tempC, int32_t bandPct, int32
 uint8_t Channel(uint16_t f, uint8_t rCheck) {
   if (f & VALVE_F_OCP)
     return DIAG_SHORT_BAT;
+  if (f & VALVE_F_SG)
+    return DIAG_SHORT_GND;
   if (f & VALVE_F_OLF)
     return DIAG_OPEN;
-  if (f & VALVE_F_HHF)
+  if (f & VALVE_F_IERR)
     return DIAG_R_HIGH;
   return rCheck;
-}
-
-// Pairs of chip channels that are both faulted (shared wiring suspected).
-uint8_t Pairs(const uint8_t *codes, int n) {
-  uint8_t m = 0;
-  for (int k = 0; 2 * k + 1 < n && k < 8; k++)
-    if (codes[2 * k] != DIAG_OK && codes[2 * k + 1] != DIAG_OK)
-      m |= (uint8_t)(1u << k);
-  return m;
 }
 
 // Speed sensor state from its signal levels and edges.

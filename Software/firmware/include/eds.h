@@ -26,9 +26,9 @@
  * Source: Ian's 330E_EDS_PWM.md. The OEM chain is
  *   pressure (mbar) -> KL_EDSKV<x> curve -> temperature correction
  *   -> slew limit (0.03 A per 5 ms) -> 125 Hz dither -> current regulator.
- * On this board the current regulator is the MAX22200 (see max22200.h), so
- * this layer stops at a current setpoint per valve, updated every 1 ms
- * with the dither added.
+ * On the V5 board the current regulator is the TLE92466ED (tle92466.h),
+ * which also makes the dither, so this layer stops at a current setpoint
+ * per valve. ValveOut sends it to the chips every 1 ms when it changes.
  *
  * Valve sense [C]: A, B and K0 are normally low (more current = more
  * pressure). C, D, E and SYS are normally high (more current = less
@@ -47,31 +47,26 @@ enum EdsValve
    EDS_D,
    EDS_E,
    EDS_SYS,  // line pressure regulator
-   EDS_K0,   // hybrid disconnect clutch (IC2 OUT7, "TCC"); kept open for an EV
-   EDS_POS,  // position / cooling valve, current command only (IC2 OUT6, POS? bench-check)
-   EDS_PZYL, // park-lock cylinder valve (MvPZyl), current command only
+   EDS_K0,   // hybrid disconnect clutch, or the TCC lock-up (IC11 CH3, "TCC")
+   EDS_POS,  // position valve, current command only (IC11 CH2, "PREL")
+   EDS_PZYL, // park-lock cylinder valve (MvPZyl), current command only (IC10 CH5)
    EDS_COUNT
-   // There is no Sol1 valve, and the park-hold magnet is not on a
-   // MAX22200 (NCV8402 on PC7, digio park_hold).
+   // There is no Sol1 valve. The park-hold magnet PHOLD (IC10 CH4) is not
+   // a valve: ValveOut drives it as an aux output.
 };
+
+/// PZYL is an on / off valve with a pull-in current above the valve
+/// ceiling (IMaxCoil), so it has its own limit: the chip's 1.5 A.
+#define EDS_PZYL_IMAX 15000
 
 /// Valves A..K0 have a pressure-to-current curve.
 #define EDS_NUM_PRESSURE 7
-
-enum DitherShape
-{
-   DITHER_SQUARE = 0,
-   DITHER_TRIANGLE = 1,
-};
 
 struct EdsConfig
 {
    int32_t iMin;          // 0.1 mA, bottom "parking" current (500 = 50 mA)
    int32_t iMax;          // 0.1 mA, top current (8500 = 850 mA)
    int32_t slewPer10ms;   // 0.1 mA per 10 ms. OEM 0.03 A per 5 ms = 600
-   int32_t ditherAmp;     // 0.1 mA, peak. OEM about 30 mA [I] = 300
-   uint8_t ditherPeriodMs; // OEM 8 ms = 125 Hz [C]
-   uint8_t ditherShape;   // DitherShape
    bool tempCorrection;   // apply KF_KIEDSCGSTACE / KF_KIEDSCGFAACE
 };
 
@@ -86,21 +81,22 @@ public:
    void SetPressure(EdsValve v, int32_t p_mbar, int32_t atfTemp);
    /// Direct current command in 0.1 mA (POS, PZYL, tests).
    void SetCurrent(EdsValve v, int32_t i_0p1mA);
-   /// Enable or disable dither on one valve. On/off outputs never dither.
-   void SetDither(EdsValve v, bool on) { ditherOn[v] = on; }
-
-   /// 10 ms: move each setpoint towards its target, slew limited.
+   /// 10 ms: move each setpoint towards its target, slew limited. PZYL
+   /// is not slewed (on / off valve with a pull-in pulse).
    void Tick10ms();
-   /// 1 ms: advance the dither phase and refresh the outputs.
-   void Tick1ms();
 
-   /// Current to send to the driver for a valve, 0.1 mA, dither included.
-   int32_t Output(EdsValve v) const { return out[v]; }
-   /// Slewed setpoint without dither, 0.1 mA.
+   /// Current to send to the driver for a valve, 0.1 mA (the chip adds
+   /// the dither).
+   int32_t Output(EdsValve v) const { return setpoint[v]; }
+   /// Slewed setpoint, 0.1 mA (same as Output()).
    int32_t Setpoint(EdsValve v) const { return setpoint[v]; }
    int32_t Target(EdsValve v) const { return target[v]; }
 
-   /// Drop every output to 0 A at once (no slew). 0 A = 6th gear limp.
+   /** Drop every valve to 0 A at once (no slew). 0 A = 6th gear limp.
+    * SAFETY: PZYL is left alone. It keeps whatever the caller sets with
+    * SetCurrent(EDS_PZYL, ...), which in the safe state comes from the
+    * park-lock rule (parksafe.h), so the park lock cannot drop in while
+    * the car moves. */
    void SafeState();
    bool InSafeState() const { return safe; }
    /// Leave the safe state; outputs restart from 0 under the slew limit.
@@ -117,17 +113,11 @@ public:
     * temperature correction (so "open" stays clearly open). */
    static int32_t CommandCurrent(EdsValve v, int32_t p_mbar, int32_t atfTemp,
                                  bool tempCorrection, int32_t iMax);
-   /// Dither offset at a given time, 0.1 mA.
-   static int32_t DitherValue(uint32_t ms, int32_t amp, uint8_t periodMs,
-                              uint8_t shape);
 
 private:
    EdsConfig cfg;
    int32_t target[EDS_COUNT];
    int32_t setpoint[EDS_COUNT];
-   int32_t out[EDS_COUNT];
-   bool ditherOn[EDS_COUNT];
-   uint32_t ms;
    bool safe;
 };
 

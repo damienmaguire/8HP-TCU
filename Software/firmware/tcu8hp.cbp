@@ -66,7 +66,8 @@
 		<Unit filename="include/hwinit.h" />
 		<Unit filename="include/interlock.h" />
 		<Unit filename="include/linpump.h" />
-		<Unit filename="include/max22200.h" />
+		<Unit filename="include/parksafe.h" />
+		<Unit filename="include/tle92466.h" />
 		<Unit filename="include/param_prj.h" />
 		<Unit filename="include/sas.h" />
 		<Unit filename="include/shifter.h" />
@@ -88,7 +89,8 @@
 		<Unit filename="src/hwinit.cpp" />
 		<Unit filename="src/interlock.cpp" />
 		<Unit filename="src/linpump.cpp" />
-		<Unit filename="src/max22200.cpp" />
+		<Unit filename="src/parksafe.cpp" />
+		<Unit filename="src/tle92466.cpp" />
 		<Unit filename="src/sas.cpp" />
 		<Unit filename="src/shifter.cpp" />
 		<Unit filename="src/slowadc.cpp" />
@@ -97,7 +99,7 @@
 		<Unit filename="src/tcu.cpp" />
 		<Unit filename="src/terminal_prj.cpp" />
 		<Unit filename="src/valveout.cpp" />
-		<Unit filename="test/fake_max22200.h" />
+		<Unit filename="test/fake_tle92466.h" />
 		<Unit filename="test/test.h" />
 		<Unit filename="test/test_anaconv.cpp" />
 		<Unit filename="test/test_eds.cpp" />
@@ -107,7 +109,8 @@
 		<Unit filename="test/test_linpump.cpp" />
 		<Unit filename="test/test_lookup.cpp" />
 		<Unit filename="test/test_main.cpp" />
-		<Unit filename="test/test_max22200.cpp" />
+		<Unit filename="test/test_parksafe.cpp" />
+		<Unit filename="test/test_tle92466.cpp" />
 		<Unit filename="test/test_sas.cpp" />
 		<Unit filename="test/test_shifter.cpp" />
 		<Unit filename="test/test_speedsens.cpp" />

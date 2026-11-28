@@ -37,7 +37,7 @@ enum Ch
    VBAT = 0,  // PC0, ADC12_IN10
    ATF1,      // PC1, ADC12_IN11, TempIn1
    ATF2,      // PC2, ADC12_IN12, TempIn2
-   ANA,       // PC3, ADC12_IN13, spare J1.47
+   ANA,       // PC3, ADC12_IN13, spare analogue input
    MCU_TEMP,  // ADC1_IN16, die sensor
    BOARD_NTC, // PB0, ADC12_IN8, TH1
    COUNT

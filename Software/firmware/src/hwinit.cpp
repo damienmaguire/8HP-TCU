@@ -26,6 +26,7 @@
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/rtc.h>
 #include <libopencm3/stm32/spi.h>
+#include <libopencm3/stm32/timer.h>
 #include <libopencm3/stm32/usart.h>
 
 /* 8 MHz crystal -> 72 MHz, as on the ZombieVerter. */
@@ -45,7 +46,8 @@ void clock_setup(void) {
   rcc_periph_clock_enable(RCC_USART3); // terminal
   rcc_periph_clock_enable(RCC_TIM4);   // scheduler
   rcc_periph_clock_enable(LIN_USART_RCC);
-  rcc_periph_clock_enable(MAX_SPI_RCC);
+  rcc_periph_clock_enable(TLE_SPI_RCC);
+  rcc_periph_clock_enable(RCC_TIM3);   // OUT3 PWM (PC6)
   rcc_periph_clock_enable(RCC_DMA1); // ADC1 and terminal UART
   rcc_periph_clock_enable(RCC_ADC1);
   rcc_periph_clock_enable(RCC_ADC2);
@@ -68,11 +70,14 @@ void rtc_setup(void) {
   rtc_set_counter_val(0);
 }
 
-/* AFIO: SWD only (JTAG pins freed). CAN1 stays on PA11/PA12 (no remap).
- * CAN2 is remapped to PB5 RX / PB6 TX, where its transceiver is.
+/* AFIO: SWD only (SWJ_CFG = 010: JTAG off, which frees PA15 for the
+ * clutch input, PB3 and PB4). CAN1 stays on PA11/PA12 (no remap). CAN2 is
+ * remapped to PB5 RX / PB6 TX, where its transceiver is. TIM3 full remap
+ * puts TIM3_CH1 on PC6 (OUT3). USART3 has no remap.
  */
 void afio_setup(void) {
-  gpio_primary_remap(AFIO_MAPR_SWJ_CFG_JTAG_OFF_SW_ON, AFIO_MAPR_CAN2_REMAP);
+  gpio_primary_remap(AFIO_MAPR_SWJ_CFG_JTAG_OFF_SW_ON,
+                     AFIO_MAPR_CAN2_REMAP | AFIO_MAPR_TIM3_REMAP_FULL_REMAP);
 }
 
 // Interrupt priorities and enables (CAN, LIN UART, speed ADC, scheduler timer).
@@ -90,29 +95,65 @@ void nvic_setup(void) {
   nvic_set_priority(LIN_USART_IRQ, 2 << 4);
 }
 
-// SPI1 for the MAX22200 valve drivers (mode 0, MSB first).
-void max_spi_setup(void) {
-  gpio_set_mode(MAX_SPI_PORT, GPIO_MODE_OUTPUT_50_MHZ,
-                GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, MAX_SPI_SCK | MAX_SPI_MOSI);
-  gpio_set_mode(MAX_SPI_PORT, GPIO_MODE_INPUT, GPIO_CNF_INPUT_FLOAT,
-                MAX_SPI_MISO);
-  spi_reset(MAX_SPI);
-  /* MAX22200 data sheet, "SPI Detailed Description": mode 0, MSB first,
-   * up to 10 MHz for a single chip. SPI1 is on APB2 (72 MHz): /16 =
-   * 4.5 MHz.
+// SPI1 for the two TLE92466ED valve drivers (mode 1, MSB first, 16 bit).
+void tle_spi_setup(void) {
+  gpio_set_mode(TLE_SPI_PORT, GPIO_MODE_OUTPUT_50_MHZ,
+                GPIO_CNF_OUTPUT_ALTFN_PUSHPULL, TLE_SPI_SCK | TLE_SPI_MOSI);
+  // MISO has a 1k pull-up to 3.3 V on the board (both chips' SO go
+  // high-impedance when not selected).
+  gpio_set_mode(TLE_SPI_PORT, GPIO_MODE_INPUT, GPIO_CNF_INPUT_FLOAT,
+                TLE_SPI_MISO);
+  spi_reset(TLE_SPI);
+  /* TLE92466ED datasheet 5.1: SCK idles low, data is shifted out on the
+   * rising edge and sampled on the falling edge (CPOL 0, CPHA 1), MSB
+   * first, fSCK up to 8 MHz. A frame is 32 bits; it is sent as two 16-bit
+   * words with the chip select held low. SPI1 is on APB2 (72 MHz):
+   * /16 = 4.5 MHz.
    */
-  spi_init_master(MAX_SPI, SPI_CR1_BAUDRATE_FPCLK_DIV_16,
+  spi_init_master(TLE_SPI, SPI_CR1_BAUDRATE_FPCLK_DIV_16,
                   SPI_CR1_CPOL_CLK_TO_0_WHEN_IDLE,
-                  SPI_CR1_CPHA_CLK_TRANSITION_1, SPI_CR1_DFF_8BIT,
+                  SPI_CR1_CPHA_CLK_TRANSITION_2, SPI_CR1_DFF_16BIT,
                   SPI_CR1_MSBFIRST);
-  spi_enable_software_slave_management(MAX_SPI);
-  spi_set_nss_high(MAX_SPI);
-  spi_enable(MAX_SPI);
+  spi_enable_software_slave_management(TLE_SPI);
+  spi_set_nss_high(TLE_SPI);
+  spi_enable(TLE_SPI);
 }
 
-// Send and receive one SPI byte (blocking, a few microseconds).
-uint8_t max_spi_transfer(uint8_t tx) {
-  return (uint8_t)spi_xfer(MAX_SPI, tx);
+// Send and receive one 16-bit word (blocking, about 4 us). spi_xfer
+// returns once the word is received, i.e. after the last clock edge.
+uint16_t tle_spi_xfer16(uint16_t tx) {
+  return (uint16_t)spi_xfer(TLE_SPI, tx);
+}
+
+/* OUT3 (PC6, NCV8402 low-side switch, active high) as PWM on TIM3_CH1
+ * (full remap). TIM3 runs from 72 MHz (APB1 36 MHz x 2). The prescaler is
+ * chosen so the period fits in 16 bits.
+ */
+void gp_pwm_setup(uint32_t hz) {
+  if (hz < 1)
+    hz = 1;
+  uint32_t psc = 72000000u / (hz * 65536u) + 1;
+  uint32_t arr = 72000000u / (psc * hz) - 1;
+  timer_set_mode(TIM3, TIM_CR1_CKD_CK_INT, TIM_CR1_CMS_EDGE, TIM_CR1_DIR_UP);
+  timer_set_prescaler(TIM3, psc - 1);
+  timer_set_period(TIM3, arr);
+  timer_enable_preload(TIM3);
+  timer_set_oc_mode(TIM3, TIM_OC1, TIM_OCM_PWM1);
+  timer_enable_oc_preload(TIM3, TIM_OC1);
+  timer_set_oc_value(TIM3, TIM_OC1, 0); // off until gp_pwm_duty
+  timer_enable_oc_output(TIM3, TIM_OC1);
+  timer_generate_event(TIM3, TIM_EGR_UG);
+  timer_enable_counter(TIM3);
+  gpio_set_mode(GPIOC, GPIO_MODE_OUTPUT_2_MHZ, GPIO_CNF_OUTPUT_ALTFN_PUSHPULL,
+                GPIO_TIM3_FR_CH1);
+}
+
+// OUT3 duty in percent (0 = off, 100 = always on).
+void gp_pwm_duty(uint32_t pct) {
+  if (pct > 100)
+    pct = 100;
+  uint32_t top = TIM3_ARR + 1;
+  timer_set_oc_value(TIM3, TIM_OC1, top * pct / 100);
 }
 
 /* Speed inputs: ADC1 regular group IN0, IN1, IN2 in continuous scan
