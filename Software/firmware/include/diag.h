@@ -34,16 +34,15 @@
  *  - firmware / calibration mismatch at boot      -> configuration error,
  *    safe state.
  *
- * Valve faults come from the MAX22200 status flags [C, data sheet]:
- *   OLF (open load)          -> open circuit
- *   OCP (over-current)       -> short to battery (the low-side output is
- *                               pulled to the supply) or a shorted coil
- *   HHF (hit current not reached) -> resistance too high / supply low
- * A short to ground on a low-side output keeps the coil on and is not a
- * MAX22200 flag; it shows only in the resistance check (below 1 ohm),
- * which needs a coil current read-back: the board has none, so the check
- * is not fed (README). */
-
+ * Valve faults come from the TLE92466ED diagnosis (ValveOut flags):
+ *   OL / OLSG (open load)     -> open circuit
+ *   OC (over-current)         -> short to battery (the low-side output is
+ *                                pulled to the supply) or a shorted coil
+ *   SG (short to ground)      -> short to ground (coil always on)
+ *   measured current far from the setpoint (VALVE_F_IERR, report only)
+ *                             -> resistance too high / supply too low
+ * The V/I resistance check below is not fed yet (the TLE gives the duty
+ * cycle and VBAT, so it can be; bench item, README). */
 #include <stdint.h>
 
 enum DiagCode
@@ -64,10 +63,11 @@ enum SpeedDiag
    SPD_NOSIGNAL = 3, // no edges while the other shaft shows the car moving
 };
 
-/* Coil resistance reference [C, 330e A2L]: OutMRstn_resActr20_C = 5.15 ohm
- * at 20 degC, OutMRstn_resRmn_C about 0.15 ohm wiring / contacts. Copper
- * coil: +0.393 % per degC. */
-#define DIAG_R20_MOHM 5150 // milliohm, coil at 20 degC
+/* Coil resistance reference: the shift valves are 5.5 ohm at 20 degC
+ * (Ian, V5_VALVE_DEFAULTS [C-ext]; the 5.15 ohm OutMRstn_resActr20_C in the
+ * A2L is a generic model value, not a coil). PROVISIONAL. Wiring /
+ * contacts about 0.15 ohm (DiagRWire). Copper coil: +0.393 % per degC. */
+#define DIAG_R20_MOHM 5500 // milliohm, coil at 20 degC
 #define DIAG_TC_PPM 3930 // ppm per degC (copper)
 #define DIAG_RSHORT_MOHM 1000 // milliohm: below this = short to ground
 
@@ -83,12 +83,6 @@ uint8_t Resistance(int32_t mV, int32_t mA, int32_t tempC, int32_t bandPct,
 /** Code for a channel from its ValveOut fault bits (VALVE_F_*) and the
  * resistance result. The flags win; OCP before OLF before HHF. */
 uint8_t Channel(uint16_t valveFlags, uint8_t rCheck);
-/** Paired-channel check: the MAX22200 drives its channels in pairs
- * (OUT0/1, 2/3, 4/5, 6/7 share a half of the chip) [I]. Both channels
- * of a pair faulted at once points at the shared supply, ground or
- * harness rather than two coils. Bit k set = pair k (chip channels
- * 2k, 2k+1) faulted together. codes[] = DiagCode per global channel. */
-uint8_t Pairs(const uint8_t *codes, int n);
 /** Speed sensor from the 100 ms ADC window (min / max in mV), whether
  * edges arrive, and whether the other shaft shows the car moving.
  * openMv / shortMv = 0 switch the level checks off. */

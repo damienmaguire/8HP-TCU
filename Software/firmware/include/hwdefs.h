@@ -19,42 +19,51 @@
 #ifndef HWDEFS_H_INCLUDED
 #define HWDEFS_H_INCLUDED
 
-/* One board: Bob's Stm32_TCU_V4, rev C (final). STM32F107VCT6, 256 KiB flash in
- * 2 KiB pages, 64 KiB RAM. Clock: 8 MHz HSE -> 72 MHz SYSCLK, APB1
- * 36 MHz, APB2 72 MHz (RCC_CLOCK_HSE8_72MHZ, same as the ZombieVerter).
- * Pin map: Bob's Stm32_TCU_V4/pinmap/firmware_answers.md, approved by
- * Damien. See also digio_prj.h and README "Pin map".
+/* One board: Bob's Stm32_TCU_V5 (replaces the V4 rev C/D layout).
+ * STM32F107VCT6, 256 KiB flash in 2 KiB pages, 64 KiB RAM. Clock: 8 MHz
+ * HSE -> 72 MHz SYSCLK, APB1 36 MHz, APB2 72 MHz (RCC_CLOCK_HSE8_72MHZ,
+ * same as the ZombieVerter). Pin map: Bob's for_sam_v5_1349 pack
+ * (pinmap CSVs, firmware_answers.md) and the netlist Stm32_TCU_V5. The
+ * 56-pin header is J5 in the netlist (some of Bob's tables say J1).
+ * See also digio_prj.h and README "Pin map".
  *
  * What the board has:
- *  - two MAX22200 valve drivers on SPI1: IC2 (CSB PA4, nFAULT PE10) and
- *    IC4 (CSB PE12, nFAULT PE13), CMD PE8 and ENABLE PE7 shared. IC2
- *    OUT0..7 = A, B, C, D, E, SYS, POS (bench-check), TCC / K0. IC4 OUT0 =
- *    PZYL (J1.42, global channel 8); OUT1..OUT3 (J1.10/11/12, nets
- *    OUT1_DRV..OUT3_DRV) are the general-purpose outputs; OUT4..7
- *    (J1.16..19) are spare. The park magnet is on PC7 (NCV8402 Q3).
+ *  - two TLE92466ED six-channel current-controlled low-side drivers on
+ *    SPI1 (tle92466.h): IC10 (CSN PA4) and IC11 (CSN PE9). EN PE7 and
+ *    RESN PE11 are shared and only have the chips' internal pull-downs;
+ *    FAULTN PE10 (shared, open drain, 10k pull-up to 3.3 V). CLK and
+ *    DRV0/1 are tied to GND, so every channel is SPI controlled and the
+ *    chips run on their internal clock. TLE VDD 5 V, VIO 3.3 V, VBAT =
+ *    switched 12 V.
+ *      IC10: CH0 A (J5.8), CH1 B (J5.7), CH2 C (J5.6), CH3 D (J5.5),
+ *            CH4 PHOLD (J5.9), CH5 PZYL (J5.42)
+ *      IC11: CH0 E (J5.1), CH1 LINE (J5.2), CH2 PREL (J5.3), CH3 TCC
+ *            (J5.4), CH4 / CH5 not connected
+ *    The chips measure the coil currents and their own VBAT and
+ *    temperature. There is no separate VBAT sense line: the board 12 V
+ *    is read on PC0 (8.2k / 1.8k divider).
+ *  - OUT1 PE8, OUT2 PE12, OUT3 PC6: NCV8402 low-side switches, active
+ *    high. OUT1 / OUT2 plain GPIO (GpOut1Func / GpOut2Func), OUT3 PWM on
+ *    TIM3_CH1 (full remap; GpPwmFreq / GpPwmDuty).
  *  - speed inputs on the ADC with a 10k / 1 nF RC: ISS PA0 (IN0), OSS PA1
  *    (IN1), n6 PA2 (IN2), scanned continuously by ADC1 into a circular
  *    DMA buffer (DMA1 channel 1); the slow analogue inputs are on ADC2
  *    (no DMA on F1 ADC2: software started, read every 10 ms).
- *  - MAX22200 outputs: fault flags only, no coil current read-back.
  *  - 12 V inputs (ZV1.3 circuit: SMF16A TVS, 4.7k series, 1.5k to GND,
- *    1 uF; active high): T15 PD0, BRAKE_IN PD1 (J1.46, pin 82, EXTI1),
- *    SHIFT_UP PD2, SHIFT_DN PD3 (J1.49), D1 / D2 / PARK / NOT_PARK
- *    PD4..PD7.
+ *    1 uF; active high): T15 PD0, BRAKE_IN PD1 (EXTI1), SHIFT_UP PD2,
+ *    SHIFT_DN PD3, D1 / D2 / PARK / NOT_PARK PD4..PD7, clutch input
+ *    CL_IN on PA15 (J5.41, read only, no logic uses it yet).
  *  - CAN1 PA11 / PA12 = vehicle PT-CAN, CAN2 PB5 / PB6 (CAN2_REMAP) =
  *    ZombieVerter link, both 500 kbit/s.
  *  - LIN transceiver TJA1021 on UART4 PC10 / PC11, SLP_N PD11.
- *  - board NTC TH1 on PB0 (ADC12_IN8): 10k at 25 degC, B 3950 K, 10k
+ *  - board NTC on PB0 (ADC12_IN8): 10k at 25 degC, B 3950 K, 10k
  *    pull-up to 3V3, NTC to GND.
- *  - temperature input pull-ups 2.7k / 2.7k to 5 V.
+ *  - free pins: PC7, PC8, PC9, PE13, PE14, PE15, PB2, PB3, PB4.
  */
 
-/* Pins of the second MAX22200 and the 12 V inputs not in digio_prj.h's
- * fixed list (Bob, firmware_answers.md sections 0 and 0a). */
-#define MAX_CS1_PORT GPIOE
-#define MAX_CS1_PIN GPIO12
-#define MAX_NFAULT1_PORT GPIOE
-#define MAX_NFAULT1_PIN GPIO13
+/* Pins not in digio_prj.h's fixed list (Bob's pin map). */
+#define TLE_CS1_PORT GPIOE
+#define TLE_CS1_PIN GPIO9
 #define SHIFT_UP_PORT GPIOD
 #define SHIFT_UP_PIN GPIO2
 #define SHIFT_DN_PORT GPIOD
@@ -62,15 +71,13 @@
 #define T15_PORT GPIOD
 #define T15_PIN GPIO0
 #define BRAKE_IN_PORT GPIOD
-#define BRAKE_IN_PIN GPIO1    // PD1, J1.46 BRAKE_IN
+#define BRAKE_IN_PIN GPIO1    // PD1, BRAKE_IN
 #define BOARD_NTC_PORT GPIOB
 #define BOARD_NTC_PIN 0       // PB0 = ADC12_IN8
 #define BOARD_NTC_ADC_CH 8
-/* IC4 OUT1..OUT3 (global channels 9, 10, 11) as the general-purpose
- * outputs: GpOut1, GpOut2 and the GP PWM function. */
-#define GP_AUX_CH1 9          // IC4 OUT1, J1.10 OUT1_DRV
-#define GP_AUX_CH2 10         // IC4 OUT2, J1.11 OUT2_DRV
-#define GP_AUX_PWM 11         // IC4 OUT3, J1.12 OUT3_DRV
+/* PHOLD (park-hold magnet) on IC10 CH4: global channel 4. Fixed by the
+ * board, so not a parameter. */
+#define PHOLD_CH 4
 
 #define USART_BAUDRATE 115200 // baud, terminal
 #define PERIPH_CLK ((uint32_t)36000000) // Hz, APB1 clock
@@ -100,15 +107,16 @@
  * touch it. */
 #define ADAPT_BLKNUM 3
 
-/* MAX22200 on SPI1, no remap: SCK PA5, MISO PA6 (1k pull-up R28), MOSI
- * PA7. CSB is a software chip select on PA4 (max_cs0, digio_prj.h).
+/* TLE92466ED on SPI1, no remap: SCK PA5, MISO PA6 (1k pull-up to 3.3 V),
+ * MOSI PA7. CSN is a software chip select: PA4 (tle_cs0, IC10) and PE9
+ * (tle_cs1, IC11), digio_prj.h.
  */
-#define MAX_SPI SPI1
-#define MAX_SPI_RCC RCC_SPI1
-#define MAX_SPI_PORT GPIOA
-#define MAX_SPI_SCK GPIO5
-#define MAX_SPI_MISO GPIO6
-#define MAX_SPI_MOSI GPIO7
+#define TLE_SPI SPI1
+#define TLE_SPI_RCC RCC_SPI1
+#define TLE_SPI_PORT GPIOA
+#define TLE_SPI_SCK GPIO5
+#define TLE_SPI_MISO GPIO6
+#define TLE_SPI_MOSI GPIO7
 
 /* Speed inputs: ADC1 regular scan IN0 (ISS), IN1 (OSS), IN2 (n6),
  * continuous, 13.5 + 12.5 = 26 ADC cycles per conversion at 12 MHz, so one
@@ -118,7 +126,7 @@
  * 2 x SPEED_HALF_SCANS scans; the half- and full-transfer interrupts hand
  * one half to ScanEdges (speedsens.h). The scan count is the time base.
  * DMA1 users: CH1 ADC1 (here), CH2 / CH3 USART3 terminal TX / RX. SPI1
- * (MAX22200, blocking) and UART4 (LIN, interrupt) use no DMA; SPI1's own
+ * (TLE92466ED, blocking) and UART4 (LIN, interrupt) use no DMA; SPI1's own
  * requests would be CH2 / CH3 and so must stay unused.
  */
 #define SPEED_ADC ADC1

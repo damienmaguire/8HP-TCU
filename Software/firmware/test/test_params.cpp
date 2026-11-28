@@ -44,7 +44,7 @@ static const Entry entries[] = {PARAM_LIST};
 #undef VALUE_ENTRY
 
 static const int kNextParamId = 273; // keep equal to param_prj.h
-static const int kNextValueId = 2164;
+static const int kNextValueId = 2190;
 
 static const int retired[] = {PARAM_RETIRED_IDS};
 
@@ -62,10 +62,8 @@ static const Frozen frozen[] = {
     {"SpdTimeout", 13}, {"SpdMinRpm", 14}, {"SpdAdcLo", 135},
     {"SpdAdcHi", 136}, {"AtfSource", 20}, {"AtfFixed", 21},
     {"AtfInput", 143}, {"AtfRMin", 144}, {"AtfRMax", 145},
-    {"MaxIfs", 41}, {"MaxHfsMask", 146}, {"MaxFreq", 43},
-    {"MaxFreqDiv", 44}, {"MaxOpenLoad", 45}, {"IMaxCoil", 46},
-    {"IMinCoil", 47}, {"SlewRate", 48}, {"DitherAmp", 49},
-    {"DitherPeriod", 50}, {"DitherShape", 51}, {"TempCorr", 52},
+    {"MaxOpenLoad", 45}, {"IMaxCoil", 46},
+    {"IMinCoil", 47}, {"SlewRate", 48}, {"TempCorr", 52},
     {"PosCurrent", 55}, {"ChanA", 60}, {"ChanB", 61},
     {"ChanC", 62}, {"ChanD", 63}, {"ChanE", 64},
     {"ChanSYS", 65}, {"ChanK0", 66}, {"ChanPOS", 67},
@@ -144,7 +142,7 @@ static const Frozen frozen[] = {
     {"DiagSpdOpen", 264},
     {"DiagSpdShort", 265}, {"DiagSpdNoSig", 266},
     {"ParkEngKmh", 267}, {"NabPerKmh", 268}, {"ParkEngNab", 269},
-    {"ParkBrake", 270}, {"BrakeIn", 271}, {"GpOutCurrent", 272},
+    {"ParkBrake", 270}, {"BrakeIn", 271},
     {"tqSrc", 2124}, {"tqUsed", 2125}, {"tqFrozen", 2126},
     {"adaStat", 2127}, {"adaShifts", 2128}, {"adA_c", 2129},
     {"adA_w", 2130}, {"adB_c", 2131}, {"adB_w", 2132},
@@ -153,11 +151,20 @@ static const Frozen frozen[] = {
     {"dgA", 2139}, {"dgB", 2140}, {"dgC", 2141},
     {"dgD", 2142}, {"dgE", 2143}, {"dgSys", 2144},
     {"dgCh7", 2145}, {"dgPos", 2146}, {"dgPzyl", 2147},
-    {"diagPair", 2148}, {"spdInDiag", 2149}, {"spdOutDiag", 2150},
+    {"spdInDiag", 2149}, {"spdOutDiag", 2150},
     {"canBus", 2151}, {"calSig", 2152}, {"tccSlip", 2153},
     {"tccSlipFlt", 2154}, {"parkInh", 2155}, {"brake", 2156},
-    {"parkBrkW", 2157}, {"drvFlags1", 2158}, {"gpFault", 2159}, {"spdLoad", 2160}, {"brakePin", 2161},
+    {"parkBrkW", 2157}, {"drvFlags1", 2158}, {"spdLoad", 2160}, {"brakePin", 2161},
     {"paramSrc", 2162}, {"bootStage", 2163},
+    // V5 board (TLE92466ED): measured currents, PHOLD, chip status, park
+    // hold, coil resistance estimates.
+    {"imA", 2164}, {"imB", 2165}, {"imC", 2166}, {"imD", 2167},
+    {"imE", 2168}, {"imSYS", 2169}, {"imCh7", 2170}, {"imPOS", 2171},
+    {"imPZYL", 2172}, {"imPHOLD", 2173}, {"iPHOLD", 2174}, {"tleSup", 2175},
+    {"tleVbat", 2176}, {"tleTemp", 2177}, {"tleComErr", 2178},
+    {"parkHold", 2179}, {"rA", 2180}, {"rB", 2181}, {"rC", 2182},
+    {"rD", 2183}, {"rE", 2184}, {"rSYS", 2185}, {"rCh7", 2186},
+    {"rPOS", 2187}, {"rPZYL", 2188}, {"rPHOLD", 2189},
 };
 
 static const Entry *Find(const char *name) {
@@ -331,6 +338,21 @@ void TestParams() {
     CHECK_EQ(Find(spot[1 + i])->id, 2081 + i);
     CHECK_EQ(Find(spot[10 + i])->id, 2090 + i);
   }
+  // So are imA..imPZYL and rA..rPZYL (same valve order).
+  static const char *const im[] = {"imA", "imB", "imC", "imD", "imE",
+                                   "imSYS", "imCh7", "imPOS", "imPZYL"};
+  static const char *const rr[] = {"rA", "rB", "rC", "rD", "rE",
+                                   "rSYS", "rCh7", "rPOS", "rPZYL"};
+  for (int i = 0; i < 9; i++) {
+    CHECK_EQ(Find(im[i])->id, 2164 + i);
+    CHECK_EQ(Find(rr[i])->id, 2180 + i);
+  }
+  // V5: the old driver chip, dither and GP current settings are retired,
+  // never reused; no new parameters were added for the TLE92466ED.
+  const int v5Retired[] = {41, 43, 44, 146, 49, 50, 51, 272, 2148, 2159};
+  for (int id : v5Retired)
+    CHECK(FlashGuard::Retired((uint16_t)id));
+  CHECK(!FlashGuard::Retired(45)); // MaxOpenLoad stays (the TLE's own check)
   // Variant restructure: GearboxType keeps id 9, SolCurveSet is new.
   const Entry *gt = Find("GearboxType");
   CHECK(gt && !gt->value && gt->id == 9);

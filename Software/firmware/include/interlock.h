@@ -26,7 +26,7 @@
  * produced its commands and before anything reaches the driver.
  *
  * It works on the commanded coil currents (the targets handed to the
- * MAX22200 layer, before slew and dither), not on pressures, so it checks
+ * driver layer, before slew and dither), not on pressures, so it checks
  * what the valves will actually be told. Rules, from Ian (QA2 answer 2):
  *
  *  1. A clutch counts as "open" only when its coil current is past the

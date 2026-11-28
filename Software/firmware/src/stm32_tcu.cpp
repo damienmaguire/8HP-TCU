@@ -18,11 +18,11 @@
  */
 /* Main file of the 8HP TCU firmware.
  *
- * Board: Bob's Stm32_TCU_V4 rev C (pin map in hwdefs.h,
- * digio_prj.h and README "Pin map").
+ * Board: Bob's Stm32_TCU_V5 (pin map in hwdefs.h, digio_prj.h and
+ * README "Pin map").
  *
  * Tasks (Stm32Scheduler on TIM4):
- *   1 ms    dither and current setpoints to the MAX22200, LIN schedule
+ *   1 ms    current setpoints to the TLE92466ED drivers, LIN schedule
  *   10 ms   inputs, shifter, TCU state machine, pressure -> current, CAN
  *   100 ms  driver faults, ATF temperature, battery voltage, CAN timeout
  * Interrupts: speed sensor edges (DMA1 channel 1 half / full buffer at
@@ -74,42 +74,51 @@
 #include "drivemode.h"
 #include "eds.h"
 #include "linpump.h"
-#include "max22200.h"
+#include "tle92466.h"
 #include "shifter.h"
 #include "canlever.h"
 #include "slowadc.h"
 #include "speedsens.h"
+#include "parksafe.h"
 #include "tcu.h"
 #include "valveout.h"
 
-/// MAX22200 pins on the STM32: two chips on SPI1, IC2 with CSB on PA4
-/// (max_cs0) and IC4 with CSB on PE12 (max_cs1), CMD on PE8 shared.
-class StmMaxBus : public Max22200Bus
+/// TLE92466ED pins on the STM32: two chips on SPI1, IC10 with CSN on
+/// PA4 (tle_cs0) and IC11 with CSN on PE9 (tle_cs1).
+/// The datasheet wants at least 250 ns between CSN low and the first
+/// clock and between the last clock and CSN high, and at least 600 ns of
+/// CSN high between frames (tCSN_LEAD / LAG / TD); Bob asks for at least
+/// 200 ns before the other chip is selected. These waits keep 500 ns and
+/// 1 us (counted on the cycle counter, 72 cycles per us).
+class StmTleBus : public Tle92466Bus
 {
 public:
+   StmTleBus() : lastHigh(0) {}
    void Select(uint8_t dev, bool active) override
    {
-      if (dev == 0) {
-         if (active)
-            DigIo::max_cs0.Clear();
+      if (active) {
+         Wait(lastHigh, 72); // 1 us of CSN high since the last frame
+         if (dev == 0)
+            DigIo::tle_cs0.Clear();
          else
-            DigIo::max_cs0.Set();
-      }
-      else if (dev == 1) {
-         if (active)
-            DigIo::max_cs1.Clear();
-         else
-            DigIo::max_cs1.Set();
+            DigIo::tle_cs1.Clear();
+         Wait(DWT_CYCCNT, 36); // 500 ns lead
+      } else {
+         Wait(DWT_CYCCNT, 36); // 500 ns lag
+         DigIo::tle_cs0.Set();
+         DigIo::tle_cs1.Set();
+         lastHigh = DWT_CYCCNT;
       }
    }
-   void SetCmd(bool high) override
+   uint16_t Transfer16(uint16_t tx) override { return tle_spi_xfer16(tx); }
+
+private:
+   static void Wait(uint32_t from, uint32_t cycles)
    {
-      if (high)
-         DigIo::max_cmd.Set();
-      else
-         DigIo::max_cmd.Clear();
+      while (DWT_CYCCNT - from < cycles) {
+      }
    }
-   uint8_t Transfer(uint8_t tx) override { return max_spi_transfer(tx); }
+   uint32_t lastHigh;
 };
 
 #define PRINT_JSON 0 // SDO print request sub-index for the JSON dump
@@ -128,10 +137,11 @@ extern "C" void __cxa_pure_virtual() {
 static Stm32Scheduler *scheduler;
 static CanHardware *can1;
 static CanHardware *can2;
-static StmMaxBus maxBus;
-static Max22200 max0(maxBus, 0);
-static Max22200 max1(maxBus, 1); // IC4: PZYL on OUT0 (ch 8), GP on OUT1..3
+static StmTleBus tleBus;
+static Tle92466 tle0(tleBus, 0); // IC10: A, B, C, D, PHOLD, PZYL
+static Tle92466 tle1(tleBus, 1); // IC11: E, LINE, PREL, TCC
 static ValveOut valves;
+static ParkSafe parkSafe; // park-lock safety rule, see parksafe.h
 static Eds eds;
 static Tcu tcu;
 static Shifter shifter;
@@ -190,9 +200,6 @@ static void ConfigureEds() {
   c.iMin = Param::GetInt(Param::IMinCoil) * 10;
   c.iMax = Param::GetInt(Param::IMaxCoil) * 10;
   c.slewPer10ms = Param::GetInt(Param::SlewRate) * 10;
-  c.ditherAmp = Param::GetInt(Param::DitherAmp) * 10;
-  c.ditherPeriodMs = Param::GetInt(Param::DitherPeriod);
-  c.ditherShape = Param::GetInt(Param::DitherShape);
   c.tempCorrection = Param::GetBool(Param::TempCorr);
   eds.Configure(c);
 }
@@ -314,6 +321,8 @@ static void ConfigureTcu() {
   c.pnDelayMs = Param::GetInt(Param::ParkPNDelay);
   c.parkCtrl = Param::GetBool(Param::ParkCtrl);
   c.pzylI = Param::GetInt(Param::PzylCurrent) * 10;
+  // Park-lock rule: hold at least PzylCurrent while moving; pull-in fixed.
+  parkSafe.Configure(c.pzylI, PZYL_PULL_IN);
   c.parkMagMinMs = Param::GetInt(Param::ParkMagMin);
   c.parkMagMaxMs = Param::GetInt(Param::ParkMagMax);
   c.parkEngKmh = Param::GetInt(Param::ParkEngKmh);
@@ -451,18 +460,44 @@ static void ConfigureValveMap() {
     int ch = Param::GetInt(chanParams[v]);
     valves.SetMap((EdsValve)v, ch == CHAN_NOT_FITTED ? VALVE_NOT_FITTED : (uint8_t)ch);
   }
-  valves.AttachChip(0, &max0); // IC2
-  valves.AttachChip(1, &max1);
-  // GpOut1 / GpOut2 / GP PWM on IC4 OUT1..OUT3. Validate() refuses
-  // the map if a valve Chx parameter points at one of these channels.
-  valves.SetAuxMap(0, GP_AUX_CH1);
-  valves.SetAuxMap(1, GP_AUX_CH2);
-  valves.SetAuxMap(2, GP_AUX_PWM);
+  valves.AttachChip(0, &tle0); // IC10
+  valves.AttachChip(1, &tle1); // IC11
+  // PHOLD on IC10 CH4. Validate() refuses the map if a valve ChanX
+  // parameter points at it.
+  valves.SetAuxMap(VALVE_AUX_PHOLD, PHOLD_CH);
 }
 
-/// Bring the MAX22200s up. Every channel stays off until the TCU asks.
+/* TLE92466ED settings that need no tuning, so they are fixed here rather
+ * than parameters (Damien: keep the parameter count down):
+ *  - current-control chopping target 1 kHz, the OEM valve PWM (Ian,
+ *    V5_VALVE_DEFAULTS). PROVISIONAL: bench check the ripple and the
+ *    controller (PWM_CTRL_PARAM is left at 0);
+ *  - open-load threshold 2/8 of the setpoint (only where MaxOpenLoad
+ *    allows the chip's own check, never on PZYL / PHOLD). PROVISIONAL;
+ *  - output slew 2.5 V/us, between the chip's EMC-friendly 1 V/us and
+ *    its 10 V/us reset value. PROVISIONAL;
+ *  - dither: 125 Hz triangle, amplitude from the fixed table in
+ *    valveout.cpp (DitherFor).
+ */
+static TleConfig TleBase() {
+  TleConfig c = TleConfig();
+  c.pwmHz = 1000;
+  c.olRelEighths = 2;
+  c.slew = 1;
+  return c;
+}
+
+/** Bring the TLE92466EDs up. Every channel stays at 0 mA until the TCU
+ * asks.
+ * SAFETY: this pulls EN and RESN low, which drops PZYL and PHOLD and so
+ * lets the park lock in. It is only called at power-up (nothing on yet)
+ * and from FaultClear at standstill, and it refuses while the park-lock
+ * rule holds PZYL (parksafe.h). */
 static void StartDrivers() {
-  DigIo::max_enable.Clear();
+  if (!parkSafe.MayRestartDrivers())
+    return;
+  DigIo::tle_en.Clear();
+  DigIo::tle_resn.Clear();
   driversUp = false;
   ConfigureValveMap();
   configError = !valves.Validate();
@@ -481,25 +516,27 @@ static void StartDrivers() {
     ErrorMessage::Post(ERR_CALSIG);
     return;
   }
-  DigIo::max_enable.Set();
-  // Data sheet: wait for the chip to leave sleep (tWAKE) before SPI.
-  for (volatile int i = 0; i < 72000; i++) {
+  // Hold reset for 100 us, then let the chips start. Tle92466::Init waits
+  // for their own start-up (INIT_DONE). EN high allows the outputs; the
+  // channels stay off until Mission Mode and a setpoint.
+  uint32_t t0 = DWT_CYCCNT;
+  while (DWT_CYCCNT - t0 < 7200) {
   }
-  Max22200Config mc;
-  mc.ifsmA = Param::GetInt(Param::MaxIfs);
-  mc.freq80k = Param::GetInt(Param::MaxFreq) == 1;
-  mc.freqDiv = Param::GetInt(Param::MaxFreqDiv);
-  mc.slewControl = false;
-  mc.openLoadDetect = Param::GetBool(Param::MaxOpenLoad);
-  mc.maxCurrentmA = Param::GetInt(Param::IMaxCoil);
-  mc.halfScaleMask = 0; // set per chip by ValveOut from the mask below
-  if (valves.Init(mc, (uint16_t)Param::GetInt(Param::MaxHfsMask))) {
+  DigIo::tle_resn.Set();
+  DigIo::tle_en.Set();
+  t0 = DWT_CYCCNT;
+  while (DWT_CYCCNT - t0 < 72000) { // 1 ms
+  }
+  if (valves.Init(TleBase(), Param::GetBool(Param::MaxOpenLoad))) {
     driversUp = true;
     eds.Release();
     tcu.Ready();
   } else {
+    // Nothing is energised yet (init failed before any setpoint), so
+    // switching the chips off again cannot drop the park lock.
     ErrorMessage::Post(ERR_DRVINIT);
-    DigIo::max_enable.Clear();
+    DigIo::tle_en.Clear();
+    DigIo::tle_resn.Clear();
     driverFault = true;
   }
 }
@@ -956,8 +993,9 @@ void AdaptReset() {
 
 static void Ms1Task() {
   LinTick1ms();
-  eds.Tick1ms();
-  if (driversUp && !eds.InSafeState())
+  // Always sent while the drivers are up: in the safe state the valves are
+  // at 0 mA but PZYL may still be held (parksafe.h).
+  if (driversUp)
     valves.Update(eds);
   if (msSinceRx < 0xFFFF)
     msSinceRx++;
@@ -1120,7 +1158,9 @@ static void Ms10Task() {
     linPump.ClearErrors(); // one 0x30 with the clear flag
     // Only at standstill in P or N: restart the chips, then let the TCU
     // leave the safe state if nothing is still wrong.
-    if (tcu.Out().mode == TCU_SAFE && in.n_ab == 0 &&
+    // Never while the park-lock rule holds PZYL (restarting the chips
+    // pulls EN low, parksafe.h).
+    if (tcu.Out().mode == TCU_SAFE && in.n_ab == 0 && parkSafe.MayRestartDrivers() &&
         (in.selector == SEL_P || in.selector == SEL_N)) {
       driverFault = false;
       tccSlip.Clear();
@@ -1181,37 +1221,48 @@ static void Ms10Task() {
   linWanted = linActive && linRule.Update(Param::GetInt(Param::LinPumpReq),
                                           in.n_t, atfTemp, o.pSys);
 
-  // Discrete outputs. Park-hold magnet (NCV8402, PC7): driven by the park
-  // sequence when ParkCtrl is on (Ian 12.1, 100 ms .. 1 s after a release),
-  // plus the bench test at standstill in P or N.
-  // Either way one energise lasts at most 1 s (PARK_MAG_LIMIT_MS); the
-  // bench test has to be switched off and on again for another pulse.
+  // Park-hold magnet PHOLD (IC10 CH4, 24-26 ohm, PHOLD_CURRENT): driven
+  // by the park sequence when ParkCtrl is on (Ian 12.1, 100 ms .. 1 s
+  // after a release), plus the bench test at standstill in P or N. Either
+  // way one energise lasts at most 1 s (PARK_MAG_LIMIT_MS); the bench test
+  // has to be switched off and on again for another pulse.
   bool standstillPN = in.n_ab == 0 && (o.mode == TCU_PARK || o.mode == TCU_NEUTRAL);
   bool magReq = !o.safeOutputs &&
                 (o.parkMagnet || (Param::GetBool(Param::ParkHoldTest) && standstillPN));
   parkMagOn = parkMagLimit.Tick(magReq, PARK_MAG_LIMIT_MS, 10);
-  if (parkMagOn)
-    DigIo::park_hold.Set();
-  else
-    DigIo::park_hold.Clear();
-  // Spare outputs: StarterLock = on while the TCU is in P or N [H: the
-  // polarity the starter interlock wants is not known].
+  valves.SetAux(VALVE_AUX_PHOLD, parkMagOn ? PHOLD_CURRENT : 0);
+  // Spare outputs OUT1 / OUT2 (NCV8402 switches): StarterLock = on while
+  // the TCU is in P or N [H: the polarity the starter interlock wants is
+  // not known].
   const Param::PARAM_NUM gpFunc[2] = {Param::GpOut1Func, Param::GpOut2Func};
   for (int i = 0; i < 2; i++) {
     int f = Param::GetInt(gpFunc[i]);
     bool on = f == 1 || (f == 2 && (o.mode == TCU_PARK || o.mode == TCU_NEUTRAL));
-    // IC4 OUT1 / OUT2, current-regulated at GpOutCurrent. Off with
-    // the valves in the safe state (one ENABLE for both chips).
-    valves.SetAux((uint8_t)i, on ? Param::GetInt(Param::GpOutCurrent) * 10 : 0);
+    DigIo &pin = i == 0 ? DigIo::out1 : DigIo::out2;
+    if (on)
+      pin.Set();
+    else
+      pin.Clear();
   }
-  // GP PWM function on IC4 OUT3: GpPwmDuty % of GpOutCurrent, as a
-  // regulated current (the chip chops at its own frequency, GpPwmFreq is
-  // not used).
-  valves.SetAux(2, Param::GetInt(Param::GpOutCurrent) * Param::GetInt(Param::GpPwmDuty) / 10);
+  // OUT3: TIM3 PWM at GpPwmFreq (set at start-up), GpPwmDuty %.
+  gp_pwm_duty((uint32_t)Param::GetInt(Param::GpPwmDuty));
+
+  /* Park-lock safety rule (parksafe.h). The TCU's PZYL request goes
+   * through it every 10 ms. Once PZYL is on and the output shaft turns
+   * (or its speed is not known) it is held on until the car has stopped,
+   * whatever the TCU, a fault or the safe state asks. "Known" = the
+   * sensor sees edges, or reads 0 with healthy signal levels and the
+   * input shaft not contradicting it (spdOutDiag). */
+  bool spdKnown = spdOut.Valid() ||
+                  (in.n_ab == 0 && Param::GetInt(Param::spdOutDiag) == SPD_OK);
+  int32_t pzyl = parkSafe.Update(o.safeOutputs || !driversUp ? 0 : o.pzylI,
+                                 in.n_ab, spdKnown);
 
   if (o.safeOutputs || !driversUp) {
+    // Valves to 0 mA (6th gear, full line pressure). Never valves.AllOff()
+    // here: that would also drop PZYL.
     eds.SafeState();
-    valves.AllOff();
+    eds.SetCurrent(EDS_PZYL, pzyl);
   } else {
     eds.Release();
     for (int c = 0; c < CL_COUNT; c++)
@@ -1223,9 +1274,10 @@ static void Ms10Task() {
     // POS: position valve, switch-over at 420 mA (I_EDSPOSV [C]); when to
     // switch it is not known, so it is a plain current command.
     eds.SetCurrent(EDS_POS, Param::GetInt(Param::PosCurrent) * 10);
-    // PZYL (park-lock cylinder valve MvPZyl, IC4 OUT0 / J1.42 [I]): from the park
-    // sequence with ParkCtrl on, else 0. IC4 OUT0 (ChanPZYL = 8).
-    eds.SetCurrent(EDS_PZYL, o.pzylI);
+    // PZYL (park-lock cylinder valve MvPZyl, IC10 CH5 / J5.42): from the
+    // park sequence with ParkCtrl on, else 0, through the park-lock rule
+    // (pull-in pulse, held while moving).
+    eds.SetCurrent(EDS_PZYL, pzyl);
 
     // Bench valve test: only at standstill in P or N.
     if (Param::GetBool(Param::ValveTest) && in.n_ab == 0 &&
@@ -1237,9 +1289,9 @@ static void Ms10Task() {
   }
   eds.Tick10ms();
 
-  // A fault pin pulled low gets read at once rather than at 100 ms.
-  bool nfault = !DigIo::max_nfault.Get() || !DigIo::max_nfault1.Get();
-  if (driversUp && nfault) {
+  // FAULTN pulled low (either chip) gets read at once rather than at
+  // 100 ms. Faults never switch PZYL off (see ValveOut and parksafe.h).
+  if (driversUp && !DigIo::tle_nfault.Get()) {
     uint16_t f = valves.PollFaults();
     if (f & ValveOut::CriticalMask())
       driverFault = true;
@@ -1375,11 +1427,20 @@ static void Ms10Task() {
                                  EDS_SYS, EDS_K0, EDS_POS, EDS_PZYL};
   for (int i = 0; i < 9; i++) {
     // Target = what the pressure or current command asks for (before the
-    // slew and dither); iX above is the slewed setpoint. The MAX22200
-    // has no current read-back, so there is no measured current.
+    // slew); iX above is the slewed setpoint sent to the chip; imX is the
+    // average current the chip measured (one dither period, read every
+    // 100 ms).
     Param::SetInt((Param::PARAM_NUM)(Param::itA + i), eds.Target(sv[i]) / 10);
     Param::SetInt((Param::PARAM_NUM)(Param::fA + i), valves.ValveFlags(sv[i]));
+    Param::SetInt((Param::PARAM_NUM)(Param::imA + i), valves.Measured(sv[i]) / 10);
+    // Coil resistance estimate (0 = not valid now), read-only: this is
+    // how the coil defaults get checked at first power-up (valveout.h).
+    Param::SetInt((Param::PARAM_NUM)(Param::rA + i), valves.CoilMilliOhm(sv[i]));
   }
+  Param::SetInt(Param::rPHOLD, valves.AuxCoilMilliOhm(VALVE_AUX_PHOLD));
+  Param::SetInt(Param::imPHOLD, valves.AuxMeasured(VALVE_AUX_PHOLD) / 10);
+  Param::SetInt(Param::iPHOLD, valves.Aux(VALVE_AUX_PHOLD) / 10);
+  Param::SetInt(Param::parkHold, parkSafe.Holding());
   Param::SetInt(Param::iPOS, eds.Setpoint(EDS_POS) / 10);
   Param::SetInt(Param::ratio, Gears::MeasuredRatioX1000(in.n_t, in.n_ab));
   Param::SetInt(Param::slip, Gears::SlipRpm(o.gear, in.n_t, in.n_ab));
@@ -1476,10 +1537,13 @@ static void Ms100Task() {
   if (driversUp) {
     uint16_t f = valves.PollFaults();
     Param::SetInt(Param::valveFault, f);
+    // FB_STAT bits 15:0 of IC10 / IC11, and the summary (TleSupFlag).
     Param::SetInt(Param::drvFlags0, valves.ChipFlags(0));
     Param::SetInt(Param::drvFlags1, valves.ChipFlags(1));
-    Param::SetInt(Param::gpFault, (valves.AuxFlags(0) ? 1 : 0) | (valves.AuxFlags(1) ? 2 : 0) |
-                                      (valves.AuxFlags(2) ? 4 : 0));
+    Param::SetInt(Param::tleSup, valves.SupplyFlags());
+    Param::SetInt(Param::tleVbat, valves.VbatmV());
+    Param::SetInt(Param::tleTemp, valves.ChipTempC());
+    Param::SetInt(Param::tleComErr, (int)valves.CommErrors());
     if (f & ValveOut::CriticalMask()) {
       driverFault = true;
       ErrorMessage::Post(ERR_DRVFAULT);
@@ -1491,17 +1555,12 @@ static void Ms100Task() {
       ErrorMessage::Post(ERR_DRVLOST);
     }
     // Per-channel diagnosis (diag.h) from the flags just read. The
-    // reaction is the one above (pressure valve -> safe state). The MAX22200 has no
-    // coil current read-back, so the V/I resistance check is not fed.
-    uint8_t chCode[16] = {0};
+    // reaction is the one above (pressure valve -> safe state). The V/I
+    // resistance check is not fed yet (README).
     for (int v = 0; v < EDS_COUNT; v++) {
       uint8_t code = Diag::Channel(valves.ValveFlags((EdsValve)v), DIAG_OK);
       Param::SetInt((Param::PARAM_NUM)(Param::dgA + v), code);
-      uint8_t ch = valves.Map((EdsValve)v);
-      if (ch < 16)
-        chCode[ch] = code;
     }
-    Param::SetInt(Param::diagPair, Diag::Pairs(chCode, 16));
   }
 
   const TcuOutputs &o = tcu.Out();
@@ -1521,7 +1580,8 @@ static void Ms100Task() {
   Param::SetInt(Param::dinBits, (DigIo::din1.Get() ? 1 : 0) |
                                     (DigIo::din2.Get() ? 2 : 0) |
                                     (DigIo::park_in.Get() ? 4 : 0) |
-                                    (DigIo::notpark_in.Get() ? 8 : 0));
+                                    (DigIo::notpark_in.Get() ? 8 : 0) |
+                                    (DigIo::clutch_in.Get() ? 16 : 0)); // PA15 CL_IN
   Param::SetInt(Param::spdInLo, AnaConv::ToMv(SpdLo(0)));
   Param::SetInt(Param::spdInHi, AnaConv::ToMv(SpdHi(0)));
   Param::SetInt(Param::spdOutLo, AnaConv::ToMv(SpdLo(1)));
@@ -1609,13 +1669,14 @@ extern "C" int main(void) {
   BootStage(BOOT_DIGIO);
   afio_setup(); // SWD only, CAN2 on PB5/PB6
   DIG_IO_CONFIGURE(DIG_IO_LIST);
-  DigIo::max_enable.Clear(); // drivers off before anything else
-  DigIo::max_cs0.Set();
-  DigIo::max_cs1.Set();
-  DigIo::max_cmd.Clear();
-  DigIo::max_triga.Clear(); // SPI-controlled channels: TRIGA/B held low
-  DigIo::max_trigb.Clear();
-  DigIo::park_hold.Clear();
+  // Drivers off and in reset before anything else (at power-up nothing
+  // is energised yet, so this cannot drop the park lock).
+  DigIo::tle_en.Clear();
+  DigIo::tle_resn.Clear();
+  DigIo::tle_cs0.Set();
+  DigIo::tle_cs1.Set();
+  DigIo::out1.Clear();
+  DigIo::out2.Clear();
   DigIo::lin_nslp.Clear(); // LIN transceiver asleep (330e: until LinWake)
   DigIo::led_out.Set();    // active low: off
   dwt_enable_cycle_counter(); // for the spdLoad measurement and WaitMs
@@ -1629,7 +1690,8 @@ extern "C" int main(void) {
   BootStage(BOOT_ADAPT);
   AdaptLoad();
   BootStage(BOOT_SPI_LIN);
-  max_spi_setup();
+  tle_spi_setup();
+  gp_pwm_setup((uint32_t)Param::GetInt(Param::GpPwmFreq)); // OUT3, duty 0 until the 10 ms task
   lin_usart_setup();
   if (Lin330e())
     LinWake(); // U7 awake and its wake flag cleared; the scheduler (and so

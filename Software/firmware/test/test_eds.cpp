@@ -41,7 +41,6 @@ static void TestSlewAndSafe() {
   Eds e;
   EdsConfig c = e.Config();
   c.tempCorrection = false;
-  c.ditherAmp = 0;
   e.Configure(c);
   e.SetCurrent(EDS_A, 3000);
   e.Tick10ms();
@@ -51,15 +50,27 @@ static void TestSlewAndSafe() {
   CHECK_EQ(e.Setpoint(EDS_A), 3000);
   e.SetCurrent(EDS_A, 99999);
   CHECK_EQ(e.Target(EDS_A), 8500); // clamped to iMax
-  // Current-command outputs are slew limited like the rest
-  e.SetCurrent(EDS_PZYL, 5000);
+  // POS (current command) is slew limited like the rest
+  e.SetCurrent(EDS_POS, 5000);
   e.Tick10ms();
-  CHECK_EQ(e.Setpoint(EDS_PZYL), 600);
-  // Safe state drops everything at once
+  CHECK_EQ(e.Setpoint(EDS_POS), 600);
+  // PZYL is on / off: not slewed, and its pull-in may exceed iMax
+  e.SetCurrent(EDS_PZYL, 9500);
+  e.Tick10ms();
+  CHECK_EQ(e.Output(EDS_PZYL), 9500);
+  e.SetCurrent(EDS_PZYL, 99999);
+  CHECK_EQ(e.Target(EDS_PZYL), EDS_PZYL_IMAX);
+  e.SetCurrent(EDS_PZYL, 4000);
+  // Safe state drops every valve at once, but never PZYL (park lock)
   e.SafeState();
-  e.Tick1ms();
   for (int v = 0; v < EDS_COUNT; v++)
-    CHECK_EQ(e.Output((EdsValve)v), 0);
+    if (v != EDS_PZYL)
+      CHECK_EQ(e.Output((EdsValve)v), 0);
+  e.Tick10ms();
+  CHECK_EQ(e.Output(EDS_PZYL), 4000);
+  e.SetCurrent(EDS_PZYL, 0); // the caller decides when PZYL goes off
+  e.Tick10ms();
+  CHECK_EQ(e.Output(EDS_PZYL), 0);
   e.SetCurrent(EDS_A, 3000);
   e.Tick10ms();
   CHECK_EQ(e.Setpoint(EDS_A), 0); // still safe until Release()
@@ -69,58 +80,7 @@ static void TestSlewAndSafe() {
   CHECK_EQ(e.Setpoint(EDS_A), 600);
 }
 
-static void TestDither() {
-  // Triangle, 8 ms (125 Hz), +-30 mA
-  const int32_t amp = 300;
-  int32_t lo = 99999, hi = -99999, sum = 0;
-  for (uint32_t t = 0; t < 8; t++) {
-    int32_t d = Eds::DitherValue(t, amp, 8, DITHER_TRIANGLE);
-    lo = d < lo ? d : lo;
-    hi = d > hi ? d : hi;
-    sum += d;
-  }
-  CHECK_EQ(lo, -amp);
-  CHECK_EQ(hi, amp);
-  CHECK_EQ(sum, 0); // no DC offset over one period
-  CHECK_EQ(Eds::DitherValue(0, amp, 8, DITHER_TRIANGLE),
-           Eds::DitherValue(8, amp, 8, DITHER_TRIANGLE)); // periodic
-  CHECK_EQ(Eds::DitherValue(0, amp, 8, DITHER_SQUARE), amp);
-  CHECK_EQ(Eds::DitherValue(4, amp, 8, DITHER_SQUARE), -amp);
-  CHECK_EQ(Eds::DitherValue(3, 0, 8, DITHER_SQUARE), 0);
-
-  Eds e;
-  EdsConfig c = e.Config();
-  c.tempCorrection = false;
-  c.slewPer10ms = 0; // jump straight to the target
-  e.Configure(c);
-  e.SetCurrent(EDS_A, 4000);
-  e.SetCurrent(EDS_PZYL, 4000);
-  e.Tick10ms();
-  int32_t mn = 99999, mx = 0;
-  for (int i = 0; i < 16; i++) {
-    e.Tick1ms();
-    int32_t o = e.Output(EDS_A);
-    mn = o < mn ? o : mn;
-    mx = o > mx ? o : mx;
-    CHECK_EQ(e.Output(EDS_PZYL), 4000); // current-command outputs never dither
-  }
-  CHECK_EQ(mn, 3700);
-  CHECK_EQ(mx, 4300);
-  // No dither near the end stops
-  e.SetCurrent(EDS_A, 8500);
-  e.Tick10ms();
-  for (int i = 0; i < 8; i++) {
-    e.Tick1ms();
-    CHECK_EQ(e.Output(EDS_A), 8500);
-  }
-  e.SetCurrent(EDS_A, 600);
-  e.Tick10ms();
-  e.Tick1ms();
-  CHECK_EQ(e.Output(EDS_A), 600);
-}
-
 void TestEds() {
   TestCurves();
   TestSlewAndSafe();
-  TestDither();
 }

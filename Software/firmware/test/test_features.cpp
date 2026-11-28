@@ -271,33 +271,25 @@ static void TestAdapt() {
 }
 
 static void TestDiag() {
-  // Expected resistance: 5.15 ohm at 20 degC + wiring, copper tempco.
-  CHECK_EQ(Diag::ExpectedMilliOhm(20, 150), 5300);
-  CHECK_EQ(Diag::ExpectedMilliOhm(120, 150), 5150 + 2023 + 150);
-  CHECK_EQ(Diag::ExpectedMilliOhm(-30, 150), 4138 + 150);
-  // 13.25 V / 2.5 A = 5.3 ohm: in band.
+  // Expected resistance: 5.5 ohm at 20 degC + wiring, copper tempco.
+  CHECK_EQ(Diag::ExpectedMilliOhm(20, 150), 5650);
+  CHECK_EQ(Diag::ExpectedMilliOhm(120, 150), 5500 + 2161 + 150);
+  CHECK_EQ(Diag::ExpectedMilliOhm(-30, 150), 4419 + 150);
+  // 13.25 V / 2.5 A = 5.3 ohm: in band (5.65 +- 25 %).
   CHECK_EQ(Diag::Resistance(13250, 2500, 20, 25, 150), DIAG_OK);
   CHECK_EQ(Diag::Resistance(13250, 1500, 20, 25, 150), DIAG_R_HIGH); // 8.8 ohm
   CHECK_EQ(Diag::Resistance(13250, 3500, 20, 25, 150), DIAG_R_LOW);  // 3.8 ohm
   CHECK_EQ(Diag::Resistance(1000, 2000, 20, 25, 150), DIAG_SHORT_GND); // 0.5 ohm
   CHECK_EQ(Diag::Resistance(13250, 10, 20, 25, 150), DIAG_OK); // no current
   // Hot coil reads higher but still OK.
-  CHECK_EQ(Diag::Resistance(14000, 2000, 100, 25, 150), DIAG_OK); // 7.0 ohm vs 6.92
+  CHECK_EQ(Diag::Resistance(14000, 2000, 100, 25, 150), DIAG_OK); // 7.0 ohm vs 7.38
   // Flags win.
   CHECK_EQ(Diag::Channel(VALVE_F_OCP | VALVE_F_OLF, DIAG_OK), DIAG_SHORT_BAT);
   CHECK_EQ(Diag::Channel(VALVE_F_OLF, DIAG_OK), DIAG_OPEN);
-  CHECK_EQ(Diag::Channel(VALVE_F_HHF, DIAG_OK), DIAG_R_HIGH);
-  CHECK_EQ(Diag::Channel(VALVE_F_DPM, DIAG_OK), DIAG_OK);
+  CHECK_EQ(Diag::Channel(VALVE_F_SG | VALVE_F_OLF, DIAG_OK), DIAG_SHORT_GND);
+  CHECK_EQ(Diag::Channel(VALVE_F_IERR, DIAG_OK), DIAG_R_HIGH);
+  CHECK_EQ(Diag::Channel(VALVE_F_CHIP, DIAG_OK), DIAG_OK);
   CHECK_EQ(Diag::Channel(0, DIAG_SHORT_GND), DIAG_SHORT_GND);
-  // Pairs.
-  uint8_t codes[8] = {0};
-  CHECK_EQ(Diag::Pairs(codes, 8), 0);
-  codes[2] = DIAG_OPEN;
-  CHECK_EQ(Diag::Pairs(codes, 8), 0);
-  codes[3] = DIAG_SHORT_BAT;
-  codes[6] = codes[7] = DIAG_OPEN;
-  CHECK_EQ(Diag::Pairs(codes, 8), 0x0A);
-  CHECK_EQ(Diag::Pairs(codes, 7), 0x02);
   // Speed sensor.
   CHECK_EQ(Diag::Speed(1000, 2000, true, true, 3000, 200), SPD_OK);
   CHECK_EQ(Diag::Speed(3100, 3150, false, false, 3000, 200), SPD_OPEN);

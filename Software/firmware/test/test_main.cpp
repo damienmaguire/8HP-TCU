@@ -30,7 +30,8 @@ int main() {
   const Suite suites[] = {
       {"gears", TestGears},         {"interlock", TestInterlock},
       {"lookup", TestLookup},       {"eds", TestEds},
-      {"max22200", TestMax22200},   {"sas", TestSas},
+      {"tle92466", TestTle92466},   {"parksafe", TestParkSafe},
+      {"sas", TestSas},
       {"engage", TestEngage},       {"speedsens", TestSpeedSens},
       {"tcu", TestTcu},             {"valveout", TestValveOut},
       {"anaconv", TestAnaConv},     {"linpump", TestLinPump},

@@ -44,7 +44,7 @@ LDFLAGS   = -Llibopencm3/lib -T$(LDSCRIPT) -march=armv7 -nostartfiles \
             -Wl,--gc-sections,-Map,$(MAPFILE)
 
 # Hardware-free control code (also built by the host tests)
-CORE_OBJS = caltypes.o cal_330e.o cal_f11.o cal_v095.o calset.o canif.o drivemode.o gears.o interlock.o max22200.o eds.o sas.o \
+CORE_OBJS = caltypes.o cal_330e.o cal_f11.o cal_v095.o calset.o canif.o drivemode.o gears.o interlock.o tle92466.o parksafe.o eds.o sas.o \
             engage.o speedsens.o tcu.o valveout.o anaconv.o linpump.o \
             shifter.o gwslever.o canlever.o torquein.o adapt.o diag.o tcc.o statstream.o flashguard.o
 # Firmware glue and libopeninv

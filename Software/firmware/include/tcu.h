@@ -31,7 +31,7 @@
  * It decides the target gear, runs the gear-in (engage.h) and shift
  * (sas.h) sequences, works out line pressure, and checks the interlock.
  * Its outputs are pressures per element plus line pressure; the caller
- * turns those into currents (eds.h) and sends them to the MAX22200s.
+ * turns those into currents (eds.h) and sends them to the TLE92466ED drivers.
  *
  * Nothing here touches hardware or parameters, so it runs in the host
  * unit tests. stm32_tcu.cpp copies parameters into TcuConfig and sensor
@@ -85,7 +85,7 @@ enum TcuFault
 {
    TF_NONE = 0,
    TF_INTERLOCK = 1,   // interlock rejected a command
-   TF_DRIVER = 2,      // MAX22200 fault on a pressure valve
+   TF_DRIVER = 2,      // driver chip fault on a pressure valve
    TF_UNDERVOLT = 3,   // battery below the load-off threshold
    TF_SPEED = 4,       // speed sensors disagree with the engaged gear
    TF_CONFIG = 5,      // valve map or driver configuration invalid
@@ -267,7 +267,7 @@ enum ParkBrakeSrc
    PARKBRAKE_CAN = 0,    // VCU frame byte 6 bit 2 (lost with CAN)
    PARKBRAKE_PARAM = 1,  // the BrakeIn parameter
    PARKBRAKE_BYPASS = 2, // not asked for at all
-   PARKBRAKE_INPUT = 3   // the 12 V brake switch input (PD1, J1.46)
+   PARKBRAKE_INPUT = 3   // the 12 V brake switch input (PD1)
 };
 
 /// Footbrake state for the TCU from the selected source. canOk: the VCU

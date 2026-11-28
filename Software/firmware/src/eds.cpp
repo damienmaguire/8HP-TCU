@@ -18,7 +18,8 @@
  */
 /*
  * Pressure valve (EDS) layer: pressure to coil current through the
- * calibration curves, oil-temperature correction, slew limit and dither.
+ * calibration curves, oil-temperature correction and slew limit (the
+ * driver chip adds the dither).
  * Currents are in 0.1 mA, pressures in mbar.
  */
 #include "eds.h"
@@ -31,18 +32,13 @@ static bool IsRising(EdsValve v) {
 }
 
 // Default settings (overwritten by Configure); every valve at 0.
-Eds::Eds() : ms(0), safe(false) {
+Eds::Eds() : safe(false) {
   cfg.iMin = 500;
   cfg.iMax = 8500;
   cfg.slewPer10ms = 600;
-  cfg.ditherAmp = 300;
-  cfg.ditherPeriodMs = 8;
-  cfg.ditherShape = DITHER_TRIANGLE;
   cfg.tempCorrection = true;
-  for (int i = 0; i < EDS_COUNT; i++) {
-    target[i] = setpoint[i] = out[i] = 0;
-    ditherOn[i] = i < EDS_POS; // proportional pressure valves dither
-  }
+  for (int i = 0; i < EDS_COUNT; i++)
+    target[i] = setpoint[i] = 0;
 }
 
 // Pressure to coil current from the valve's curve, 0.1 mA.
@@ -92,14 +88,19 @@ void Eds::SetCurrent(EdsValve v, int32_t i) {
     return;
   if (i < 0)
     i = 0;
-  if (i > cfg.iMax)
-    i = cfg.iMax;
+  int32_t lim = v == EDS_PZYL ? EDS_PZYL_IMAX : cfg.iMax;
+  if (i > lim)
+    i = lim;
   target[v] = i;
 }
 
 // Move each setpoint towards its target, limited by the slew rate.
 void Eds::Tick10ms() {
   for (int v = 0; v < EDS_COUNT; v++) {
+    if (v == EDS_PZYL) {
+      setpoint[v] = target[v]; // on / off, never slewed, kept in the safe state
+      continue;
+    }
     if (safe) {
       setpoint[v] = 0;
       continue;
@@ -118,39 +119,12 @@ void Eds::Tick10ms() {
   }
 }
 
-// Dither added at time t (square or triangle, period in ms).
-int32_t Eds::DitherValue(uint32_t t, int32_t amp, uint8_t periodMs,
-                         uint8_t shape) {
-  if (amp <= 0 || periodMs < 2)
-    return 0;
-  uint32_t p = t % periodMs;
-  int32_t half = periodMs / 2;
-  if (shape == DITHER_SQUARE)
-    return (int32_t)p < half ? amp : -amp;
-  // Triangle: -amp at p = 0, +amp at p = period/2, back to -amp.
-  int32_t up = (int32_t)p <= half ? (int32_t)p : (int32_t)periodMs - (int32_t)p;
-  return -amp + (2 * amp * up) / half;
-}
-
-// Output = setpoint + dither, every 1 ms.
-void Eds::Tick1ms() {
-  ms++;
-  int32_t d = DitherValue(ms, cfg.ditherAmp, cfg.ditherPeriodMs, cfg.ditherShape);
-  for (int v = 0; v < EDS_COUNT; v++) {
-    int32_t i = safe ? 0 : setpoint[v];
-    // Dither only inside the working range, as the OEM does (off at the
-    // 50 mA and 850 mA end points), so it never pushes past either end.
-    if (!safe && ditherOn[v] && i > cfg.iMin + cfg.ditherAmp &&
-        i < cfg.iMax - cfg.ditherAmp)
-      i += d;
-    out[v] = i;
-  }
-}
-
-// Every valve to 0 at once (all coils off = mechanical limp gear).
+// Every valve to 0 at once (coils off = mechanical limp gear), except
+// PZYL: see eds.h and parksafe.h.
 void Eds::SafeState() {
   safe = true;
   for (int v = 0; v < EDS_COUNT; v++) {
-    target[v] = setpoint[v] = out[v] = 0;
+    if (v != EDS_PZYL)
+      target[v] = setpoint[v] = 0;
   }
 }
